@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, LayoutGrid, Rocket, Settings, Zap } from 'lucide-react';
 import { useMissionUi } from '../../context/MissionUiContext';
+import { BackendConnectionPill } from './BackendConnectionPill';
+import { ThemeCycleButton } from './ThemeCycleButton';
 import { formatClock } from '../../lib/time';
 
 export function WorkspaceHeaderBar() {
@@ -29,7 +31,7 @@ export function WorkspaceHeaderBar() {
     <header className="ft-header-bar">
       <div className="ft-header-left">
         <div className="ft-logo-row">
-          <Zap aria-hidden size={20} color="var(--mc-accent-cyan)" />
+          <Zap aria-hidden size={20} color="var(--mc-accent)" />
           <span className="ft-upper-label" style={{ color: 'var(--mc-text)', fontWeight: 600 }}>
             Mission Control
           </span>
@@ -58,8 +60,8 @@ export function WorkspaceHeaderBar() {
 
       {activeWorkspace ? (
         <div className="ft-show-lg">
-          <div className="ft-stat-lg">
-            <div className="ft-stat-lg-value" style={{ color: 'var(--mc-accent-cyan)' }}>
+            <div className="ft-stat-lg">
+            <div className="ft-stat-lg-value" style={{ color: 'var(--mc-accent-blue)' }}>
               {workingAgents}
             </div>
             <div className="ft-stat-lg-label">Agents active</div>
@@ -77,13 +79,8 @@ export function WorkspaceHeaderBar() {
         <span className="ft-time" style={{ fontVariantNumeric: 'tabular-nums' }}>
           {formatClock(now)}
         </span>
-        <div className={`ft-online-pill ${isOnline ? 'ft-online-pill--on' : 'ft-online-pill--off'}`}>
-          <span
-            className={`ft-dot ${isOnline ? 'ft-dot--pulse' : ''}`}
-            style={{ background: isOnline ? 'var(--mc-accent-green)' : 'var(--mc-accent-red)' }}
-          />
-          {isOnline ? 'ONLINE' : 'OFFLINE'}
-        </div>
+        <BackendConnectionPill isOnline={isOnline} />
+        <ThemeCycleButton />
         <button type="button" className="ft-btn-icon" title="Autopilot (UI shell)">
           <Rocket size={20} />
         </button>

@@ -29,20 +29,12 @@ export function AgentsPanel() {
             style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
           />
           <input
+            className="ft-input ft-input--sm ft-input--leading-icon"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter by task or status"
             aria-label="Search agents"
-            style={{
-              width: '100%',
-              padding: '0.5rem 0.65rem 0.5rem 2.25rem',
-              borderRadius: 'var(--ft-radius-sm)',
-              border: '1px solid var(--mc-border)',
-              background: 'var(--mc-bg)',
-              color: 'var(--mc-text-secondary)',
-              font: 'inherit',
-              fontSize: '0.75rem',
-            }}
+            style={{ width: '100%' }}
           />
         </div>
       </div>
@@ -63,7 +55,7 @@ function AgentRow({ agent }: { agent: Agent }) {
   const badge = agentBadge(agent.status);
   return (
     <div className="ft-agent-row">
-      <Zap size={16} color="var(--mc-accent-yellow)" aria-hidden />
+      <Zap size={16} color="var(--mc-accent)" aria-hidden />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="ft-truncate" style={{ fontWeight: 600, fontSize: '0.8rem' }}>
           {agent.name}

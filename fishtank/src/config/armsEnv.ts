@@ -12,10 +12,17 @@ function trimBase(url: string): string {
   return url.replace(/\/+$/, '');
 }
 
+/** Bun --hot can expose `import.meta.env` as undefined during HMR; never read properties on it directly. */
+function viteEnv(): ImportMetaEnv {
+  const env = (import.meta as ImportMeta & { env?: ImportMetaEnv }).env;
+  return env ?? ({} as ImportMetaEnv);
+}
+
 export function readArmsEnv(): ArmsEnv {
-  const baseUrl = trimBase(import.meta.env.VITE_ARMS_URL?.trim() || 'http://127.0.0.1:8080');
-  const token = import.meta.env.VITE_ARMS_TOKEN?.trim() || '';
-  const basicUser = import.meta.env.VITE_ARMS_BASIC_USER?.trim() || '';
-  const basicPassword = import.meta.env.VITE_ARMS_BASIC_PASSWORD?.trim() || '';
+  const e = viteEnv();
+  const baseUrl = trimBase(e.VITE_ARMS_URL?.trim() || 'http://127.0.0.1:8080');
+  const token = e.VITE_ARMS_TOKEN?.trim() || '';
+  const basicUser = e.VITE_ARMS_BASIC_USER?.trim() || '';
+  const basicPassword = e.VITE_ARMS_BASIC_PASSWORD?.trim() || '';
   return { baseUrl, token, basicUser, basicPassword };
 }

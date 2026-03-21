@@ -42,6 +42,7 @@ export interface MissionUiValue {
   tasks: Task[];
   agents: Agent[];
   events: FeedEvent[];
+  /** True when the configured arms base URL responds successfully to GET /api/health. */
   isOnline: boolean;
   boardLoading: boolean;
   listLoading: boolean;
@@ -127,9 +128,23 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
   }, [refreshWorkspaces]);
 
   useEffect(() => {
-    const id = window.setInterval(() => void pingOnce(), 30_000);
+    const ms = isOnline ? 30_000 : 8_000;
+    const id = window.setInterval(() => void pingOnce(), ms);
     return () => window.clearInterval(id);
-  }, [pingOnce]);
+  }, [pingOnce, isOnline]);
+
+  useEffect(() => {
+    const onBrowserOnline = () => void refreshWorkspaces();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void pingOnce();
+    };
+    window.addEventListener('online', onBrowserOnline);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('online', onBrowserOnline);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [pingOnce, refreshWorkspaces]);
 
   const goHome = useCallback(() => {
     setActiveWorkspace(null);

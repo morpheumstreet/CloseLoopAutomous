@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { Activity, Folder, Plus, RefreshCw, Rocket } from 'lucide-react';
+import { Activity, Folder, Plus, RefreshCw, Rocket, Unplug } from 'lucide-react';
 import { useMissionUi } from '../../context/MissionUiContext';
+import { BackendConnectionPill } from '../shell/BackendConnectionPill';
+import { ThemeCycleButton } from '../shell/ThemeCycleButton';
 import type { WorkspaceStats } from '../../domain/types';
 import { CreateProductModal } from './CreateProductModal';
 
@@ -13,21 +15,24 @@ export function WorkspaceDashboardView() {
     listLoading,
     apiError,
     dismissError,
+    isOnline,
   } = useMissionUi();
   const [modalOpen, setModalOpen] = useState(false);
 
   return (
     <div className="ft-screen">
-      <header className="ft-border-b" style={{ background: 'var(--mc-bg-secondary)' }}>
+      <header className="ft-border-b ft-dashboard-header" style={{ background: 'var(--mc-bg-secondary)' }}>
         <div className="ft-container" style={{ paddingBlock: '1rem' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <span style={{ fontSize: '1.5rem' }} aria-hidden>
                 🦞
               </span>
-              <h1 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Mission Control</h1>
+              <h1 style={{ fontSize: '1.25rem', fontWeight: 700, letterSpacing: '-0.02em' }}>Mission Control</h1>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <BackendConnectionPill isOnline={isOnline} />
+              <ThemeCycleButton />
               <button
                 type="button"
                 className="ft-btn-ghost"
@@ -68,9 +73,11 @@ export function WorkspaceDashboardView() {
         ) : null}
 
         <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.35rem' }}>Products</h2>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.35rem', letterSpacing: '-0.025em' }}>
+            Products
+          </h2>
           <p className="ft-muted">
-            Data from arms — each card is a <code style={{ fontSize: '0.85em' }}>GET /api/products</code> row with live
+            Data from arms — each card is a <code className="ft-mono">GET /api/products</code> row with live
             task counts
           </p>
         </div>
@@ -79,6 +86,8 @@ export function WorkspaceDashboardView() {
           <p className="ft-muted" style={{ padding: '2rem 0' }}>
             Loading products…
           </p>
+        ) : workspaces.length === 0 && !isOnline ? (
+          <BackendOfflineCallout onRetry={() => void refreshWorkspaces()} retrying={listLoading} />
         ) : workspaces.length === 0 ? (
           <EmptyWorkspaces onCreate={() => setModalOpen(true)} />
         ) : (
@@ -101,6 +110,23 @@ export function WorkspaceDashboardView() {
         onClose={() => setModalOpen(false)}
         onCreate={(name, workspaceId) => registerProduct(name, workspaceId)}
       />
+    </div>
+  );
+}
+
+function BackendOfflineCallout({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '4rem 1rem' }}>
+      <Unplug size={64} className="ft-muted" style={{ marginInline: 'auto', marginBottom: '1rem' }} aria-hidden />
+      <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.5rem' }}>Not connected to arms</h3>
+      <p className="ft-muted" style={{ marginBottom: '1.5rem', maxWidth: '28rem', marginInline: 'auto' }}>
+        The UI could not reach the backend health endpoint. Confirm arms is running, <code className="ft-mono">VITE_ARMS_URL</code>{' '}
+        points at it, and CORS allows this origin if needed.
+      </p>
+      <button type="button" className="ft-btn-primary" onClick={onRetry} disabled={retrying}>
+        <RefreshCw size={16} className={retrying ? 'ft-spin' : ''} />
+        Try again
+      </button>
     </div>
   );
 }
