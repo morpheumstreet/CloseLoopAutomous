@@ -1,0 +1,32 @@
+name: arms
+
+on:
+  push:
+    paths:
+      - "arms/**"
+      - ".github/workflows/arms.yml"
+  pull_request:
+    paths:
+      - "arms/**"
+      - ".github/workflows/arms.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: arms
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: arms/go.sum
+
+      - name: Go test
+        run: go test ./...
+
+      - name: Integration tests (build tag)
+        run: go test -tags=integration ./internal/integration/...

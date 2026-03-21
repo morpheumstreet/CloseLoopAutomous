@@ -1,0 +1,34 @@
+package identity
+
+import (
+	"fmt"
+	"sync"
+
+	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/closeloopautomous/arms/internal/ports"
+)
+
+// Sequential issues deterministic IDs for tests and local runs.
+type Sequential struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (s *Sequential) NewProductID() domain.ProductID { return domain.ProductID(s.next("prod")) }
+
+func (s *Sequential) next(prefix string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.n++
+	return fmt.Sprintf("%s-%d", prefix, s.n)
+}
+
+func (s *Sequential) NewIdeaID() domain.IdeaID     { return domain.IdeaID(s.next("idea")) }
+func (s *Sequential) NewTaskID() domain.TaskID     { return domain.TaskID(s.next("task")) }
+func (s *Sequential) NewConvoyID() domain.ConvoyID { return domain.ConvoyID(s.next("convoy")) }
+func (s *Sequential) NewSubtaskID() domain.SubtaskID {
+	return domain.SubtaskID(s.next("sub"))
+}
+func (s *Sequential) NewCostEventID() string { return s.next("cost") }
+
+var _ ports.IdentityGenerator = (*Sequential)(nil)

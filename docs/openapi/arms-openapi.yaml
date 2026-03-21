@@ -1,0 +1,789 @@
+openapi: 3.1.0
+info:
+  title: Arms API
+  description: |
+    HTTP API for the **arms** orchestration service (Mission Control–style parity in progress).
+
+    - Human-oriented reference: [api-ref.md](../api-ref.md)
+    - Live route JSON: `GET /api/docs/routes`
+    - When `MC_API_TOKEN` is unset, Bearer auth is disabled (development default).
+
+    **Correlation:** responses include `X-Request-ID` (echo client header or server-generated UUID).
+
+    Hand-maintained; update when routes or payloads change.
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local default (`ARMS_LISTEN`)
+
+tags:
+  - name: Health
+  - name: Products
+  - name: Ideas
+  - name: Tasks
+  - name: Convoys
+  - name: Costs
+  - name: Stubs
+  - name: Webhooks
+  - name: Live
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Value must match `MC_API_TOKEN` when set.
+
+  parameters:
+    productId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    ideaId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    taskId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    convoyId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        code: { type: string }
+
+    Product:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        stage: { type: string }
+        research_summary: { type: string }
+        workspace_id: { type: string }
+        repo_url: { type: string }
+        repo_branch: { type: string }
+        description: { type: string }
+        program_document: { type: string }
+        settings_json: { type: string }
+        icon_url: { type: string }
+        research_cadence_sec: { type: integer, description: "0 disables scheduled research ticks" }
+        ideation_cadence_sec: { type: integer, description: "0 disables scheduled ideation ticks" }
+        automation_tier:
+          type: string
+          enum: [supervised, semi_auto, full_auto]
+        auto_dispatch_enabled: { type: boolean, description: "Stored flag; dispatch automation not wired yet" }
+        preference_model_json:
+          type: string
+          description: JSON array of swipe events (stub for preference learning)
+        last_auto_research_at:
+          type: string
+          format: date-time
+          description: Omitted when never run
+        last_auto_ideation_at:
+          type: string
+          format: date-time
+          description: Omitted when never run
+        updated_at: { type: string, format: date-time }
+
+    Idea:
+      type: object
+      properties:
+        id: { type: string }
+        product_id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        impact: { type: number }
+        feasibility: { type: number }
+        reasoning: { type: string }
+        decided: { type: boolean }
+        decision: { type: string, enum: [pass, maybe, yes, now, ""] }
+        created_at: { type: string, format: date-time }
+
+    Task:
+      type: object
+      properties:
+        id: { type: string }
+        product_id: { type: string }
+        idea_id: { type: string }
+        spec: { type: string }
+        status:
+          type: string
+          description: Kanban column (snake_case)
+          enum:
+            - planning
+            - inbox
+            - assigned
+            - in_progress
+            - testing
+            - review
+            - done
+            - failed
+            - convoy_active
+        status_reason: { type: string }
+        plan_approved: { type: boolean }
+        clarifications_json: { type: string }
+        checkpoint: { type: string }
+        external_ref: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Subtask:
+      type: object
+      properties:
+        id: { type: string }
+        agent_role: { type: string }
+        depends_on:
+          type: array
+          items: { type: string }
+        dispatched: { type: boolean }
+        external_ref: { type: string }
+        last_checkpoint: { type: string }
+
+    Convoy:
+      type: object
+      properties:
+        id: { type: string }
+        product_id: { type: string }
+        parent_id: { type: string }
+        subtasks:
+          type: array
+          items: { $ref: "#/components/schemas/Subtask" }
+        created_at: { type: string, format: date-time }
+
+    IdeasListResponse:
+      type: object
+      properties:
+        ideas:
+          type: array
+          items: { $ref: "#/components/schemas/Idea" }
+
+    TasksListResponse:
+      type: object
+      properties:
+        tasks:
+          type: array
+          items: { $ref: "#/components/schemas/Task" }
+
+    ConvoysListResponse:
+      type: object
+      properties:
+        convoys:
+          type: array
+          items: { $ref: "#/components/schemas/Convoy" }
+
+    CreateProductRequest:
+      type: object
+      required: [name, workspace_id]
+      properties:
+        name: { type: string }
+        workspace_id: { type: string }
+        repo_url: { type: string }
+        repo_branch: { type: string }
+        description: { type: string }
+        program_document: { type: string }
+        settings_json: { type: string }
+        icon_url: { type: string }
+        research_cadence_sec: { type: integer }
+        ideation_cadence_sec: { type: integer }
+        automation_tier:
+          type: string
+          enum: [supervised, semi_auto, full_auto]
+        auto_dispatch_enabled: { type: boolean }
+
+    PatchProductRequest:
+      type: object
+      description: At least one property required.
+      properties:
+        name: { type: string }
+        repo_url: { type: string }
+        repo_branch: { type: string }
+        description: { type: string }
+        program_document: { type: string }
+        settings_json: { type: string }
+        icon_url: { type: string }
+        research_cadence_sec: { type: integer }
+        ideation_cadence_sec: { type: integer }
+        automation_tier:
+          type: string
+          enum: [supervised, semi_auto, full_auto]
+        auto_dispatch_enabled: { type: boolean }
+
+    SwipeRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [pass, maybe, yes, now]
+
+    CreateTaskRequest:
+      type: object
+      required: [idea_id, spec]
+      properties:
+        idea_id: { type: string }
+        spec: { type: string }
+
+    PatchTaskRequest:
+      type: object
+      description: At least one property required.
+      properties:
+        status: { type: string }
+        status_reason: { type: string }
+        clarifications_json: { type: string }
+
+    ApprovePlanRequest:
+      type: object
+      properties:
+        spec: { type: string }
+
+    RejectPlanRequest:
+      type: object
+      properties:
+        status_reason: { type: string }
+
+    DispatchRequest:
+      type: object
+      properties:
+        estimated_cost: { type: number }
+
+    CheckpointRequest:
+      type: object
+      required: [payload]
+      properties:
+        payload: { type: string }
+
+    CreateConvoyRequest:
+      type: object
+      required: [parent_task_id, product_id, subtasks]
+      properties:
+        parent_task_id: { type: string }
+        product_id: { type: string }
+        subtasks:
+          type: array
+          items:
+            type: object
+            required: [agent_role]
+            properties:
+              id: { type: string }
+              agent_role: { type: string }
+              depends_on:
+                type: array
+                items: { type: string }
+
+    RecordCostRequest:
+      type: object
+      required: [product_id, task_id, amount]
+      properties:
+        product_id: { type: string }
+        task_id: { type: string }
+        amount: { type: number, minimum: 0 }
+        note: { type: string }
+
+    AgentCompletionRequest:
+      type: object
+      required: [task_id]
+      properties:
+        task_id: { type: string }
+
+    HealthResponse:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+
+    RoutesResponse:
+      type: object
+      properties:
+        routes:
+          type: array
+          items:
+            type: object
+            properties:
+              method: { type: string }
+              path: { type: string }
+              description: { type: string }
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Liveness
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+
+  /api/docs/routes:
+    get:
+      tags: [Health]
+      summary: Route catalog (JSON)
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoutesResponse" }
+
+  /api/products:
+    post:
+      tags: [Products]
+      summary: Register product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateProductRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+
+  /api/products/{id}:
+    get:
+      tags: [Products]
+      summary: Get product
+      parameters:
+        - $ref: "#/components/parameters/productId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    patch:
+      tags: [Products]
+      summary: Patch product metadata
+      parameters:
+        - $ref: "#/components/parameters/productId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PatchProductRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "400":
+          description: Validation
+        "404":
+          description: Not found
+
+  /api/products/{id}/research:
+    post:
+      tags: [Products]
+      summary: Run research
+      parameters:
+        - $ref: "#/components/parameters/productId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+
+  /api/products/{id}/ideation:
+    post:
+      tags: [Products]
+      summary: Run ideation
+      parameters:
+        - $ref: "#/components/parameters/productId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+
+  /api/products/{id}/ideas:
+    get:
+      tags: [Ideas]
+      summary: List ideas
+      parameters:
+        - $ref: "#/components/parameters/productId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IdeasListResponse" }
+
+  /api/products/{id}/maybe-pool:
+    get:
+      tags: [Ideas]
+      summary: List ideas in maybe pool
+      parameters:
+        - $ref: "#/components/parameters/productId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IdeasListResponse" }
+        "404":
+          description: Product not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/products/{id}/tasks:
+    get:
+      tags: [Tasks]
+      summary: List tasks (newest first)
+      parameters:
+        - $ref: "#/components/parameters/productId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TasksListResponse" }
+        "404":
+          description: Product not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/products/{id}/convoys:
+    get:
+      tags: [Convoys]
+      summary: List convoys
+      parameters:
+        - $ref: "#/components/parameters/productId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConvoysListResponse" }
+
+  /api/ideas/{id}/swipe:
+    post:
+      tags: [Ideas]
+      summary: Submit swipe
+      parameters:
+        - $ref: "#/components/parameters/ideaId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SwipeRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Idea" }
+
+  /api/ideas/{id}/promote-maybe:
+    post:
+      tags: [Ideas]
+      summary: Promote maybe swipe to yes
+      parameters:
+        - $ref: "#/components/parameters/ideaId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Idea" }
+        "400":
+          description: Idea not in maybe state
+
+  /api/tasks:
+    post:
+      tags: [Tasks]
+      summary: Create task from approved idea
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTaskRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+
+  /api/tasks/{id}:
+    get:
+      tags: [Tasks]
+      summary: Get task
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+    patch:
+      tags: [Tasks]
+      summary: Patch Kanban / planning fields
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PatchTaskRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+
+  /api/tasks/{id}/plan/approve:
+    post:
+      tags: [Tasks]
+      summary: Approve plan
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovePlanRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+
+  /api/tasks/{id}/plan/reject:
+    post:
+      tags: [Tasks]
+      summary: Reject / return to planning
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RejectPlanRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+
+  /api/tasks/{id}/dispatch:
+    post:
+      tags: [Tasks]
+      summary: Dispatch to agent gateway
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DispatchRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+
+  /api/tasks/{id}/checkpoint:
+    post:
+      tags: [Tasks]
+      summary: Record checkpoint
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CheckpointRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+
+  /api/tasks/{id}/complete:
+    post:
+      tags: [Tasks]
+      summary: Mark completed
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+
+  /api/convoys:
+    post:
+      tags: [Convoys]
+      summary: Create convoy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateConvoyRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Convoy" }
+
+  /api/convoys/{id}:
+    get:
+      tags: [Convoys]
+      summary: Get convoy
+      parameters:
+        - $ref: "#/components/parameters/convoyId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Convoy" }
+
+  /api/convoys/{id}/dispatch-ready:
+    post:
+      tags: [Convoys]
+      summary: Dispatch ready subtasks (one wave)
+      parameters:
+        - $ref: "#/components/parameters/convoyId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Convoy" }
+
+  /api/costs:
+    post:
+      tags: [Costs]
+      summary: Record cost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecordCostRequest" }
+      responses:
+        "201":
+          description: Recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: recorded }
+
+  /api/agents:
+    get:
+      tags: [Stubs]
+      summary: Agents (stub)
+      responses:
+        "200":
+          description: Stub
+
+  /api/openclaw/proxy:
+    post:
+      tags: [Stubs]
+      summary: OpenClaw proxy (not implemented)
+      responses:
+        "501":
+          description: Not implemented
+
+  /api/workspaces:
+    get:
+      tags: [Stubs]
+      summary: Workspaces (stub)
+      responses:
+        "200":
+          description: Stub
+
+  /api/settings:
+    get:
+      tags: [Stubs]
+      summary: Settings (stub)
+      responses:
+        "200":
+          description: Stub
+
+  /api/webhooks/agent-completion:
+    post:
+      tags: [Webhooks]
+      summary: Agent completion (HMAC)
+      security: []
+      description: |
+        Body is signed with HMAC-SHA256 using `WEBHOOK_SECRET`.
+        Header `X-Arms-Signature` = lowercase hex digest of the **raw** body.
+      parameters:
+        - name: X-Arms-Signature
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AgentCompletionRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+        "401":
+          description: Invalid HMAC
+        "503":
+          description: WEBHOOK_SECRET not configured
+
+  /api/live/events:
+    get:
+      tags: [Live]
+      summary: SSE stream
+      security: []
+      description: |
+        `text/event-stream`. When `MC_API_TOKEN` is set, pass `?token=` with the same value (EventSource cannot set Bearer).
+      parameters:
+        - name: token
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Stream
+          content:
+            text/event-stream:
+              schema: { type: string }

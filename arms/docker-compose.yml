@@ -1,0 +1,23 @@
+# Run from repo root: docker compose -f arms/docker-compose.yml up --build
+# Or from arms/: docker compose up --build
+services:
+  arms:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      ARMS_LISTEN: ":8080"
+      # Persist SQLite on a named volume (empty DATABASE_PATH = in-memory only)
+      DATABASE_PATH: /data/arms.db
+      # MC_API_TOKEN: "set-me"
+      # WEBHOOK_SECRET: "set-me"
+      # OPENCLAW_GATEWAY_URL: "wss://..."
+      # OPENCLAW_GATEWAY_TOKEN: "..."
+      # ARMS_OPENCLAW_SESSION_KEY: "agent:main:..."
+    volumes:
+      - arms_data:/data
+
+volumes:
+  arms_data:

@@ -1,0 +1,10 @@
+# Build context noise / secrets (never bake .env into images)
+.git
+.env
+.env.*
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.pre-migrate-*.bak
+coverage.out
