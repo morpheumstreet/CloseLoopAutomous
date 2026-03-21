@@ -105,14 +105,21 @@ components:
         product_id: { type: string }
         enabled: { type: boolean }
         spec_json: { type: string }
+        cron_expr: { type: string, description: "Standard 5-field cron when using Asynq row scheduling (empty if unset)" }
+        delay_seconds: { type: integer, minimum: 0, description: "One-shot delay; cleared after enqueue" }
+        asynq_task_id: { type: string, description: "Last enqueued Asynq task id (debugging)" }
+        last_enqueued_at: { type: string, format: date-time }
+        next_scheduled_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
     PatchProductScheduleRequest:
       type: object
-      description: At least one of enabled or spec_json is required.
+      description: At least one of enabled, spec_json, cron_expr, or delay_seconds is required.
       properties:
         enabled: { type: boolean }
         spec_json: { type: string }
+        cron_expr: { type: string }
+        delay_seconds: { type: integer, minimum: 0 }
 
     ConvoyMailMessage:
       type: object

@@ -13,6 +13,7 @@ import (
 
 	"github.com/closeloopautomous/arms/internal/adapters/httpapi"
 	"github.com/closeloopautomous/arms/internal/config"
+	"github.com/closeloopautomous/arms/internal/domain"
 	"github.com/closeloopautomous/arms/internal/jobs"
 	"github.com/closeloopautomous/arms/internal/platform"
 )
@@ -34,6 +35,37 @@ func main() {
 	if cfg.RedisAddr != "" {
 		asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr})
 		defer func() { _ = asynqClient.Close() }()
+
+		sched := jobs.NewScheduler(asynqClient, app.ProductSchedules)
+		if sched != nil {
+			if err := sched.StartProductSchedules(context.Background()); err != nil {
+				slog.Debug("product schedule start", "err", err)
+			}
+			go func() {
+				ticker := time.NewTicker(5 * time.Minute)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						inner, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+						_ = sched.StartProductSchedules(inner)
+						cancel()
+					}
+				}
+			}()
+		}
+		app.Handlers.ResyncProductSchedule = func(innerCtx context.Context, pid domain.ProductID) {
+			if sched == nil {
+				return
+			}
+			c, cancel := context.WithTimeout(innerCtx, 30*time.Second)
+			defer cancel()
+			if err := sched.ResyncProduct(c, pid); err != nil {
+				slog.Debug("product schedule resync", "product_id", string(pid), "err", err)
+			}
+		}
 
 		reconcile := func(innerCtx context.Context) {
 			if innerCtx == nil {

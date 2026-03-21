@@ -61,12 +61,13 @@ func OpenApp(ctx context.Context, cfg config.Config) (*App, error) {
 		gwCleanup()
 	}
 	return &App{
-		Handlers: h,
-		Products: products,
-		Ideas:    ideas,
-		Tasks:    tasks,
-		db:       db,
-		cleanup:  cleanup,
+		Handlers:         h,
+		Products:         products,
+		Ideas:            ideas,
+		Tasks:            tasks,
+		ProductSchedules: sched,
+		db:               db,
+		cleanup:          cleanup,
 	}, nil
 }
 

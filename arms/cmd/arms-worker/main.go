@@ -71,6 +71,11 @@ func main() {
 		}
 		return err
 	})
+	sched := jobs.NewScheduler(enqueueClient, app.ProductSchedules)
+	if sched != nil {
+		ph := jobs.NewProductScheduleHandler(app.Handlers.Autopilot, app.ProductSchedules, sched)
+		mux.HandleFunc(jobs.TypeProductScheduleTick, ph.ProcessTask)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {

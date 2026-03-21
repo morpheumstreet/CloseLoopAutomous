@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
+
+	cronlib "github.com/robfig/cron/v3"
 
 	"github.com/closeloopautomous/arms/internal/domain"
 	"github.com/closeloopautomous/arms/internal/ports"
@@ -212,24 +215,28 @@ func (s *Service) GetProductSchedule(ctx context.Context, productID domain.Produ
 	return row, nil
 }
 
-// UpsertProductSchedule persists product_schedules (503 when store not wired).
-func (s *Service) UpsertProductSchedule(ctx context.Context, productID domain.ProductID, enabled bool, specJSON string) (*domain.ProductSchedule, error) {
+// SaveProductSchedule upserts a full schedule row (503 when store not wired).
+func (s *Service) SaveProductSchedule(ctx context.Context, row *domain.ProductSchedule) (*domain.ProductSchedule, error) {
 	if s.Schedules == nil {
 		return nil, domain.ErrNotConfigured
 	}
-	if _, err := s.Products.ByID(ctx, productID); err != nil {
+	if _, err := s.Products.ByID(ctx, row.ProductID); err != nil {
 		return nil, err
 	}
-	if specJSON == "" {
-		specJSON = "{}"
+	if row.SpecJSON == "" {
+		row.SpecJSON = "{}"
 	}
-	now := s.Clock.Now()
-	row := &domain.ProductSchedule{
-		ProductID: productID,
-		Enabled:   enabled,
-		SpecJSON:  specJSON,
-		UpdatedAt: now,
+	cexpr := strings.TrimSpace(row.CronExpr)
+	if cexpr != "" {
+		if _, err := cronlib.ParseStandard(cexpr); err != nil {
+			return nil, fmt.Errorf("%w: invalid cron_expr", domain.ErrInvalidInput)
+		}
+		row.CronExpr = cexpr
 	}
+	if row.DelaySeconds < 0 {
+		return nil, fmt.Errorf("%w: delay_seconds must be >= 0", domain.ErrInvalidInput)
+	}
+	row.UpdatedAt = s.Clock.Now()
 	if err := s.Schedules.Upsert(ctx, row); err != nil {
 		return nil, err
 	}

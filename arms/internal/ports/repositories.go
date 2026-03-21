@@ -39,6 +39,8 @@ type OperationsLogRepository interface {
 type ProductScheduleRepository interface {
 	Get(ctx context.Context, productID domain.ProductID) (*domain.ProductSchedule, error)
 	Upsert(ctx context.Context, row *domain.ProductSchedule) error
+	// ListEnabled returns rows with enabled = true (may be empty).
+	ListEnabled(ctx context.Context) ([]domain.ProductSchedule, error)
 }
 
 // ConvoyMailRepository appends and lists messages for convoy subtasks (baseline mail).

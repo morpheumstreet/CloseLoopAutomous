@@ -52,6 +52,8 @@ type Handlers struct {
 	OperationsLog  ports.OperationsLogRepository
 	// AutopilotScheduleReconcile re-scans products and enqueues Asynq per-product ticks (set from cmd/arms when Redis is configured).
 	AutopilotScheduleReconcile func(context.Context)
+	// ResyncProductSchedule re-enqueues Asynq product:schedule:tick for one product after PATCH (set when Redis is configured).
+	ResyncProductSchedule func(context.Context, domain.ProductID)
 }
 
 func (h *Handlers) maybeReconcileAutopilotSchedule(ctx context.Context) {
@@ -59,6 +61,13 @@ func (h *Handlers) maybeReconcileAutopilotSchedule(ctx context.Context) {
 		return
 	}
 	h.AutopilotScheduleReconcile(ctx)
+}
+
+func (h *Handlers) maybeResyncProductSchedule(ctx context.Context, pid domain.ProductID) {
+	if h.ResyncProductSchedule == nil {
+		return
+	}
+	h.ResyncProductSchedule(ctx, pid)
 }
 
 func (h *Handlers) health(w http.ResponseWriter, _ *http.Request) {
@@ -2017,9 +2026,18 @@ func (h *Handlers) getProductSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := map[string]any{
-		"product_id": string(pid),
-		"enabled":    row.Enabled,
-		"spec_json":  row.SpecJSON,
+		"product_id":      string(pid),
+		"enabled":         row.Enabled,
+		"spec_json":       row.SpecJSON,
+		"cron_expr":       row.CronExpr,
+		"delay_seconds":   row.DelaySeconds,
+		"asynq_task_id":   row.AsynqTaskID,
+	}
+	if row.LastEnqueuedAt != nil {
+		out["last_enqueued_at"] = row.LastEnqueuedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if row.NextScheduledAt != nil {
+		out["next_scheduled_at"] = row.NextScheduledAt.UTC().Format(time.RFC3339Nano)
 	}
 	if !row.UpdatedAt.IsZero() {
 		out["updated_at"] = row.UpdatedAt.UTC().Format(time.RFC3339Nano)
@@ -2058,7 +2076,36 @@ func (h *Handlers) patchProductSchedule(w http.ResponseWriter, r *http.Request) 
 			spec = "{}"
 		}
 	}
-	row, err := h.Autopilot.UpsertProductSchedule(ctx, pid, enabled, spec)
+	cronExpr := cur.CronExpr
+	if req.CronExpr != nil {
+		cronExpr = strings.TrimSpace(*req.CronExpr)
+	}
+	delaySec := cur.DelaySeconds
+	if req.DelaySeconds != nil {
+		delaySec = *req.DelaySeconds
+		if delaySec < 0 {
+			writeError(w, http.StatusBadRequest, "validation", "delay_seconds must be >= 0")
+			return
+		}
+	}
+	row := &domain.ProductSchedule{
+		ProductID:    pid,
+		Enabled:      enabled,
+		SpecJSON:     spec,
+		CronExpr:     cronExpr,
+		DelaySeconds: delaySec,
+	}
+	timingPatch := req.CronExpr != nil || req.DelaySeconds != nil
+	if timingPatch || !enabled {
+		row.AsynqTaskID = ""
+		row.LastEnqueuedAt = nil
+		row.NextScheduledAt = nil
+	} else {
+		row.AsynqTaskID = cur.AsynqTaskID
+		row.LastEnqueuedAt = cur.LastEnqueuedAt
+		row.NextScheduledAt = cur.NextScheduledAt
+	}
+	row, err = h.Autopilot.SaveProductSchedule(ctx, row)
 	if err != nil {
 		if mapDomainErr(w, err) {
 			return
@@ -2068,12 +2115,23 @@ func (h *Handlers) patchProductSchedule(w http.ResponseWriter, r *http.Request) 
 	}
 	h.logOperation(ctx, "http", "product_schedule.upsert", "product", string(pid), "{}", pid)
 	h.maybeReconcileAutopilotSchedule(ctx)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"product_id": string(pid),
-		"enabled":    row.Enabled,
-		"spec_json":  row.SpecJSON,
-		"updated_at": row.UpdatedAt.UTC().Format(time.RFC3339Nano),
-	})
+	h.maybeResyncProductSchedule(ctx, pid)
+	out := map[string]any{
+		"product_id":      string(pid),
+		"enabled":         row.Enabled,
+		"spec_json":       row.SpecJSON,
+		"cron_expr":       row.CronExpr,
+		"delay_seconds":   row.DelaySeconds,
+		"asynq_task_id":   row.AsynqTaskID,
+		"updated_at":      row.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	}
+	if row.LastEnqueuedAt != nil {
+		out["last_enqueued_at"] = row.LastEnqueuedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if row.NextScheduledAt != nil {
+		out["next_scheduled_at"] = row.NextScheduledAt.UTC().Format(time.RFC3339Nano)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (h *Handlers) postRecomputePreferenceModel(w http.ResponseWriter, r *http.Request) {

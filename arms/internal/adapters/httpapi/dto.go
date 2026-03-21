@@ -384,13 +384,15 @@ func (r *putPreferenceModelReq) validate() error {
 }
 
 type patchProductScheduleReq struct {
-	Enabled  *bool   `json:"enabled,omitempty"`
-	SpecJSON *string `json:"spec_json,omitempty"`
+	Enabled       *bool   `json:"enabled,omitempty"`
+	SpecJSON      *string `json:"spec_json,omitempty"`
+	CronExpr      *string `json:"cron_expr,omitempty"`
+	DelaySeconds  *int    `json:"delay_seconds,omitempty"`
 }
 
 func (r *patchProductScheduleReq) validate() error {
-	if r.Enabled == nil && r.SpecJSON == nil {
-		return fmt.Errorf("at least one of enabled, spec_json is required")
+	if r.Enabled == nil && r.SpecJSON == nil && r.CronExpr == nil && r.DelaySeconds == nil {
+		return fmt.Errorf("at least one of enabled, spec_json, cron_expr, delay_seconds is required")
 	}
 	return nil
 }

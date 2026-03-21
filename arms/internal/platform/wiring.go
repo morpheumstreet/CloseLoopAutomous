@@ -25,12 +25,13 @@ import (
 
 // App bundles repositories and HTTP handlers; optional DB is closed by Close().
 type App struct {
-	Handlers *httpapi.Handlers
-	Products ports.ProductRepository
-	Ideas    ports.IdeaRepository
-	Tasks    ports.TaskRepository
-	db       dbCloser
-	cleanup  func() // e.g. WebSocket gateway shutdown
+	Handlers         *httpapi.Handlers
+	Products         ports.ProductRepository
+	Ideas            ports.IdeaRepository
+	Tasks            ports.TaskRepository
+	ProductSchedules ports.ProductScheduleRepository
+	db               dbCloser
+	cleanup          func() // e.g. WebSocket gateway shutdown
 }
 
 type dbCloser interface {
@@ -73,7 +74,7 @@ func NewInMemoryApp(cfg config.Config) *App {
 	sched := memory.NewProductScheduleStore()
 	cmail := memory.NewConvoyMailStore()
 	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, agentMail, agentHealth, pref, ops, sched, cmail, hub, hub, nil)
-	return &App{Handlers: h, Products: products, Ideas: ideas, Tasks: tasks, db: nil, cleanup: cleanup}
+	return &App{Handlers: h, Products: products, Ideas: ideas, Tasks: tasks, ProductSchedules: sched, db: nil, cleanup: cleanup}
 }
 
 func buildHandlers(
