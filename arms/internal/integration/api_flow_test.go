@@ -6,6 +6,9 @@ package integration_test
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -259,6 +262,105 @@ func TestHTTP_MergeQueueEnqueueAndList(t *testing.T) {
 
 	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/merge-queue/complete", nil, http.StatusNotFound, nil)
 	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/merge-queue", nil, http.StatusCreated, nil)
+}
+
+func TestHTTP_ConvoySubtaskWebhookAndSecondDispatch(t *testing.T) {
+	const whSecret = "int-wh-secret"
+	cfg := config.Config{AccessLog: false, WebhookSecret: whSecret}
+	app := platform.NewInMemoryApp(cfg)
+	t.Cleanup(func() { _ = app.Close() })
+
+	srv := httptest.NewServer(httpapi.NewRouter(cfg, app.Handlers))
+	t.Cleanup(srv.Close)
+	cli := srv.Client()
+	base := srv.URL
+
+	var prod map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/products", []byte(`{"name":"cv-p","workspace_id":"ws-cv"}`), http.StatusCreated, &prod)
+	pid, _ := prod["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/research", nil, http.StatusOK, &prod)
+	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/ideation", nil, http.StatusOK, &prod)
+
+	var ideasWrap struct {
+		Ideas []map[string]any `json:"ideas"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/ideas", nil, http.StatusOK, &ideasWrap)
+	iid, _ := ideasWrap.Ideas[0]["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/ideas/"+iid+"/swipe", []byte(`{"decision":"yes"}`), http.StatusOK, nil)
+
+	taskCreate := []byte(fmt.Sprintf(`{"idea_id":%q,"spec":"convoy parent"}`, iid))
+	var task map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks", taskCreate, http.StatusCreated, &task)
+	tid, _ := task["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/plan/approve", []byte(`{}`), http.StatusOK, &task)
+	mustJSON(t, cli, http.MethodPatch, base+"/api/tasks/"+tid, []byte(`{"status":"assigned"}`), http.StatusOK, &task)
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/dispatch", []byte(`{"estimated_cost":1}`), http.StatusOK, &task)
+
+	convBody := []byte(fmt.Sprintf(
+		`{"parent_task_id":%q,"product_id":%q,"subtasks":[{"id":"b1","agent_role":"builder"},{"id":"t1","agent_role":"tester","depends_on":["b1"]}]}`,
+		tid, pid,
+	))
+	var conv map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/convoys", convBody, http.StatusCreated, &conv)
+	cid, _ := conv["id"].(string)
+	if cid == "" {
+		t.Fatalf("convoy id missing: %#v", conv)
+	}
+
+	mustJSON(t, cli, http.MethodPost, base+"/api/convoys/"+cid+"/dispatch-ready", []byte(`{"estimated_cost":1}`), http.StatusOK, nil)
+	var c1 map[string]any
+	mustJSON(t, cli, http.MethodGet, base+"/api/convoys/"+cid, nil, http.StatusOK, &c1)
+	subs1, _ := c1["subtasks"].([]any)
+	if len(subs1) != 2 {
+		t.Fatalf("subtasks: %#v", subs1)
+	}
+	b0 := subs1[0].(map[string]any)
+	t0 := subs1[1].(map[string]any)
+	if b0["dispatched"] != true || t0["dispatched"] != false {
+		t.Fatalf("first dispatch wave: %#v / %#v", b0, t0)
+	}
+
+	whPayload := []byte(fmt.Sprintf(`{"task_id":%q,"convoy_id":%q,"subtask_id":"b1"}`, tid, cid))
+	mustWebhook(t, cli, base, whSecret, whPayload, http.StatusOK, nil)
+
+	mustJSON(t, cli, http.MethodPost, base+"/api/convoys/"+cid+"/dispatch-ready", []byte(`{"estimated_cost":1}`), http.StatusOK, nil)
+	var c2 map[string]any
+	mustJSON(t, cli, http.MethodGet, base+"/api/convoys/"+cid, nil, http.StatusOK, &c2)
+	subs2, _ := c2["subtasks"].([]any)
+	b1 := subs2[0].(map[string]any)
+	t1 := subs2[1].(map[string]any)
+	if b1["completed"] != true {
+		t.Fatalf("builder should be completed after webhook: %#v", b1)
+	}
+	if t1["dispatched"] != true || t1["completed"] != false {
+		t.Fatalf("tester after second dispatch: %#v", t1)
+	}
+}
+
+func mustWebhook(t *testing.T, cli *http.Client, base, secret string, body []byte, wantStatus int, out any) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, base+"/api/webhooks/agent-completion", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	req.Header.Set("X-Arms-Signature", hex.EncodeToString(mac.Sum(nil)))
+	res, err := cli.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(res.Body)
+	if res.StatusCode != wantStatus {
+		t.Fatalf("webhook: status %d body %s", res.StatusCode, string(b))
+	}
+	if out != nil && len(b) > 0 {
+		if err := json.Unmarshal(b, out); err != nil {
+			t.Fatalf("webhook decode: %v body %s", err, string(b))
+		}
+	}
 }
 
 func mustJSON(t *testing.T, cli *http.Client, method, url string, body []byte, wantStatus int, out any) {

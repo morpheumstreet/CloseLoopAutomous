@@ -10,4 +10,7 @@ type IdentityGenerator interface {
 	NewConvoyID() domain.ConvoyID
 	NewSubtaskID() domain.SubtaskID
 	NewCostEventID() string
+	NewResearchCycleID() string
+	NewExecutionAgentID() string
+	NewMailboxMessageID() string
 }

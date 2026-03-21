@@ -63,6 +63,7 @@ func main() {
 		Tasks:    tasks,
 		Products: products,
 		Gateway:  gateway,
+		Budget:   staticBudget,
 		Clock:    clock,
 		IDs:      ids,
 	}
@@ -112,10 +113,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := convoySvc.DispatchReady(ctx, conv.ID); err != nil {
+	if err := convoySvc.DispatchReady(ctx, conv.ID, 0); err != nil {
 		log.Fatal(err)
 	}
-	if err := convoySvc.DispatchReady(ctx, conv.ID); err != nil {
+	if err := convoySvc.CompleteSubtask(ctx, conv.ID, bID, t.ID); err != nil {
+		log.Fatal(err)
+	}
+	if err := convoySvc.DispatchReady(ctx, conv.ID, 0); err != nil {
 		log.Fatal(err)
 	}
 	cfinal, _ := convoys.ByID(ctx, conv.ID)
@@ -124,5 +128,7 @@ func main() {
 	t2, _ := tasks.ByID(ctx, t.ID)
 	fmt.Printf("product stage=%s\n", p2.Stage.String())
 	fmt.Printf("task status=%s ref=%s\n", t2.Status.String(), t2.ExternalRef)
-	fmt.Printf("convoy subtasks dispatched=%v %v\n", cfinal.Subtasks[0].Dispatched, cfinal.Subtasks[1].Dispatched)
+	fmt.Printf("convoy subtasks dispatched=%v/%v completed=%v/%v\n",
+		cfinal.Subtasks[0].Dispatched, cfinal.Subtasks[1].Dispatched,
+		cfinal.Subtasks[0].Completed, cfinal.Subtasks[1].Completed)
 }

@@ -16,6 +16,7 @@ type Subtask struct {
 	DependsOn    []SubtaskID
 	AgentRole    string // e.g. builder, tester, reviewer
 	Dispatched   bool
+	Completed    bool // set after agent reports done (webhook); gates dependents for dispatch
 	ExternalRef  string
 	LastCheckpoint string
 }

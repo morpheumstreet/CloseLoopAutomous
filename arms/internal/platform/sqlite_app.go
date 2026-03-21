@@ -41,6 +41,9 @@ func OpenApp(ctx context.Context, cfg config.Config) (*App, error) {
 	ws := sqlite.NewWorkspaceStore(db)
 	maybePool := sqlite.NewMaybePoolStore(db)
 	swipes := sqlite.NewSwipeHistoryStore(db)
+	researchCycles := sqlite.NewResearchCycleStore(db)
+	execAgents := sqlite.NewExecutionAgentStore(db)
+	agentMail := sqlite.NewAgentMailboxStore(db)
 	agentHealth := sqlite.NewAgentHealthStore(db)
 	hub := livefeed.NewHub()
 	outbox := sqlite.NewOutboxStore(db)
@@ -48,7 +51,7 @@ func OpenApp(ctx context.Context, cfg config.Config) (*App, error) {
 	go livefeed.RunOutboxRelay(relayCtx, outbox, hub, 200*time.Millisecond)
 	taskPub := &livefeed.OutboxPublisher{Outbox: outbox}
 	liveTX := sqlite.NewLiveActivityTX(db)
-	h, gwCleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, agentHealth, hub, taskPub, liveTX)
+	h, gwCleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, agentMail, agentHealth, hub, taskPub, liveTX)
 	cleanup := func() {
 		relayCancel()
 		gwCleanup()

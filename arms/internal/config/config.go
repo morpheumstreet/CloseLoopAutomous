@@ -41,6 +41,7 @@ import (
 //   - ARMS_MERGE_METHOD — github merge method: merge | squash | rebase (default merge)
 //   - ARMS_MERGE_LEASE_SEC — lease TTL for merge-queue ship (default 90)
 //   - ARMS_MERGE_LEASE_OWNER — optional instance id for queue leases (default hostname)
+//   - ARMS_REDIS_ADDR — optional Redis address (e.g. localhost:6379) for cmd/arms-worker Asynq consumer; HTTP server ignores it today
 type Config struct {
 	ListenAddr                  string
 	MCAPIToken                  string
@@ -72,6 +73,7 @@ type Config struct {
 	MergeMethod                 string
 	MergeLeaseSec               int
 	MergeLeaseOwner             string
+	RedisAddr                   string
 }
 
 // ACLUser is one Basic-auth principal for coarse HTTP ACL (admin vs read-only).
@@ -152,6 +154,7 @@ func LoadFromEnv() Config {
 		}
 	}
 	mergeOwner := strings.TrimSpace(os.Getenv("ARMS_MERGE_LEASE_OWNER"))
+	redisAddr := strings.TrimSpace(os.Getenv("ARMS_REDIS_ADDR"))
 	return Config{
 		ListenAddr:                  addr,
 		MCAPIToken:                  strings.TrimSpace(token),
@@ -183,6 +186,7 @@ func LoadFromEnv() Config {
 		MergeMethod:                 mergeMethod,
 		MergeLeaseSec:               mergeLease,
 		MergeLeaseOwner:             mergeOwner,
+		RedisAddr:                   redisAddr,
 	}
 }
 

@@ -111,6 +111,32 @@ type dispatchReq struct {
 	EstimatedCost float64 `json:"estimated_cost"`
 }
 
+type registerAgentReq struct {
+	DisplayName string `json:"display_name"`
+	ProductID   string `json:"product_id,omitempty"`
+	Source      string `json:"source,omitempty"`
+	ExternalRef string `json:"external_ref,omitempty"`
+}
+
+func (r *registerAgentReq) validate() error {
+	if strings.TrimSpace(r.DisplayName) == "" {
+		return fmt.Errorf("display_name is required")
+	}
+	return nil
+}
+
+type postAgentMailReq struct {
+	Body   string `json:"body"`
+	TaskID string `json:"task_id,omitempty"`
+}
+
+func (r *postAgentMailReq) validate() error {
+	if strings.TrimSpace(r.Body) == "" {
+		return fmt.Errorf("body is required")
+	}
+	return nil
+}
+
 // patchTaskReq supports partial updates: planning JSON, Kanban move, or status_reason alone.
 type patchTaskReq struct {
 	Status             *string `json:"status,omitempty"`
@@ -255,12 +281,19 @@ func (r *allocatePortReq) validate() error {
 }
 
 type agentCompletionReq struct {
-	TaskID string `json:"task_id"`
+	TaskID    string `json:"task_id"`
+	ConvoyID  string `json:"convoy_id,omitempty"`
+	SubtaskID string `json:"subtask_id,omitempty"`
 }
 
 func (r *agentCompletionReq) validate() error {
 	if strings.TrimSpace(r.TaskID) == "" {
 		return fmt.Errorf("task_id is required")
+	}
+	c := strings.TrimSpace(r.ConvoyID)
+	s := strings.TrimSpace(r.SubtaskID)
+	if (c != "" || s != "") && (c == "" || s == "") {
+		return fmt.Errorf("convoy_id and subtask_id must both be set when reporting convoy subtask completion")
 	}
 	return nil
 }

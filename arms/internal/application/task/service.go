@@ -128,10 +128,42 @@ func (s *Service) SetKanbanStatus(ctx context.Context, taskID domain.TaskID, to 
 	if to == domain.StatusAssigned && !t.PlanApproved {
 		return fmt.Errorf("%w: assign requires approved plan", domain.ErrInvalidTransition)
 	}
+	from := t.Status
 	t.Status = to
 	t.StatusReason = strings.TrimSpace(statusReason)
 	t.UpdatedAt = s.Clock.Now()
-	return s.Tasks.Save(ctx, t)
+	if err := s.Tasks.Save(ctx, t); err != nil {
+		return err
+	}
+	_ = s.tryAutoOpenPRIfApplicable(ctx, taskID, from, to)
+	return nil
+}
+
+// tryAutoOpenPRIfApplicable opens a PR when entering review under full_auto if head branch is known and no PR yet.
+func (s *Service) tryAutoOpenPRIfApplicable(ctx context.Context, taskID domain.TaskID, from, to domain.TaskStatus) error {
+	if to != domain.StatusReview || (from != domain.StatusTesting && from != domain.StatusInProgress) {
+		return nil
+	}
+	t, err := s.Tasks.ByID(ctx, taskID)
+	if err != nil {
+		return nil
+	}
+	p, err := s.Products.ByID(ctx, t.ProductID)
+	if err != nil {
+		return nil
+	}
+	if p.AutomationTier != domain.TierFullAuto {
+		return nil
+	}
+	if strings.TrimSpace(t.PullRequestURL) != "" {
+		return nil
+	}
+	head := strings.TrimSpace(t.PullRequestHeadBranch)
+	if head == "" {
+		return nil
+	}
+	_, _, _ = s.OpenPullRequest(ctx, taskID, head, "", "")
+	return nil
 }
 
 // UpdatePlanningArtifacts stores opaque planning JSON (e.g. clarifying Q&A) while in planning.

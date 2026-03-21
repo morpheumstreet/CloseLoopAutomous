@@ -59,6 +59,22 @@ func TestWebhookAgentCompletion(t *testing.T) {
 	}
 }
 
+func TestWebhookAgentCompletionConvoyFieldsPartialRejected(t *testing.T) {
+	cfg := httpapi.Config{WebhookSecret: "testsecret"}
+	app := platform.NewInMemoryApp(cfg)
+	body := []byte(`{"task_id":"task-parent","convoy_id":"c1"}`)
+	mac := hmac.New(sha256.New, []byte(cfg.WebhookSecret))
+	_, _ = mac.Write(body)
+	sig := hex.EncodeToString(mac.Sum(nil))
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/agent-completion", bytes.NewReader(body))
+	req.Header.Set("X-Arms-Signature", sig)
+	rec := httptest.NewRecorder()
+	httpapi.NewRouter(cfg, app.Handlers).ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestWebhookInvalidHMAC(t *testing.T) {
 	cfg := httpapi.Config{WebhookSecret: "s"}
 	app := platform.NewInMemoryApp(cfg)

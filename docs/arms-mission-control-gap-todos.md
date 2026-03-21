@@ -2,7 +2,9 @@
 
 Use this as the master backlog for bringing `arms` toward Autensa/Mission Control backend parity. Check items off as you implement them.
 
-_Re-checked against the `arms/` tree (2026-03): baseline vs “full MC” is called out so unchecked rows are not misread as “missing entirely” when a slim table or route already exists._
+**What this is:** a single checklist + design locks for **backend parity** with [mission-control](https://github.com/crshdn/mission-control): API routes, SQLite schema, OpenClaw wiring, safety/cost/workspace, realtime, and convoy/autopilot gaps. It is **not** a fishtank/UI spec; pair with [api-ref.md](api-ref.md) for HTTP details and [recomendeddesign.md](recomendeddesign.md) for the broader architecture sketch.
+
+_Re-checked against the `arms/` tree (2026-03-22): baseline vs “full MC” is called out so unchecked rows are not misread as “missing entirely” when a slim table or route already exists._
 
 _See also [recomendeddesign.md](recomendeddesign.md) (earlier “GoAutensa” outline); this file is the live parity checklist + locked target architecture._
 
@@ -72,14 +74,14 @@ Rough calendar: **~4 weeks core (A–C)** + **polish (D)**; optional future belo
 
 | Phase | Time (guide) | Deliverables |
 |-------|----------------|--------------|
-| **A — Production safety** | 1–2 wk | **Done (when `AgentHealth` wired):** MC convoy singular aliases (`/api/convoy/...`); **`GET /api/products/{id}/stalled-tasks`**; completion webhook + **`POST /api/tasks/{id}/complete`** → **`task_agent_health`** **`completed`** + **`task_completed`** outbox in **one SQLite transaction** (`LiveActivityTX.CompleteTaskWithEvent`); task **`sandbox_path` / `worktree_path`** (008–009). **Manual stall nudge:** **`POST /api/tasks/{id}/stall-nudge`** (optional JSON `{ "note" }`) → `status_reason` prefix + optional agent-health `stall_nudges[]` + SSE **`task_stall_nudged`**. **Still open:** automated **merge/conflict** policy (git), **auto**-nudge/reassign, same-Tx outbox for remaining paths (e.g. PR opened), multi-instance **DB leases** for completion / product gates. |
-| **B — Full autonomy** | ~2 wk | Convoy: full DAG + **mailbox** + deeper **agent health** (retries, convoy-aware dispatch). **GitHub PR** — **done:** REST (`go-github`) + optional **`gh` CLI** backend + env tokens. **TBD:** auto post-execution chain. Deeper **ideas** scoring/metadata; **`swipe_history`** table + list API (**done**); separate **`preference_models`** table / learning loop still **TBD**. |
+| **A — Production safety** | 1–2 wk | **Done (when `AgentHealth` wired):** MC convoy singular aliases (`/api/convoy/...`); **`GET /api/products/{id}/stalled-tasks`**; completion webhook + **`POST /api/tasks/{id}/complete`** → **`task_agent_health`** **`completed`** + **`task_completed`** outbox in **one SQLite transaction** (`LiveActivityTX.CompleteTaskWithEvent`); task **`sandbox_path` / `worktree_path`** (008–009). **Manual stall nudge:** **`POST /api/tasks/{id}/stall-nudge`** (optional JSON `{ "note" }`) → `status_reason` prefix + optional agent-health `stall_nudges[]` + SSE **`task_stall_nudged`**. **Merge queue ship:** FIFO head + **lease** + optional **real merge** (`ARMS_MERGE_BACKEND=github|local`), conflict/failure persisted on row; **`merge_ship_completed`** SSE. **Still open:** autopilot-driven merge policy (tiers), **auto**-nudge/reassign, same-Tx outbox for paths that do external I/O after DB write (e.g. PR opened), multi-instance **DB leases** for task completion / product gates beyond merge queue. |
+| **B — Full autonomy** | ~2 wk | Convoy: **done (baseline DAG semantics):** `convoy_subtasks.completed` (migration 011); dependents **`dispatch-ready`** only after upstream **completed**; webhook **`convoy_id` + `subtask_id`** + parent **`task_id`**; SSE **`convoy_subtask_dispatched`** / **`convoy_subtask_completed`**. **TBD:** full graph algorithms package, **mailbox**, deeper **agent health** (retries, convoy-aware dispatch). **GitHub PR** — **done:** REST (`go-github`) + optional **`gh` CLI** backend + env tokens. **TBD:** auto post-execution chain. Deeper **ideas** scoring/metadata; **`swipe_history`** table + list API (**done**); separate **`preference_models`** table / learning loop still **TBD**. |
 | **C — Polish** | ~1 wk | **Agent** domain + listing/health APIs (replace stub). **`product_schedules`** on **Asynq** (Redis). Optional **Ed25519** on OpenClaw `connect`. **Maybe pool** resurface / batch re-eval. ~~**HTTP aliases** `/api/convoy/*`~~ (done in A). |
 | **D — Optional future** | — | Embedded UI (e.g. HTMX/templ), Postgres adapter, pure-Go agent runtime (replace OpenClaw). |
 
 **Done in-tree (former “first commits”):** Compose **redis** service (optional; not yet consumed by app code), transactional **outbox** + **`livefeed`** SSE hub, **workspace** ports + merge queue + optional git worktrees, **GitHub** / **`gh`** behind `PullRequestPublisher`, **swipe_history**, **cost_caps** + composite budget, **task agent health** APIs.
 
-**Next vertical slices (suggested):** (1) **Asynq + Redis** + `product_schedules` / cron (add `ARMS_REDIS_ADDR` or equivalent to `internal/config` and worker entrypoint), (2) **preference_models** or ML pipeline consuming **`swipe_history`**, (3) **agent** aggregate + mailbox, (4) convoy **DAG + `agent_mailbox`**, (5) optional **`/api/openclaw/*`** HTTP proxy if the UI needs it.
+**Next vertical slices (suggested):** (1) **Enqueue autopilot ticks** from `cmd/arms` when **`ARMS_REDIS_ADDR`** set + worker handler calling **`TickScheduled`**, (2) **preference_models** or ML pipeline consuming **`swipe_history`**, (3) convoy **graph algorithms + richer mailbox** (cross-agent), (4) optional **`/api/openclaw/*`** HTTP proxy if the UI needs it, (5) keep **OpenAPI** in sync with new routes.
 
 ---
 
@@ -106,7 +108,7 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for beha
 - [x] Bearer auth middleware (`MC_API_TOKEN`-style) — env `MC_API_TOKEN`; omitted = dev open access
 - [x] SSE auth pattern (e.g. token query param) for live streams — `GET /api/live/events` uses `?token=` when auth enabled (`SSEQueryToken`)
 - [x] Request validation layer (DTOs + schema validation) — JSON DTOs + `validate()` helpers (no external schema lib yet)
-- [x] Agent-completion webhook receiver — `POST /api/webhooks/agent-completion`
+- [x] Agent-completion webhook receiver — `POST /api/webhooks/agent-completion` (parent task: `{ "task_id" }`; convoy subtask: add **`convoy_id`** + **`subtask_id`** with same **`task_id`** = parent)
 - [x] HMAC verification for webhooks (`WEBHOOK_SECRET`-style) — header `X-Arms-Signature` = hex(HMAC-SHA256(secret, raw body))
 - [x] Route catalog documenting public API — `GET /api/docs/routes`
 - [x] Human-readable API reference — `docs/api-ref.md`
@@ -126,7 +128,7 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for beha
 ### Extend toward full Mission Control data model
 
 - [x] `products`: baseline MC-style profile — `repo_url`, `repo_branch`, `description`, `program_document`, `settings_json`, `icon_url` (migration `003_product_mc_metadata.sql`); HTTP `POST /api/products` optional fields + `PATCH /api/products/{id}`; profile text/repo hints passed through `domain.Product` into research/ideation ports (stubs use `ai.ProductContextSnippet`; real LLM adapters TBD)
-- [ ] `research_cycles` / research history (not only `Product.ResearchSummary`)
+- [x] `research_cycles` — migration **`012_research_cycles.sql`**; append on successful **`RunResearch`**; **`GET /api/products/{id}/research-cycles`** (full MC “research graph” / analytics still TBD)
 - [ ] `ideas`: full scoring/metadata as in MC (today: title, description, impact, feasibility, reasoning, swipe outcome)
 - [x] `swipe_history` — migration `007_swipe_history.sql`; SQLite + memory stores; autopilot **Append** on swipe / promote-maybe; **`GET /api/products/{id}/swipe-history`** (`?limit=`)
 - [ ] `preference_models` (per-product learning) — **no** dedicated table yet; today: `preference_model_json` on product + **`swipe_history`** audit trail
@@ -135,9 +137,9 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for beha
 - [ ] `product_feedback`
 - [x] `cost_events`: **agent**, **model** columns (`006_phase_a_safety.sql`); append + breakdown API
 - [x] `cost_caps` (daily + monthly + cumulative per product) + **`budget.Composite`** at dispatch
-- [ ] `product_schedules` (research/ideation cadence, cron)
+- [ ] `product_schedules` — table **`product_schedules`** created in migration 012 (placeholder); **no** Asynq/cron wiring from HTTP yet (**`cmd/arms-worker`** + **`ARMS_REDIS_ADDR`** stub consumer only)
 - [ ] `operations_log` / audit trail
-- [ ] `convoys` / `convoy_subtasks`: richer DAG metadata, mail, per-subtask status (today: matches slim `domain.Convoy` + HTTP create + dispatch-ready wave)
+- [ ] `convoys` / `convoy_subtasks`: richer DAG metadata, mail (today: slim `domain.Convoy` + HTTP create + **`dispatch-ready`** waves + per-subtask **`dispatched` / `completed` / `external_ref`**; migration **`011_convoy_subtask_completed.sql`**)
 - [x] `task_agent_health` (per-task; not full MC agent registry) — migration `009_agent_health_repo_path.sql` (table + `products.repo_clone_path` + `workspace_merge_queue.completed_at`)
 - [x] `tasks`: **`sandbox_path`**, **`worktree_path`** — migration `008_task_workspace_paths.sql` (metadata for isolation / worktrees; returned on task JSON; **`PATCH /api/tasks/{id}`** may set them)
 - [x] Checkpoint **history** + restore — `checkpoint_history` + APIs (latest still in `checkpoints`); MC **`work_checkpoints`** naming parity optional
@@ -182,18 +184,21 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for beha
 - [x] Preference stub: each swipe appends an event to `preference_model_json` (JSON array); when **`SwipeHistoryRepository`** is wired, the same flow **also** persists **`swipe_history`** rows. Not full MC **`preference_models`** / ML.
 - [x] Maybe pool (baseline): `maybe_pool` table + `MaybePoolRepository`; swipe `maybe` adds; `GET /api/products/{id}/maybe-pool`; `POST /api/ideas/{id}/promote-maybe` → yes + pool remove + stage advance when in swipe. Resurface / batch re-eval: still open (§2).
 - [x] Automation tiers: `automation_tier` enum `supervised` | `semi_auto` | `full_auto` on product + create/patch/JSON (behavioral differences beyond storage/TBD for dispatch).
-- [ ] Post-execution chain: test → review → **automatic** PR on transitions (today: explicit **`POST /api/tasks/{id}/pull-request`** only).
+- [ ] Post-execution chain: test → review → **automatic** PR on transitions — **partial:** **`full_auto`** + Kanban **`testing`/`in_progress` → `review`** opens PR when **`pull_request_head_branch`** set and URL empty (best-effort); explicit **`POST /api/tasks/{id}/pull-request`** still primary
 - [x] GitHub **`PullRequestPublisher`** — `adapters/shipping` GitHub client (go-github v66) + noop; **`POST /api/tasks/{id}/pull-request`** (`head_branch`, optional `title`/`body`); **`ARMS_GITHUB_TOKEN`** / **`GITHUB_TOKEN`**; SSE **`pull_request_opened`** when URL returned.
 
 ---
 
 ## 6. Convoy mode
 
-- [x] Persist baseline convoy + subtasks — SQLite + memory `ConvoyRepository` (graph + dispatch flags/refs); not yet “full MC” metadata
-- [ ] Persist full convoy DAG metadata as in MC (beyond current domain)
+- [x] Persist baseline convoy + subtasks — SQLite + memory `ConvoyRepository` (deps + **dispatch** + **completion** + refs); not yet “full MC” metadata
+- [x] **Dependency gating** — a subtask is eligible for **`dispatch-ready`** only when all **`depends_on`** ids are **`completed`** (not merely dispatched); avoids firing downstream agents before upstream work is done
+- [x] **Subtask completion webhook** — `POST /api/webhooks/agent-completion` with **`task_id`** (parent) + **`convoy_id`** + **`subtask_id`** marks one subtask completed without completing the parent task
+- [x] **SSE** — **`convoy_subtask_dispatched`**, **`convoy_subtask_completed`** (same hub/outbox path as other live events when wired)
+- [ ] Persist full convoy DAG metadata as in MC (beyond current domain + completion flags)
 - [ ] Convoy mail / inter-subtask messaging (port + persistence)
 - [ ] Integrate convoy dispatch with agent health and retries
-- [x] Minimal HTTP — `POST /api/convoys`, `GET /api/convoys/{id}`, `GET /api/products/{id}/convoys`, `POST /api/convoys/{id}/dispatch-ready`; `convoy.Service.Get`, `ListByProduct`; `ports.ConvoyRepository.ListByProduct`
+- [x] Minimal HTTP — `POST /api/convoys`, `GET /api/convoys/{id}`, `GET /api/products/{id}/convoys`, `POST /api/convoys/{id}/dispatch-ready`; `convoy.Service.Get`, `ListByProduct`; `ports.ConvoyRepository.ListByProduct`; subtask **`completed`** in JSON
 - [ ] API parity with MC convoy — mail, graph, richer status (**naming / singular aliases:** done — §1)
 - [ ] Richer subtask model (agent config, retries, nudges) if required for parity
 
@@ -201,11 +206,12 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for beha
 
 ## 7. Safety, cost, workspace
 
-- [x] Budget at dispatch — **`budget.Composite`**: per-product **`cost_caps`** (daily / monthly / cumulative) + default cumulative when **no** caps row via **`ARMS_BUDGET_DEFAULT_CAP`** (default 100; set `0` to disable default ceiling)
+- [x] Budget at **single-task** dispatch — **`budget.Composite`**: per-product **`cost_caps`** (daily / monthly / cumulative) + default cumulative when **no** caps row via **`ARMS_BUDGET_DEFAULT_CAP`** (default 100; set `0` to disable default ceiling)
+- [x] Budget at **convoy** `dispatch-ready` — **`POST …/dispatch-ready`** body **`estimated_cost`** (optional, default 0); **`budget.Composite`** per subtask dispatched in the wave
 - [x] Cost breakdown — **`GET /api/products/{id}/costs/breakdown`** (`from` / `to` query RFC3339); aggregates `by_agent`, `by_model`
 - [x] Workspace isolation: **optional git worktree** (`internal/adapters/workspace` + gated HTTP); paths still **metadata** on tasks + ports; operator must set **`repo_clone_path`** on product
 - [x] Port allocation **4200–4299** — `workspace_ports` + **`POST /api/workspace/ports`** / **`DELETE /api/workspace/ports/{port}`**
-- [x] Serialized merge queue **ordering** — only FIFO **head** per product can `POST .../merge-queue/complete` (`domain.ErrNotMergeQueueHead` → 409); not git merge / conflict detection
+- [x] Serialized merge queue **ordering** — only FIFO **head** per product can `POST .../merge-queue/complete` (`domain.ErrNotMergeQueueHead` → 409); optional **real merge** via **`ARMS_MERGE_BACKEND=github|local`** (lease, conflict/failure left on pending row + **`merge_ship_completed`** SSE; **`skip_ship=1`** advances without forge)
 - [x] Product-scoped **in-process** lock on task **Complete** (`task.ProductGate`); multi-instance would need DB leases later
 - [x] Checkpoint **history** + **restore** — `checkpoint_history` + **`GET /api/tasks/{id}/checkpoints`**, **`POST .../checkpoint/restore`** (`history_id`); latest row still in `checkpoints`
 - [x] Agent health — **task-scoped** heartbeats + SQLite/memory + HTTP (not full MC **agent** aggregate yet)
@@ -220,7 +226,7 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for beha
 - [x] Domain outbox baseline — table `event_outbox` (`005_event_outbox.sql`); `internal/application/livefeed` (**Hub**, **OutboxPublisher**, **RunOutboxRelay**); SQLite path relays to SSE; in-memory path publishes directly to hub
 - [x] Same-transaction outbox for **SQLite** dispatch, checkpoint, cost, and **task completion** + agent-health **`completed`** (`LiveActivityTX`); other paths (e.g. PR opened) still best-effort after external I/O
 - [x] SSE transport — `GET /api/live/events` (hello + ping + activity `data:` lines; `SSEQueryToken` when auth on)
-- [x] SSE activity (partial) — **`task_dispatched`**, **`cost_recorded`**, **`checkpoint_saved`**, **`task_completed`** (SQLite same-tx + relay; in-memory hub on complete), **`task_stall_nudged`** (operator **`POST .../stall-nudge`**); **`?product_id=`** filter; broader catalog + agent/type filters still TBD
+- [x] SSE activity (partial) — **`task_dispatched`**, **`cost_recorded`**, **`checkpoint_saved`**, **`task_completed`** (SQLite same-tx + relay; in-memory hub on complete), **`task_stall_nudged`** (operator **`POST .../stall-nudge`**), **`pull_request_opened`**, **`merge_ship_completed`**, **`convoy_subtask_dispatched`**, **`convoy_subtask_completed`**; **`?product_id=`** filter; broader catalog + agent/type filters still TBD
 - [ ] Operator chat: queued notes + direct messages (ports + storage)
 - [ ] Per-task chat history
 - [ ] Learner / knowledge base port + storage + injection into future dispatches
@@ -229,10 +235,11 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for beha
 
 ## 9. Agents domain
 
-- [ ] Agent aggregate + repository
-- [ ] Registration and discovery/import flows (gateway-backed)
-- [ ] Agent APIs: mailbox, full listing, configuration (beyond task heartbeats)
-- [x] Health-style data — **task agent heartbeats** + per-task / per-product agent-health routes + `GET /api/agents` lists recent rows (`stub: true` only if handlers built with **`AgentHealth == nil`** — normal SQLite/memory apps wire it)
+- [x] **Execution agent** registry + repository — **`execution_agents`** table; **`POST /api/agents`**, **`GET /api/agents`** includes **`registry[]`**
+- [x] **Mailbox** (stub) — **`agent_mailbox`** + **`GET/POST /api/agents/{id}/mailbox`**
+- [ ] Registration and discovery/import flows (gateway-backed auto-provision)
+- [ ] Full MC parity: agent config, gateway import, aggregate health across tasks
+- [x] Health-style data — **task agent heartbeats** + per-task / per-product agent-health routes + `GET /api/agents` **`items`** (`stub: true` only if **`AgentHealth == nil`**)
 
 ---
 

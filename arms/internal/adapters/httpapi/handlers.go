@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	workgit "github.com/closeloopautomous/arms/internal/adapters/workspace"
+	agentapp "github.com/closeloopautomous/arms/internal/application/agent"
 	"github.com/closeloopautomous/arms/internal/application/autopilot"
 	"github.com/closeloopautomous/arms/internal/application/convoy"
 	"github.com/closeloopautomous/arms/internal/application/cost"
@@ -40,6 +41,7 @@ type Handlers struct {
 	Autopilot *autopilot.Service
 	Task      *task.Service
 	Convoy    *convoy.Service
+	Agent     *agentapp.Service
 	Cost           *cost.Service
 	Live           ports.ActivityStream // SSE subscribers; required for live routes
 	WorkspacePorts ports.WorkspacePortRepository
@@ -656,8 +658,13 @@ func (h *Handlers) getConvoy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) dispatchConvoy(w http.ResponseWriter, r *http.Request) {
+	var req dispatchReq
+	if err := decodeJSON(r, &req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
 	id := domain.ConvoyID(r.PathValue("id"))
-	if err := h.Convoy.DispatchReady(r.Context(), id); err != nil {
+	if err := h.Convoy.DispatchReady(r.Context(), id, req.EstimatedCost); err != nil {
 		if mapDomainErr(w, err) {
 			return
 		}
@@ -693,8 +700,31 @@ func (h *Handlers) recordCost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) listAgents(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{}
+	if h.Agent != nil {
+		reg, err := h.Agent.List(r.Context(), 200)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		regJSON := make([]any, 0, len(reg))
+		for i := range reg {
+			a := &reg[i]
+			row := map[string]any{
+				"id": a.ID, "display_name": a.DisplayName, "source": a.Source,
+				"external_ref": a.ExternalRef, "created_at": a.CreatedAt.UTC().Format(time.RFC3339Nano),
+			}
+			if a.ProductID != "" {
+				row["product_id"] = string(a.ProductID)
+			}
+			regJSON = append(regJSON, row)
+		}
+		out["registry"] = regJSON
+	}
 	if h.AgentHealth == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"items": []any{}, "stub": true})
+		out["items"] = []any{}
+		out["stub"] = true
+		writeJSON(w, http.StatusOK, out)
 		return
 	}
 	list, err := h.AgentHealth.ListRecent(r.Context(), 200)
@@ -706,7 +736,125 @@ func (h *Handlers) listAgents(w http.ResponseWriter, r *http.Request) {
 	for i := range list {
 		items = append(items, agentHealthToJSON(&list[i], h.agentHeartbeatStale(list[i].LastHeartbeatAt)))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	out["items"] = items
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *Handlers) registerExecutionAgent(w http.ResponseWriter, r *http.Request) {
+	if h.Agent == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "agent registry not available")
+		return
+	}
+	var req registerAgentReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if err := req.validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	pid := domain.ProductID(strings.TrimSpace(req.ProductID))
+	a, err := h.Agent.Register(r.Context(), req.DisplayName, pid, req.Source, req.ExternalRef)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, executionAgentToJSON(a))
+}
+
+func (h *Handlers) listAgentMailbox(w http.ResponseWriter, r *http.Request) {
+	if h.Agent == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "agent mailbox not available")
+		return
+	}
+	aid := strings.TrimSpace(r.PathValue("id"))
+	limit := 50
+	if q := strings.TrimSpace(r.URL.Query().Get("limit")); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, "validation", "limit must be a positive integer")
+			return
+		}
+		limit = n
+	}
+	msgs, err := h.Agent.ListMailbox(r.Context(), aid, limit)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	out := make([]any, 0, len(msgs))
+	for i := range msgs {
+		m := &msgs[i]
+		row := map[string]any{
+			"id": m.ID, "agent_id": m.AgentID, "body": m.Body,
+			"created_at": m.CreatedAt.UTC().Format(time.RFC3339Nano),
+		}
+		if m.TaskID != "" {
+			row["task_id"] = string(m.TaskID)
+		}
+		out = append(out, row)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"messages": out})
+}
+
+func (h *Handlers) postAgentMailbox(w http.ResponseWriter, r *http.Request) {
+	if h.Agent == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "agent mailbox not available")
+		return
+	}
+	var req postAgentMailReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if err := req.validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	aid := strings.TrimSpace(r.PathValue("id"))
+	if err := h.Agent.PostMailbox(r.Context(), aid, domain.TaskID(strings.TrimSpace(req.TaskID)), req.Body); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "queued"})
+}
+
+func (h *Handlers) listProductResearchCycles(w http.ResponseWriter, r *http.Request) {
+	pid := domain.ProductID(r.PathValue("id"))
+	limit := 50
+	if q := strings.TrimSpace(r.URL.Query().Get("limit")); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, "validation", "limit must be a positive integer")
+			return
+		}
+		limit = n
+	}
+	list, err := h.Autopilot.ListResearchHistory(r.Context(), pid, limit)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	out := make([]any, 0, len(list))
+	for i := range list {
+		c := &list[i]
+		out = append(out, map[string]any{
+			"id": c.ID, "product_id": string(c.ProductID),
+			"summary_snapshot": c.SummarySnapshot,
+			"created_at":       c.CreatedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"research_cycles": out})
 }
 
 func (h *Handlers) getTaskAgentHealth(w http.ResponseWriter, r *http.Request) {
@@ -1323,6 +1471,21 @@ func (h *Handlers) agentCompletionWebhook(w http.ResponseWriter, r *http.Request
 	}
 	ctx := r.Context()
 	tid := domain.TaskID(req.TaskID)
+	if strings.TrimSpace(req.ConvoyID) != "" && strings.TrimSpace(req.SubtaskID) != "" {
+		if h.Convoy == nil {
+			writeError(w, http.StatusServiceUnavailable, "not_configured", "convoy service not available")
+			return
+		}
+		if err := h.Convoy.CompleteSubtask(ctx, domain.ConvoyID(strings.TrimSpace(req.ConvoyID)), domain.SubtaskID(strings.TrimSpace(req.SubtaskID)), tid); err != nil {
+			if mapDomainErr(w, err) {
+				return
+			}
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
 	if err := h.Task.CompleteWithLiveActivity(ctx, tid, "agent_completion_webhook"); err != nil {
 		if mapDomainErr(w, err) {
 			return
@@ -1525,6 +1688,7 @@ func convoyToJSON(c *domain.Convoy) map[string]any {
 			"agent_role":      c.Subtasks[i].AgentRole,
 			"depends_on":      deps,
 			"dispatched":      c.Subtasks[i].Dispatched,
+			"completed":       c.Subtasks[i].Completed,
 			"external_ref":    c.Subtasks[i].ExternalRef,
 			"last_checkpoint": c.Subtasks[i].LastCheckpoint,
 		}
@@ -1536,4 +1700,15 @@ func convoyToJSON(c *domain.Convoy) map[string]any {
 		"subtasks":   subs,
 		"created_at": c.CreatedAt.Format(time.RFC3339Nano),
 	}
+}
+
+func executionAgentToJSON(a *domain.ExecutionAgent) map[string]any {
+	m := map[string]any{
+		"id": a.ID, "display_name": a.DisplayName, "source": a.Source,
+		"external_ref": a.ExternalRef, "created_at": a.CreatedAt.UTC().Format(time.RFC3339Nano),
+	}
+	if a.ProductID != "" {
+		m["product_id"] = string(a.ProductID)
+	}
+	return m
 }

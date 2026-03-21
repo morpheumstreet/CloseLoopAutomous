@@ -54,3 +54,6 @@ func (s *stubIDs) NewTaskID() domain.TaskID       { s.n++; return domain.TaskID(
 func (s *stubIDs) NewConvoyID() domain.ConvoyID   { s.n++; return domain.ConvoyID("c") }
 func (s *stubIDs) NewSubtaskID() domain.SubtaskID { s.n++; return domain.SubtaskID("st") }
 func (s *stubIDs) NewCostEventID() string         { s.n++; return "ce" }
+func (s *stubIDs) NewResearchCycleID() string     { s.n++; return "rc" }
+func (s *stubIDs) NewExecutionAgentID() string    { s.n++; return "ag" }
+func (s *stubIDs) NewMailboxMessageID() string    { s.n++; return "mb" }

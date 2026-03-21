@@ -54,6 +54,7 @@ Common `code` values from domain mapping include `not_found`, `invalid_transitio
 | GET | `/api/products/{id}/ideas` | — | `{ "ideas": [ … ] }` |
 | GET | `/api/products/{id}/maybe-pool` | — | `{ "ideas": [ … ] }` for ideas swiped `maybe`. |
 | GET | `/api/products/{id}/swipe-history` | — | Query: optional `limit` (default 100, max 500). `{ "swipes": [ { id, idea_id, product_id, decision, created_at } ] }`, newest first (audit log; complements `preference_model_json`). |
+| GET | `/api/products/{id}/research-cycles` | — | Query: optional `limit` (default 50, max 500). `{ "research_cycles": [ { id, product_id, summary_snapshot, created_at } ] }` — append-only history when each **`POST …/research`** succeeds (SQLite/memory with persistence). |
 | GET | `/api/products/{id}/merge-queue` | — | Query: optional `limit` (default 50, max 500). Pending rows FIFO by `id`; entries may include **`lease_owner`**, **`lease_expires_at`**, **`merge_ship_state`**, **`merged_sha`**, **`merge_error`**, **`conflict_files`** after ship attempts. **503** if merge queue is not configured. |
 | POST | `/api/ideas/{id}/swipe` | `decision`: `pass` \| `maybe` \| `yes` \| `now` | Appends to `preference_model_json`; `maybe` enqueues pool. |
 | POST | `/api/ideas/{id}/promote-maybe` | — | Requires prior `maybe` swipe; sets decision to yes and removes from pool. |
@@ -69,7 +70,7 @@ Task JSON includes at least: `id`, `product_id`, `idea_id`, `spec`, `status` (st
 | GET | `/api/products/{id}/tasks` | — | `{ "tasks": [ … ] }`, newest first. 404 if product missing. |
 | POST | `/api/tasks` | `idea_id`, `spec` | Creates task in **`planning`** (idea must be approved). |
 | GET | `/api/tasks/{id}` | — | |
-| PATCH | `/api/tasks/{id}` | Any of: `status`, `status_reason`, `clarifications_json` | At least one field required. Clarifications only while in `planning`. |
+| PATCH | `/api/tasks/{id}` | Any of: `status`, `status_reason`, `clarifications_json` | At least one field required. Clarifications only while in `planning`. **Full-auto:** when product `automation_tier` is **`full_auto`**, moving **`testing` → `review`** or **`in_progress` → `review`** may **auto-open a PR** if the task already has **`pull_request_head_branch`** set and **`pull_request_url`** is still empty (best-effort; uses same shipper as `POST …/pull-request`). |
 | POST | `/api/tasks/{id}/plan/approve` | Optional `{ "spec" }` | `planning` → `inbox`, `plan_approved: true`. |
 | POST | `/api/tasks/{id}/plan/reject` | Optional `{ "status_reason" }` | Back to **`planning`** from **`inbox`** or **`assigned`** (blocked after dispatch / `external_ref` set). |
 | POST | `/api/tasks/{id}/dispatch` | `estimated_cost` (number) | Requires **`assigned`** + approved plan. Enforces **`budget.Composite`** (caps + default cumulative). **402** + **`budget_exceeded`** if `estimated_cost` would exceed allowed spend. |
@@ -95,7 +96,7 @@ Task JSON includes at least: `id`, `product_id`, `idea_id`, `spec`, `status` (st
 | GET | `/api/products/{id}/convoys` | — | `{ "convoys": [ … ] }` |
 | POST | `/api/convoys` | `parent_task_id`, `product_id`, `subtasks[]` with `agent_role`, optional `id`, `depends_on` | |
 | GET | `/api/convoys/{id}` | — | |
-| POST | `/api/convoys/{id}/dispatch-ready` | — | Dispatches one ready wave of subtasks. |
+| POST | `/api/convoys/{id}/dispatch-ready` | JSON **`{ "estimated_cost": <number> }`** (optional; empty body = **0**) | Dispatches one ready wave of subtasks. Each subtask about to be sent is checked with **`budget.Composite`** using **`estimated_cost`** (same semantics as **`POST …/dispatch`** per dispatch). **402** **`budget_exceeded`** when caps would be exceeded. |
 
 ---
 
@@ -124,7 +125,8 @@ Task JSON includes at least: `id`, `product_id`, `idea_id`, `spec`, `status` (st
 | POST | `/api/webhooks/agent-completion` | **HMAC**, not Bearer |
 
 - Header: **`X-Arms-Signature`** = lowercase hex **HMAC-SHA256**(`WEBHOOK_SECRET`, raw request body).
-- Body: `{ "task_id": "<id>" }` (JSON).
+- Body (parent task completion): `{ "task_id": "<id>" }`.
+- Body (convoy subtask, without completing parent): `{ "task_id": "<parent_task_id>", "convoy_id": "<id>", "subtask_id": "<id>" }` — both **`convoy_id`** and **`subtask_id`** are required together; marks the subtask **completed** for DAG gating.
 - Requires `WEBHOOK_SECRET` set; otherwise **503**.
 
 ---
@@ -135,15 +137,23 @@ Task JSON includes at least: `id`, `product_id`, `idea_id`, `spec`, `status` (st
 |--------|------|--------|
 | GET | `/api/live/events` | `text/event-stream`. When **`MC_API_TOKEN`** is set: **`Authorization: Bearer <token>`** or **`?token=<same value>`** (native **`EventSource`** only supports the query form). When only **`ARMS_ACL`** is configured: **`?basic=<base64(user:password)>`**. Optional **`product_id=`** — only forward `data:` lines whose JSON `product_id` matches (or lacks `product_id`). |
 
-After the initial `hello` object, each **`data:`** line is JSON with at least `type`, `ts` (RFC3339 nano), and optional `product_id`, `task_id`, `data` (object). Types include **`task_dispatched`**, **`cost_recorded`**, **`checkpoint_saved`**, **`task_completed`** (`data.source` e.g. `api_task_complete` / `agent_completion_webhook`), **`task_stall_nudged`**, **`pull_request_opened`** (includes `data.html_url`, optional `data.number`), **`merge_ship_completed`** (`data.state`, `data.merged_sha`, `data.error`, `data.conflict_files`, `data.merge_queue_row_id`). With **`DATABASE_PATH`** set, events are persisted in **`event_outbox`** and relayed to subscribers (restart-safe delivery of pending rows). In-memory mode broadcasts directly from the hub.
+After the initial `hello` object, each **`data:`** line is JSON with at least `type`, `ts` (RFC3339 nano), and optional `product_id`, `task_id`, `data` (object). Types include **`task_dispatched`**, **`cost_recorded`**, **`checkpoint_saved`**, **`task_completed`** (`data.source` e.g. `api_task_complete` / `agent_completion_webhook`), **`task_stall_nudged`**, **`pull_request_opened`** (includes `data.html_url`, optional `data.number`), **`merge_ship_completed`** (`data.state`, `data.merged_sha`, `data.error`, `data.conflict_files`, `data.merge_queue_row_id`), **`convoy_subtask_dispatched`** (`data.convoy_id`, `data.subtask_id`, `data.agent_role`, `data.external_ref`), **`convoy_subtask_completed`**. With **`DATABASE_PATH`** set, events are persisted in **`event_outbox`** and relayed to subscribers (restart-safe delivery of pending rows). In-memory mode broadcasts directly from the hub.
 
 ---
+
+## Agents (registry + task heartbeats)
+
+| Method | Path | Body | Notes |
+|--------|------|------|--------|
+| GET | `/api/agents` | — | **`registry`**: registered execution agents (`id`, `display_name`, optional `product_id`, `source`, `external_ref`, `created_at`). **`items`**: recent **task agent health** rows (same shape as before). **`stub: true`** on **`items`** only when agent health is not wired. |
+| POST | `/api/agents` | `display_name`; optional `product_id`, `source`, `external_ref` | Creates a logical agent slot (**201**). |
+| GET | `/api/agents/{id}/mailbox` | — | Query: optional `limit`. **`{ "messages": [ { id, agent_id, body, optional task_id, created_at } ] }`**. |
+| POST | `/api/agents/{id}/mailbox` | `body`; optional `task_id` | Append-only mailbox message (**201**). |
 
 ## Stubs / placeholders
 
 These exist for route parity; behavior is minimal or not implemented for production use:
 
-- `GET /api/agents` — empty list.
 - `POST /api/openclaw/proxy` — not implemented (use WebSocket gateway env from server config).
 - `GET /api/settings` — empty or minimal JSON.
 
@@ -165,6 +175,7 @@ Loaded via `internal/config` (`LoadFromEnv`). Commonly:
 | `ARMS_ACCESS_LOG` | `0` / `false` / `off` / `no` → disable per-request access log lines. |
 | `ARMS_CORS_ALLOW_ORIGIN` | Optional. When set (e.g. `http://localhost:3000`), arms sends `Access-Control-Allow-Origin` for browser UIs such as Fishtank. |
 | `ARMS_AUTOPILOT_TICK_SEC` | Positive integer → in-process cadence tick interval (seconds) for scheduled research/ideation; unset or invalid → disabled. |
+| `ARMS_REDIS_ADDR` | Optional Redis address (e.g. `localhost:6379`) for **`cmd/arms-worker`** (Asynq consumer stub). The HTTP **`cmd/arms`** server does not enqueue jobs yet. |
 | `ARMS_BUDGET_DEFAULT_CAP` | Default **cumulative** spend ceiling per product when **no** `cost_caps` row exists (default **100**). Set **`0`** to disable that default (no cumulative check until caps are configured). |
 | `ARMS_GITHUB_TOKEN` | PAT for PR creation when using the REST backend. If empty, **`GITHUB_TOKEN`** is used. |
 | `ARMS_GITHUB_API_URL` | Optional GitHub Enterprise API base for REST backend (e.g. `https://github.mycompany.com/api/v3/`). |
@@ -188,5 +199,7 @@ docker run --rm -p 8080:8080 -e DATABASE_PATH=/data/arms.db -v arms-db:/data arm
 Or use **`arms/docker-compose.yml`** (named volume + defaults). Set `MC_API_TOKEN` / `WEBHOOK_SECRET` / OpenClaw variables in `environment` or an env file as needed.
 
 For production deployment (TLS, secrets, webhooks behind proxies), see **[arms-production-hardening.md](arms-production-hardening.md)**.
+
+**Worker binary:** from `arms/`, `go build -o arms-worker ./cmd/arms-worker` — run with **`ARMS_REDIS_ADDR`** set; consumes Asynq queue **`arms`** (handler **`arms:ping`** is a no-op placeholder for future autopilot offload).
 
 **Integration tests (module `arms/`):** `go test -tags=integration ./internal/integration/...` — end-to-end HTTP against an in-memory app and stub agent gateway. CI runs the same via `.github/workflows/arms.yml` when `arms/` changes.

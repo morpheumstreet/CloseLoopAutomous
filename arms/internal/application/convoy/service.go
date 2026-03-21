@@ -3,6 +3,7 @@ package convoy
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/closeloopautomous/arms/internal/domain"
 	"github.com/closeloopautomous/arms/internal/ports"
@@ -14,8 +15,10 @@ type Service struct {
 	Tasks    ports.TaskRepository
 	Products ports.ProductRepository
 	Gateway  ports.AgentGateway
+	Budget   ports.BudgetPolicy // optional; when set, enforces caps per subtask dispatch (like task.Dispatch)
 	Clock    ports.Clock
 	IDs      ports.IdentityGenerator
+	Events   ports.LiveActivityPublisher // optional: SSE / outbox on dispatch + subtask completion
 }
 
 // Create attaches subtasks to a parent task (roles + dependencies only; no dispatch).
@@ -54,8 +57,9 @@ func (s *Service) ListByProduct(ctx context.Context, productID domain.ProductID)
 	return s.Convoys.ListByProduct(ctx, productID)
 }
 
-// DispatchReady dispatches subtasks whose dependencies are already dispatched (one wave).
-func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID) error {
+// DispatchReady dispatches subtasks whose dependencies are already completed (one wave).
+// estimatedCostPerSubtask is passed to Budget.AssertWithinBudget once per subtask about to be dispatched (parity with POST /api/tasks/{id}/dispatch).
+func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID, estimatedCostPerSubtask float64) error {
 	c, err := s.Convoys.ByID(ctx, convoyID)
 	if err != nil {
 		return err
@@ -64,10 +68,10 @@ func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID) e
 	if err != nil {
 		return err
 	}
-	dispatched := make(map[domain.SubtaskID]bool, len(c.Subtasks))
+	completed := make(map[domain.SubtaskID]bool, len(c.Subtasks))
 	for i := range c.Subtasks {
-		if c.Subtasks[i].Dispatched {
-			dispatched[c.Subtasks[i].ID] = true
+		if c.Subtasks[i].Completed {
+			completed[c.Subtasks[i].ID] = true
 		}
 	}
 	for i := range c.Subtasks {
@@ -77,7 +81,7 @@ func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID) e
 		}
 		ready := true
 		for _, dep := range st.DependsOn {
-			if !dispatched[dep] {
+			if !completed[dep] {
 				ready = false
 				break
 			}
@@ -85,13 +89,78 @@ func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID) e
 		if !ready {
 			continue
 		}
+		if s.Budget != nil {
+			if err := s.Budget.AssertWithinBudget(ctx, c.ProductID, estimatedCostPerSubtask); err != nil {
+				return err
+			}
+		}
 		ref, err := s.Gateway.DispatchSubtask(ctx, parent.ID, *st)
 		if err != nil {
 			return fmt.Errorf("%w: subtask %s: %v", domain.ErrGateway, st.ID, err)
 		}
 		st.Dispatched = true
 		st.ExternalRef = ref
-		dispatched[st.ID] = true
+		if s.Events != nil {
+			_ = s.Events.Publish(ctx, ports.LiveActivityEvent{
+				Type:      "convoy_subtask_dispatched",
+				Ts:        s.Clock.Now().UTC().Format(time.RFC3339Nano),
+				ProductID: string(c.ProductID),
+				TaskID:    string(parent.ID),
+				Data: map[string]any{
+					"convoy_id":    string(c.ID),
+					"subtask_id":   string(st.ID),
+					"agent_role":   st.AgentRole,
+					"external_ref": ref,
+				},
+			})
+		}
 	}
 	return s.Convoys.Save(ctx, c)
+}
+
+// CompleteSubtask marks a dispatched subtask finished (typically via agent-completion webhook).
+// parentTaskID must match the convoy's parent task. Idempotent if already completed.
+func (s *Service) CompleteSubtask(ctx context.Context, convoyID domain.ConvoyID, subtaskID domain.SubtaskID, parentTaskID domain.TaskID) error {
+	c, err := s.Convoys.ByID(ctx, convoyID)
+	if err != nil {
+		return err
+	}
+	if c.ParentID != parentTaskID {
+		return fmt.Errorf("%w: task_id does not match convoy parent", domain.ErrInvalidInput)
+	}
+	idx := -1
+	for i := range c.Subtasks {
+		if c.Subtasks[i].ID == subtaskID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return domain.ErrNotFound
+	}
+	st := &c.Subtasks[idx]
+	if !st.Dispatched {
+		return fmt.Errorf("%w: subtask not dispatched yet", domain.ErrInvalidTransition)
+	}
+	if st.Completed {
+		return nil
+	}
+	st.Completed = true
+	if err := s.Convoys.Save(ctx, c); err != nil {
+		return err
+	}
+	if s.Events != nil {
+		_ = s.Events.Publish(ctx, ports.LiveActivityEvent{
+			Type:      "convoy_subtask_completed",
+			Ts:        s.Clock.Now().UTC().Format(time.RFC3339Nano),
+			ProductID: string(c.ProductID),
+			TaskID:    string(parentTaskID),
+			Data: map[string]any{
+				"convoy_id":  string(c.ID),
+				"subtask_id": string(subtaskID),
+				"agent_role": st.AgentRole,
+			},
+		})
+	}
+	return nil
 }

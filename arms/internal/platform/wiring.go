@@ -11,6 +11,7 @@ import (
 	"github.com/closeloopautomous/arms/internal/adapters/memory"
 	"github.com/closeloopautomous/arms/internal/adapters/shipping"
 	timeadapter "github.com/closeloopautomous/arms/internal/adapters/time"
+	"github.com/closeloopautomous/arms/internal/application/agent"
 	"github.com/closeloopautomous/arms/internal/application/autopilot"
 	"github.com/closeloopautomous/arms/internal/application/convoy"
 	"github.com/closeloopautomous/arms/internal/application/cost"
@@ -62,9 +63,12 @@ func NewInMemoryApp(cfg config.Config) *App {
 	ws := memory.NewWorkspaceStore()
 	maybePool := memory.NewMaybePoolStore()
 	swipes := memory.NewSwipeHistoryStore()
+	researchCycles := memory.NewResearchCycleStore()
+	execAgents := memory.NewExecutionAgentStore()
+	agentMail := memory.NewAgentMailboxStore()
 	hub := livefeed.NewHub()
 	agentHealth := memory.NewAgentHealthStore()
-	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, agentHealth, hub, hub, nil)
+	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, agentMail, agentHealth, hub, hub, nil)
 	return &App{Handlers: h, Products: products, Ideas: ideas, Tasks: tasks, db: nil, cleanup: cleanup}
 }
 
@@ -81,6 +85,9 @@ func buildHandlers(
 	mergeQueue ports.WorkspaceMergeQueueRepository,
 	maybePool ports.MaybePoolRepository,
 	swipes ports.SwipeHistoryRepository,
+	researchCycles ports.ResearchCycleRepository,
+	execAgents ports.ExecutionAgentRegistry,
+	agentMail ports.AgentMailboxRepository,
 	agentHealth ports.AgentHealthRepository,
 	hub *livefeed.Hub,
 	taskEvents ports.LiveActivityPublisher,
@@ -105,14 +112,21 @@ func buildHandlers(
 
 	productSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	autoSvc := &autopilot.Service{
-		Products:   products,
-		Ideas:      ideas,
-		MaybePool:  maybePool,
-		Swipes:     swipes,
-		Research:   ai.ResearchStub{},
-		Ideation:   ai.IdeationStub{},
-		Clock:      clock,
-		Identities: ids,
+		Products:       products,
+		Ideas:          ideas,
+		MaybePool:      maybePool,
+		Swipes:         swipes,
+		ResearchCycles: researchCycles,
+		Research:       ai.ResearchStub{},
+		Ideation:       ai.IdeationStub{},
+		Clock:          clock,
+		Identities:     ids,
+	}
+	agentSvc := &agent.Service{
+		Registry: execAgents,
+		Mailbox:  agentMail,
+		Clock:    clock,
+		IDs:      ids,
 	}
 	ship := shipping.NewPullRequestPublisher(shipping.PublisherSettings{
 		PRBackend:  cfg.GitHubPRBackend,
@@ -141,8 +155,10 @@ func buildHandlers(
 		Tasks:    tasks,
 		Products: products,
 		Gateway:  agentGW,
+		Budget:   budgetPolicy,
 		Clock:    clock,
 		IDs:      ids,
+		Events:   taskEvents,
 	}
 	costSvc := &cost.Service{
 		Costs:  costs,
@@ -173,6 +189,7 @@ func buildHandlers(
 		Autopilot:      autoSvc,
 		Task:           taskSvc,
 		Convoy:         convoySvc,
+		Agent:          agentSvc,
 		Cost:           costSvc,
 		Live:           hub,
 		WorkspacePorts: workspacePorts,

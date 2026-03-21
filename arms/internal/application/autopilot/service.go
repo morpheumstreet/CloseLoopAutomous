@@ -11,14 +11,15 @@ import (
 
 // Service runs research → ideation → swipe stages for a product.
 type Service struct {
-	Products   ports.ProductRepository
-	Ideas      ports.IdeaRepository
-	MaybePool  ports.MaybePoolRepository // optional; nil skips pool persistence
-	Swipes     ports.SwipeHistoryRepository // optional; nil skips persisted swipe log
-	Research   ports.ResearchPort
-	Ideation   ports.IdeationPort
-	Clock      ports.Clock
-	Identities ports.IdentityGenerator
+	Products       ports.ProductRepository
+	Ideas          ports.IdeaRepository
+	MaybePool      ports.MaybePoolRepository // optional; nil skips pool persistence
+	Swipes         ports.SwipeHistoryRepository // optional; nil skips persisted swipe log
+	ResearchCycles ports.ResearchCycleRepository // optional; append-only history on successful research
+	Research       ports.ResearchPort
+	Ideation       ports.IdeationPort
+	Clock          ports.Clock
+	Identities     ports.IdentityGenerator
 }
 
 func (s *Service) RunResearch(ctx context.Context, productID domain.ProductID) error {
@@ -36,7 +37,13 @@ func (s *Service) RunResearch(ctx context.Context, productID domain.ProductID) e
 	p.ResearchSummary = summary
 	p.Stage = domain.StageIdeation
 	p.UpdatedAt = s.Clock.Now()
-	return s.Products.Save(ctx, p)
+	if err := s.Products.Save(ctx, p); err != nil {
+		return err
+	}
+	if s.ResearchCycles != nil {
+		_ = s.ResearchCycles.Append(ctx, s.Identities.NewResearchCycleID(), productID, summary, s.Clock.Now())
+	}
+	return nil
 }
 
 // RunIdeation expects product at ideation stage; uses stored research summary from the product.
@@ -135,6 +142,17 @@ func (s *Service) ListSwipeHistory(ctx context.Context, productID domain.Product
 		return nil, nil
 	}
 	return s.Swipes.ListByProduct(ctx, productID, limit)
+}
+
+// ListResearchHistory returns newest-first research cycle snapshots (404 if product missing).
+func (s *Service) ListResearchHistory(ctx context.Context, productID domain.ProductID, limit int) ([]domain.ResearchCycle, error) {
+	if _, err := s.Products.ByID(ctx, productID); err != nil {
+		return nil, err
+	}
+	if s.ResearchCycles == nil {
+		return []domain.ResearchCycle{}, nil
+	}
+	return s.ResearchCycles.ListByProduct(ctx, productID, limit)
 }
 
 // PromoteMaybe turns a "maybe" swipe into an approval (yes) and advances the product when still in swipe.

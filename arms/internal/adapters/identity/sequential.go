@@ -31,4 +31,10 @@ func (s *Sequential) NewSubtaskID() domain.SubtaskID {
 }
 func (s *Sequential) NewCostEventID() string { return s.next("cost") }
 
+func (s *Sequential) NewResearchCycleID() string { return s.next("rc") }
+
+func (s *Sequential) NewExecutionAgentID() string { return s.next("agent") }
+
+func (s *Sequential) NewMailboxMessageID() string { return s.next("mail") }
+
 var _ ports.IdentityGenerator = (*Sequential)(nil)
