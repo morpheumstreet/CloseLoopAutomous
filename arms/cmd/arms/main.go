@@ -31,10 +31,25 @@ func main() {
 	}
 	defer func() { _ = app.Close() }()
 
-	if cfg.AutopilotTickSec > 0 {
-		if cfg.RedisAddr != "" {
-			client := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr})
-			defer func() { _ = client.Close() }()
+	if cfg.RedisAddr != "" {
+		asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr})
+		defer func() { _ = asynqClient.Close() }()
+
+		reconcile := func(innerCtx context.Context) {
+			if innerCtx == nil {
+				innerCtx = context.Background()
+			}
+			c, cancel := context.WithTimeout(innerCtx, 2*time.Minute)
+			defer cancel()
+			err := jobs.ReconcileProductAutopilotTasks(c, asynqClient, app.Handlers.Autopilot, time.Now().UTC())
+			if err != nil {
+				slog.Debug("autopilot schedule reconcile", "err", err)
+			}
+		}
+		reconcile(context.Background())
+		app.Handlers.AutopilotScheduleReconcile = reconcile
+
+		if cfg.AutopilotTickSec > 0 {
 			go func() {
 				t := time.NewTicker(time.Duration(cfg.AutopilotTickSec) * time.Second)
 				defer t.Stop()
@@ -43,32 +58,29 @@ func main() {
 					case <-ctx.Done():
 						return
 					case <-t.C:
-						_, err := client.Enqueue(asynq.NewTask(jobs.TypeAutopilotTick, nil), asynq.Queue(jobs.QueueDefault))
-						if err != nil {
-							slog.Debug("autopilot enqueue", "err", err)
-						}
-					}
-				}
-			}()
-		} else {
-			go func() {
-				t := time.NewTicker(time.Duration(cfg.AutopilotTickSec) * time.Second)
-				defer t.Stop()
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					case <-t.C:
-						tickCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-						err := app.Handlers.Autopilot.TickScheduled(tickCtx, time.Now())
-						cancel()
-						if err != nil {
-							slog.Debug("autopilot tick", "err", err)
-						}
+						reconcile(context.Background())
 					}
 				}
 			}()
 		}
+	} else if cfg.AutopilotTickSec > 0 {
+		go func() {
+			t := time.NewTicker(time.Duration(cfg.AutopilotTickSec) * time.Second)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					tickCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+					err := app.Handlers.Autopilot.TickScheduled(tickCtx, time.Now())
+					cancel()
+					if err != nil {
+						slog.Debug("autopilot tick", "err", err)
+					}
+				}
+			}
+		}()
 	}
 
 	handler := httpapi.NewRouter(cfg, app.Handlers)
@@ -95,12 +107,13 @@ func main() {
 	case len(cfg.ACLUsers) > 0:
 		authMode = "HTTP Basic (ARMS_ACL)"
 	}
-	if cfg.AutopilotTickSec > 0 {
-		if cfg.RedisAddr != "" {
-			slog.Info("arms autopilot", "mode", "asynq_enqueue", "redis", cfg.RedisAddr, "tick_sec", cfg.AutopilotTickSec)
-		} else {
-			slog.Info("arms autopilot", "mode", "in_process", "tick_sec", cfg.AutopilotTickSec)
-		}
+	switch {
+	case cfg.RedisAddr != "" && cfg.AutopilotTickSec > 0:
+		slog.Info("arms autopilot", "mode", "asynq_per_product", "redis", cfg.RedisAddr, "reconcile_sec", cfg.AutopilotTickSec)
+	case cfg.RedisAddr != "":
+		slog.Info("arms autopilot", "mode", "asynq_per_product", "redis", cfg.RedisAddr, "reconcile_sec", 0, "hint", "set ARMS_AUTOPILOT_TICK_SEC>0 for periodic reconcile; startup + HTTP hooks still run")
+	case cfg.AutopilotTickSec > 0:
+		slog.Info("arms autopilot", "mode", "in_process", "tick_sec", cfg.AutopilotTickSec)
 	}
 	slog.Info("arms listening", "addr", cfg.ListenAddr, "auth", authMode)
 

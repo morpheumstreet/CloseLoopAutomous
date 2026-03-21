@@ -42,10 +42,10 @@ Outbound **callers** that POST to `arms` (for example an agent runtime notifying
 
 ## Background worker (`cmd/arms-worker`) and Redis
 
-When **`ARMS_REDIS_ADDR`** and **`ARMS_AUTOPILOT_TICK_SEC`** are set, **`cmd/arms`** enqueues **`arms:autopilot_tick`** on Asynq; **`cmd/arms-worker`** must run separately with the **same** **`DATABASE_PATH`** (and other DB-related env) so scheduled research/ideation sees the same SQLite file as the API.
+When **`ARMS_REDIS_ADDR`** is set, **`cmd/arms`** reconciles **per-product** Asynq tasks (**`arms:product_autopilot_tick`**) on startup and after product / product-schedule mutations; with **`ARMS_AUTOPILOT_TICK_SEC` > 0** it also re-scans on that interval. **`cmd/arms-worker`** must run separately with the **same** **`DATABASE_PATH`** (and other DB-related env) so each task runs **`TickProduct`** against the same SQLite file as the API. The legacy **`arms:autopilot_tick`** task type (full **`TickScheduled`** sweep) remains available for manual enqueue.
 
 - Treat Redis as **non-durable** scheduling metadata only; the source of truth remains SQLite (or in-memory when **`DATABASE_PATH`** is empty—in that case the worker is still useful for integration tests that point at a file DB).
-- Run **one worker process** per Redis + DB pair unless you intentionally scale out (duplicate ticks are wasteful but **`TickScheduled`** should be safe to repeat; verify product cadence fields idempotency for your workload).
+- Run **one worker process** per Redis + DB pair unless you intentionally scale out (duplicate tasks for the same product are suppressed via Asynq **Unique**; **`TickProduct`** / **`TickScheduled`** should be safe to repeat; verify cadence idempotency for your workload).
 - Lock down Redis (password, VPC) like any job broker; it carries task payloads metadata only for the current queue implementation.
 
 ---

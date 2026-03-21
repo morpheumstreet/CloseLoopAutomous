@@ -2,6 +2,7 @@
 package jobs
 
 const (
-	QueueDefault      = "arms"
-	TypeAutopilotTick = "arms:autopilot_tick"
+	QueueDefault               = "arms"
+	TypeAutopilotTick          = "arms:autopilot_tick"
+	TypeProductAutopilotTick   = "arms:product_autopilot_tick"
 )

@@ -112,6 +112,15 @@ SELECT COUNT(*) FROM workspace_merge_queue WHERE status = 'pending'`).Scan(&n)
 	return n, err
 }
 
+func (s *WorkspaceStore) CountPendingByProduct(ctx context.Context, productID domain.ProductID) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM workspace_merge_queue WHERE product_id = ? AND status = 'pending'`,
+		string(productID),
+	).Scan(&n)
+	return n, err
+}
+
 func (s *WorkspaceStore) Enqueue(ctx context.Context, productID domain.ProductID, taskID domain.TaskID, at time.Time) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -246,6 +255,72 @@ SELECT id FROM workspace_merge_queue WHERE task_id = ? AND status = 'pending'`,
 	)
 	if err != nil {
 		return err
+	}
+	return tx.Commit()
+}
+
+func (s *WorkspaceStore) CancelPendingForTask(ctx context.Context, taskID domain.TaskID) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var productID string
+	err = tx.QueryRowContext(ctx, `SELECT product_id FROM tasks WHERE id = ?`, string(taskID)).Scan(&productID)
+	if err == sql.ErrNoRows {
+		return domain.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	var myRowID int64
+	err = tx.QueryRowContext(ctx, `
+SELECT id FROM workspace_merge_queue WHERE task_id = ? AND status = 'pending'`,
+		string(taskID),
+	).Scan(&myRowID)
+	if err == sql.ErrNoRows {
+		return domain.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	var headID sql.NullInt64
+	err = tx.QueryRowContext(ctx, `
+SELECT id FROM workspace_merge_queue
+WHERE product_id = ? AND status = 'pending' ORDER BY id ASC LIMIT 1`,
+		productID,
+	).Scan(&headID)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if headID.Valid && headID.Int64 == myRowID {
+		var leaseOwner, leaseExp sql.NullString
+		if err := tx.QueryRowContext(ctx, `
+SELECT lease_owner, lease_expires_at FROM workspace_merge_queue WHERE id = ?`, myRowID,
+		).Scan(&leaseOwner, &leaseExp); err != nil {
+			return err
+		}
+		owner := strings.TrimSpace(leaseOwner.String)
+		if owner != "" && leaseExp.Valid && strings.TrimSpace(leaseExp.String) != "" {
+			exp, expErr := time.Parse(time.RFC3339Nano, leaseExp.String)
+			if expErr != nil {
+				exp, expErr = time.Parse(time.RFC3339, leaseExp.String)
+			}
+			if expErr == nil && exp.After(time.Now().UTC()) {
+				return domain.ErrMergeShipBusy
+			}
+		}
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM workspace_merge_queue WHERE id = ? AND status = 'pending'`, myRowID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return domain.ErrNotFound
 	}
 	return tx.Commit()
 }

@@ -287,59 +287,94 @@ func (s *Service) RecomputePreferenceModelFromSwipes(ctx context.Context, produc
 	return string(b), nil
 }
 
-// TickScheduled runs due research/ideation steps from cadence fields (best-effort; errors are skipped per product).
+// TickScheduled runs due research/ideation steps for every product (best-effort; errors are skipped per product).
 func (s *Service) TickScheduled(ctx context.Context, now time.Time) error {
 	list, err := s.Products.ListAll(ctx)
 	if err != nil {
 		return err
 	}
 	for i := range list {
-		p := &list[i]
-		if !s.scheduleAllowsAutopilot(ctx, p.ID) {
-			continue
-		}
-		if p.ResearchCadenceSec <= 0 || p.Stage != domain.StageResearch {
-			continue
-		}
-		if !cadenceDue(p.LastAutoResearchAt, now, p.ResearchCadenceSec) {
-			continue
-		}
-		if err := s.RunResearch(ctx, p.ID); err != nil {
-			continue
-		}
-		p2, err := s.Products.ByID(ctx, p.ID)
-		if err != nil {
-			continue
-		}
-		p2.LastAutoResearchAt = now
-		_ = s.Products.Save(ctx, p2)
+		_ = s.TickProduct(ctx, list[i].ID, now)
 	}
-	list, err = s.Products.ListAll(ctx)
+	return nil
+}
+
+// TickProduct runs at most one due research step and then at most one due ideation step for a single product.
+// Errors from RunResearch/RunIdeation are swallowed (same best-effort behavior as TickScheduled).
+func (s *Service) TickProduct(ctx context.Context, productID domain.ProductID, now time.Time) error {
+	p, err := s.Products.ByID(ctx, productID)
 	if err != nil {
 		return err
 	}
-	for i := range list {
-		p := &list[i]
-		if !s.scheduleAllowsAutopilot(ctx, p.ID) {
-			continue
+	if !s.scheduleAllowsAutopilot(ctx, productID) {
+		return nil
+	}
+	if p.ResearchCadenceSec > 0 && p.Stage == domain.StageResearch && cadenceDue(p.LastAutoResearchAt, now, p.ResearchCadenceSec) {
+		if err := s.RunResearch(ctx, productID); err == nil {
+			p2, err := s.Products.ByID(ctx, productID)
+			if err == nil {
+				p2.LastAutoResearchAt = now
+				_ = s.Products.Save(ctx, p2)
+			}
 		}
-		if p.IdeationCadenceSec <= 0 || p.Stage != domain.StageIdeation {
-			continue
+	}
+	p, err = s.Products.ByID(ctx, productID)
+	if err != nil {
+		return err
+	}
+	if !s.scheduleAllowsAutopilot(ctx, productID) {
+		return nil
+	}
+	if p.IdeationCadenceSec > 0 && p.Stage == domain.StageIdeation && cadenceDue(p.LastAutoIdeationAt, now, p.IdeationCadenceSec) {
+		if err := s.RunIdeation(ctx, productID); err == nil {
+			p2, err := s.Products.ByID(ctx, productID)
+			if err == nil {
+				p2.LastAutoIdeationAt = now
+				_ = s.Products.Save(ctx, p2)
+			}
 		}
-		if !cadenceDue(p.LastAutoIdeationAt, now, p.IdeationCadenceSec) {
-			continue
-		}
-		if err := s.RunIdeation(ctx, p.ID); err != nil {
-			continue
-		}
-		p2, err := s.Products.ByID(ctx, p.ID)
-		if err != nil {
-			continue
-		}
-		p2.LastAutoIdeationAt = now
-		_ = s.Products.Save(ctx, p2)
 	}
 	return nil
+}
+
+// NextAutopilotEnqueueDelay is used by the Asynq per-product chain: how long to wait before the next cadence check,
+// and whether this product should stay on the chain (research/ideation with positive cadence and schedule enabled).
+func (s *Service) NextAutopilotEnqueueDelay(ctx context.Context, productID domain.ProductID, now time.Time) (delay time.Duration, keep bool, err error) {
+	if !s.scheduleAllowsAutopilot(ctx, productID) {
+		return 0, false, nil
+	}
+	p, err := s.Products.ByID(ctx, productID)
+	if err != nil {
+		return 0, false, err
+	}
+	switch p.Stage {
+	case domain.StageResearch:
+		if p.ResearchCadenceSec <= 0 {
+			return 0, false, nil
+		}
+		return delayUntilCadenceFire(p.LastAutoResearchAt, now, p.ResearchCadenceSec), true, nil
+	case domain.StageIdeation:
+		if p.IdeationCadenceSec <= 0 {
+			return 0, false, nil
+		}
+		return delayUntilCadenceFire(p.LastAutoIdeationAt, now, p.IdeationCadenceSec), true, nil
+	default:
+		return 0, false, nil
+	}
+}
+
+func delayUntilCadenceFire(last time.Time, now time.Time, sec int) time.Duration {
+	if sec <= 0 {
+		return 0
+	}
+	if last.IsZero() {
+		return 0
+	}
+	due := last.Add(time.Duration(sec) * time.Second)
+	if !now.Before(due) {
+		return 0
+	}
+	return due.Sub(now)
 }
 
 func cadenceDue(last time.Time, now time.Time, sec int) bool {

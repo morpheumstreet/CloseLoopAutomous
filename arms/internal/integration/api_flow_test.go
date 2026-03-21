@@ -225,6 +225,20 @@ func TestHTTP_MergeQueueEnqueueAndList(t *testing.T) {
 
 	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/merge-queue", nil, http.StatusCreated, nil)
 
+	var pWithQ struct {
+		MergeQueuePending int64 `json:"merge_queue_pending"`
+		MergePolicy       struct {
+			MergeMethod string `json:"merge_method"`
+		} `json:"merge_policy"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid, nil, http.StatusOK, &pWithQ)
+	if pWithQ.MergeQueuePending != 1 {
+		t.Fatalf("product merge_queue_pending: want 1 got %d", pWithQ.MergeQueuePending)
+	}
+	if pWithQ.MergePolicy.MergeMethod != "merge" {
+		t.Fatalf("merge_policy.merge_method: %#v", pWithQ.MergePolicy)
+	}
+
 	var ws struct {
 		MergeQueuePending int64 `json:"merge_queue_pending"`
 	}
@@ -234,11 +248,21 @@ func TestHTTP_MergeQueueEnqueueAndList(t *testing.T) {
 	}
 
 	var q1 struct {
-		MergeQueue []map[string]any `json:"merge_queue"`
+		MergeQueue []struct {
+			TaskID        string `json:"task_id"`
+			QueuePosition int    `json:"queue_position"`
+			IsHead        bool   `json:"is_head"`
+		} `json:"merge_queue"`
+		PendingCount int64  `json:"pending_count"`
+		HeadTaskID   string `json:"head_task_id"`
 	}
 	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/merge-queue", nil, http.StatusOK, &q1)
-	if len(q1.MergeQueue) != 1 || q1.MergeQueue[0]["task_id"] != tid {
-		t.Fatalf("merge queue: %#v", q1.MergeQueue)
+	if q1.PendingCount != 1 || q1.HeadTaskID != tid || len(q1.MergeQueue) != 1 {
+		t.Fatalf("merge queue meta: %#v", q1)
+	}
+	r0 := q1.MergeQueue[0]
+	if r0.TaskID != tid || r0.QueuePosition != 1 || !r0.IsHead {
+		t.Fatalf("merge queue row: %#v", r0)
 	}
 
 	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/merge-queue", nil, http.StatusConflict, nil)
@@ -262,6 +286,100 @@ func TestHTTP_MergeQueueEnqueueAndList(t *testing.T) {
 
 	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/merge-queue/complete", nil, http.StatusNotFound, nil)
 	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/merge-queue", nil, http.StatusCreated, nil)
+}
+
+func TestHTTP_MergeQueueCancelRemovesPending(t *testing.T) {
+	cfg := config.Config{AccessLog: false}
+	app := platform.NewInMemoryApp(cfg)
+	t.Cleanup(func() { _ = app.Close() })
+	srv := httptest.NewServer(httpapi.NewRouter(cfg, app.Handlers))
+	t.Cleanup(srv.Close)
+	cli := srv.Client()
+	base := srv.URL
+
+	var prod map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/products", []byte(`{"name":"mq-cancel","workspace_id":"ws-mqc"}`), http.StatusCreated, &prod)
+	pid, _ := prod["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/research", nil, http.StatusOK, &prod)
+	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/ideation", nil, http.StatusOK, &prod)
+	var ideasWrap struct {
+		Ideas []map[string]any `json:"ideas"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/ideas", nil, http.StatusOK, &ideasWrap)
+	iid, _ := ideasWrap.Ideas[0]["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/ideas/"+iid+"/swipe", []byte(`{"decision":"yes"}`), http.StatusOK, nil)
+	var task map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks", []byte(fmt.Sprintf(`{"idea_id":%q,"spec":"c1"}`, iid)), http.StatusCreated, &task)
+	tid, _ := task["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/merge-queue", nil, http.StatusCreated, nil)
+	mustJSON(t, cli, http.MethodDelete, base+"/api/tasks/"+tid+"/merge-queue", nil, http.StatusOK, nil)
+	var q struct {
+		MergeQueue   []any `json:"merge_queue"`
+		PendingCount int64 `json:"pending_count"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/merge-queue", nil, http.StatusOK, &q)
+	if q.PendingCount != 0 || len(q.MergeQueue) != 0 {
+		t.Fatalf("after cancel want empty queue: %#v", q)
+	}
+}
+
+func TestHTTP_MergeQueueCancelNonHead(t *testing.T) {
+	cfg := config.Config{AccessLog: false}
+	app := platform.NewInMemoryApp(cfg)
+	t.Cleanup(func() { _ = app.Close() })
+	srv := httptest.NewServer(httpapi.NewRouter(cfg, app.Handlers))
+	t.Cleanup(srv.Close)
+	cli := srv.Client()
+	base := srv.URL
+
+	var prod map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/products", []byte(`{"name":"mq-two","workspace_id":"ws-mq2"}`), http.StatusCreated, &prod)
+	pid, _ := prod["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/research", nil, http.StatusOK, &prod)
+	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/ideation", nil, http.StatusOK, &prod)
+	var ideasWrap struct {
+		Ideas []map[string]any `json:"ideas"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/ideas", nil, http.StatusOK, &ideasWrap)
+	iid, _ := ideasWrap.Ideas[0]["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/ideas/"+iid+"/swipe", []byte(`{"decision":"yes"}`), http.StatusOK, nil)
+	var t1, t2 map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks", []byte(fmt.Sprintf(`{"idea_id":%q,"spec":"first"}`, iid)), http.StatusCreated, &t1)
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks", []byte(fmt.Sprintf(`{"idea_id":%q,"spec":"second"}`, iid)), http.StatusCreated, &t2)
+	tid1, _ := t1["id"].(string)
+	tid2, _ := t2["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid1+"/merge-queue", nil, http.StatusCreated, nil)
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid2+"/merge-queue", nil, http.StatusCreated, nil)
+	var q2 struct {
+		PendingCount int64  `json:"pending_count"`
+		HeadTaskID   string `json:"head_task_id"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/merge-queue", nil, http.StatusOK, &q2)
+	if q2.PendingCount != 2 || q2.HeadTaskID != tid1 {
+		t.Fatalf("want 2 pending head %q: %#v", tid1, q2)
+	}
+	mustJSON(t, cli, http.MethodDelete, base+"/api/tasks/"+tid2+"/merge-queue", nil, http.StatusOK, nil)
+	var q3 struct {
+		PendingCount int64  `json:"pending_count"`
+		HeadTaskID   string `json:"head_task_id"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/merge-queue", nil, http.StatusOK, &q3)
+	if q3.PendingCount != 1 || q3.HeadTaskID != tid1 {
+		t.Fatalf("after tail cancel: %#v", q3)
+	}
+}
+
+func TestHTTP_ProductMergePolicyJSONInvalid(t *testing.T) {
+	cfg := config.Config{AccessLog: false}
+	app := platform.NewInMemoryApp(cfg)
+	t.Cleanup(func() { _ = app.Close() })
+	srv := httptest.NewServer(httpapi.NewRouter(cfg, app.Handlers))
+	t.Cleanup(srv.Close)
+	cli := srv.Client()
+	base := srv.URL
+	mustJSON(t, cli, http.MethodPost, base+"/api/products",
+		[]byte(`{"name":"bad-mpj","workspace_id":"ws-bad","merge_policy_json":"{"}`),
+		http.StatusBadRequest, nil)
 }
 
 func TestHTTP_ConvoySubtaskWebhookAndSecondDispatch(t *testing.T) {

@@ -45,6 +45,7 @@ func NewRouter(cfg Config, h *Handlers) http.Handler {
 	sub.Handle("POST /api/tasks/{id}/plan/reject", http.HandlerFunc(h.rejectPlan))
 	sub.Handle("POST /api/tasks/{id}/dispatch", http.HandlerFunc(h.dispatchTask))
 	sub.Handle("POST /api/tasks/{id}/merge-queue", http.HandlerFunc(h.enqueueMergeQueue))
+	sub.Handle("DELETE /api/tasks/{id}/merge-queue", http.HandlerFunc(h.cancelMergeQueue))
 	sub.Handle("POST /api/tasks/{id}/merge-queue/complete", http.HandlerFunc(h.completeMergeQueue))
 	sub.Handle("POST /api/tasks/{id}/workspace/git-worktree", http.HandlerFunc(h.prepareGitWorktree))
 	sub.Handle("GET /api/tasks/{id}/agent-health", http.HandlerFunc(h.getTaskAgentHealth))

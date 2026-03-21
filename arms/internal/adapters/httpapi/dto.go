@@ -23,6 +23,7 @@ type createProductReq struct {
 	IdeationCadenceSec  *int   `json:"ideation_cadence_sec,omitempty"`
 	AutomationTier      string `json:"automation_tier,omitempty"`
 	AutoDispatchEnabled *bool  `json:"auto_dispatch_enabled,omitempty"`
+	MergePolicyJSON     string `json:"merge_policy_json,omitempty"`
 }
 
 func (r *createProductReq) validate() error {
@@ -56,6 +57,51 @@ type patchProductReq struct {
 	IdeationCadenceSec  *int    `json:"ideation_cadence_sec,omitempty"`
 	AutomationTier      *string `json:"automation_tier,omitempty"`
 	AutoDispatchEnabled *bool   `json:"auto_dispatch_enabled,omitempty"`
+}
+
+// patchProductAuditDetail lists which patch fields were present (for operations_log).
+func patchProductAuditDetail(r *patchProductReq) map[string]bool {
+	m := make(map[string]bool)
+	if r.Name != nil {
+		m["name"] = true
+	}
+	if r.RepoURL != nil {
+		m["repo_url"] = true
+	}
+	if r.RepoClonePath != nil {
+		m["repo_clone_path"] = true
+	}
+	if r.RepoBranch != nil {
+		m["repo_branch"] = true
+	}
+	if r.Description != nil {
+		m["description"] = true
+	}
+	if r.ProgramDocument != nil {
+		m["program_document"] = true
+	}
+	if r.SettingsJSON != nil {
+		m["settings_json"] = true
+	}
+	if r.IconURL != nil {
+		m["icon_url"] = true
+	}
+	if r.MergePolicyJSON != nil {
+		m["merge_policy_json"] = true
+	}
+	if r.ResearchCadenceSec != nil {
+		m["research_cadence_sec"] = true
+	}
+	if r.IdeationCadenceSec != nil {
+		m["ideation_cadence_sec"] = true
+	}
+	if r.AutomationTier != nil {
+		m["automation_tier"] = true
+	}
+	if r.AutoDispatchEnabled != nil {
+		m["auto_dispatch_enabled"] = true
+	}
+	return m
 }
 
 func (r *patchProductReq) validate() error {

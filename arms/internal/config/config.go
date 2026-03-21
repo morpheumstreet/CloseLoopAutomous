@@ -24,7 +24,7 @@ import (
 //   - ARMS_OPENCLAW_SESSION_KEY — sessionKey for chat.send dispatch
 //   - ARMS_LOG_JSON — "1" or "true" for JSON logs to stdout (default text)
 //   - ARMS_ACCESS_LOG — "0", "false", "off", "no" disables per-request access logging (default on)
-//   - ARMS_AUTOPILOT_TICK_SEC — interval for in-process autopilot cadence ticks; 0 or unset disables (default 0)
+//   - ARMS_AUTOPILOT_TICK_SEC — without Redis: interval for in-process global TickScheduled. With Redis: interval for re-scanning products and ensuring Asynq arms:product_autopilot_tick tasks exist (per-product chain + self-reschedule in arms-worker); 0 = reconcile only on API startup and after product/schedule mutations (default 0)
 //   - ARMS_BUDGET_DEFAULT_CAP — cumulative spend ceiling per product when no cost_caps row exists (default 100); set 0 to disable
 //   - ARMS_GITHUB_TOKEN — PAT with repo scope for POST /api/tasks/{id}/pull-request when using API backend (falls back to GITHUB_TOKEN if empty)
 //   - ARMS_GITHUB_API_URL — optional GitHub Enterprise API root for REST backend, e.g. https://github.example.com/api/v3/
@@ -41,7 +41,7 @@ import (
 //   - ARMS_MERGE_METHOD — github merge method: merge | squash | rebase (default merge)
 //   - ARMS_MERGE_LEASE_SEC — lease TTL for merge-queue ship (default 90)
 //   - ARMS_MERGE_LEASE_OWNER — optional instance id for queue leases (default hostname)
-//   - ARMS_REDIS_ADDR — optional Redis (e.g. localhost:6379). When set with ARMS_AUTOPILOT_TICK_SEC>0, cmd/arms enqueues arms:autopilot_tick on that interval; cmd/arms-worker consumes and runs autopilot.Service.TickScheduled. Without Redis, cmd/arms runs the tick in-process as before.
+//   - ARMS_REDIS_ADDR — optional Redis (e.g. localhost:6379). When set, cmd/arms enqueues per-product arms:product_autopilot_tick tasks (reconcile on startup + optional periodic per ARMS_AUTOPILOT_TICK_SEC + after product/schedule HTTP changes); cmd/arms-worker runs each task (TickProduct + next delayed enqueue). arms:autopilot_tick remains supported for manual / legacy full TickScheduled sweeps. Without Redis, cmd/arms runs TickScheduled in-process when ARMS_AUTOPILOT_TICK_SEC>0.
 type Config struct {
 	ListenAddr                  string
 	MCAPIToken                  string

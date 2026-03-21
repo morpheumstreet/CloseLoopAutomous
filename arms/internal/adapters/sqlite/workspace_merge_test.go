@@ -114,3 +114,97 @@ func TestWorkspaceMergeQueueReserveAndFinishShip(t *testing.T) {
 		t.Fatalf("want no pending after merge, got %d", len(list))
 	}
 }
+
+func TestWorkspaceMergeQueueCancelTail(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	ps := NewProductStore(db)
+	is := NewIdeaStore(db)
+	ts := NewTaskStore(db)
+	ws := NewWorkspaceStore(db)
+	now := time.Unix(1700000000, 0).UTC()
+	p := &domain.Product{
+		ID: domain.ProductID("prod-cancel"), Name: "n", Stage: domain.StageResearch,
+		WorkspaceID: "ws", UpdatedAt: now,
+	}
+	_ = ps.Save(ctx, p)
+	idea := &domain.Idea{
+		ID: domain.IdeaID("idea-c"), ProductID: p.ID, Title: "t", Description: "d",
+		Impact: 0.5, Feasibility: 0.5, Reasoning: "r", Decided: true, Decision: domain.DecisionYes, CreatedAt: now,
+	}
+	_ = is.Save(ctx, idea)
+	for _, id := range []domain.TaskID{"t-h", "t-t"} {
+		task := &domain.Task{
+			ID: id, ProductID: p.ID, IdeaID: idea.ID, Spec: "s",
+			Status: domain.StatusInProgress, PlanApproved: true, CreatedAt: now, UpdatedAt: now,
+		}
+		_ = ts.Save(ctx, task)
+	}
+	_ = ws.Enqueue(ctx, p.ID, "t-h", now)
+	_ = ws.Enqueue(ctx, p.ID, "t-t", now.Add(time.Second))
+	if err := ws.CancelPendingForTask(ctx, "t-t"); err != nil {
+		t.Fatal(err)
+	}
+	n, _ := ws.CountPendingByProduct(ctx, p.ID)
+	if n != 1 {
+		t.Fatalf("pending count want 1 got %d", n)
+	}
+	if err := ws.CancelPendingForTask(ctx, "t-h"); err != nil {
+		t.Fatal(err)
+	}
+	n2, _ := ws.CountPendingByProduct(ctx, p.ID)
+	if n2 != 0 {
+		t.Fatalf("after head cancel want 0 pending got %d", n2)
+	}
+}
+
+func TestWorkspaceMergeQueueCancelHeadBlockedByLease(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	ps := NewProductStore(db)
+	is := NewIdeaStore(db)
+	ts := NewTaskStore(db)
+	ws := NewWorkspaceStore(db)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	p := &domain.Product{
+		ID: domain.ProductID("prod-lease"), Name: "n", Stage: domain.StageResearch,
+		WorkspaceID: "ws", UpdatedAt: now,
+	}
+	_ = ps.Save(ctx, p)
+	idea := &domain.Idea{
+		ID: domain.IdeaID("idea-l"), ProductID: p.ID, Title: "t", Description: "d",
+		Impact: 0.5, Feasibility: 0.5, Reasoning: "r", Decided: true, Decision: domain.DecisionYes, CreatedAt: now,
+	}
+	_ = is.Save(ctx, idea)
+	task := &domain.Task{
+		ID: "t-lease", ProductID: p.ID, IdeaID: idea.ID, Spec: "s",
+		Status: domain.StatusInProgress, PlanApproved: true, CreatedAt: now, UpdatedAt: now,
+	}
+	_ = ts.Save(ctx, task)
+	_ = ws.Enqueue(ctx, p.ID, task.ID, now)
+	_, err = ws.ReserveHeadForShip(ctx, task.ID, "w1", time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ws.CancelPendingForTask(ctx, task.ID)
+	if err == nil {
+		t.Fatal("expected merge ship busy")
+	}
+	if !errors.Is(err, domain.ErrMergeShipBusy) {
+		t.Fatalf("got %v want ErrMergeShipBusy", err)
+	}
+}

@@ -120,10 +120,14 @@ type AgentHealthRepository interface {
 // WorkspaceMergeQueue tracks serialized merge operations per product (FIFO pending list).
 type WorkspaceMergeQueueRepository interface {
 	CountPending(ctx context.Context) (int64, error)
+	CountPendingByProduct(ctx context.Context, productID domain.ProductID) (int64, error)
 	Enqueue(ctx context.Context, productID domain.ProductID, taskID domain.TaskID, at time.Time) error
 	ListPendingByProduct(ctx context.Context, productID domain.ProductID, limit int) ([]domain.MergeQueueEntry, error)
 	// CompletePendingForTask marks the pending row for this task done (serialized lane advances).
 	CompletePendingForTask(ctx context.Context, taskID domain.TaskID) error
+	// CancelPendingForTask removes a pending row for this task. Fails with ErrMergeShipBusy if this task
+	// is the queue head and holds an active merge ship lease. Non-head entries are always removable.
+	CancelPendingForTask(ctx context.Context, taskID domain.TaskID) error
 
 	// ReserveHeadForShip verifies this task owns the FIFO head and sets a lease (multi-instance safety).
 	ReserveHeadForShip(ctx context.Context, taskID domain.TaskID, leaseOwner string, leaseExpires time.Time) (rowID int64, err error)

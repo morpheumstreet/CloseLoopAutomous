@@ -534,6 +534,18 @@ func (s *WorkspaceStore) CountPending(_ context.Context) (int64, error) {
 	return n, nil
 }
 
+func (s *WorkspaceStore) CountPendingByProduct(_ context.Context, productID domain.ProductID) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var n int64
+	for i := range s.mq {
+		if s.mq[i].productID == productID && s.mq[i].status == "pending" {
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (s *WorkspaceStore) Enqueue(_ context.Context, productID domain.ProductID, taskID domain.TaskID, at time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -621,6 +633,43 @@ func (s *WorkspaceStore) CompletePendingForTask(_ context.Context, taskID domain
 	s.mq[myIdx].completedAt = time.Now().UTC()
 	s.mq[myIdx].leaseOwner = ""
 	s.mq[myIdx].leaseExpiresAt = time.Time{}
+	return nil
+}
+
+func (s *WorkspaceStore) CancelPendingForTask(_ context.Context, taskID domain.TaskID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	myIdx := -1
+	for i := range s.mq {
+		if s.mq[i].taskID == taskID && s.mq[i].status == "pending" {
+			myIdx = i
+			break
+		}
+	}
+	if myIdx < 0 {
+		return domain.ErrNotFound
+	}
+	productID := s.mq[myIdx].productID
+	myID := s.mq[myIdx].id
+	var headID int64
+	var haveHead bool
+	for i := range s.mq {
+		row := &s.mq[i]
+		if row.productID == productID && row.status == "pending" {
+			if !haveHead || row.id < headID {
+				headID = row.id
+				haveHead = true
+			}
+		}
+	}
+	if haveHead && headID == myID {
+		row := &s.mq[myIdx]
+		now := time.Now().UTC()
+		if strings.TrimSpace(row.leaseOwner) != "" && !row.leaseExpiresAt.IsZero() && row.leaseExpiresAt.After(now) {
+			return domain.ErrMergeShipBusy
+		}
+	}
+	s.mq = append(s.mq[:myIdx], s.mq[myIdx+1:]...)
 	return nil
 }
 

@@ -50,6 +50,15 @@ type Handlers struct {
 	AgentHealth    ports.AgentHealthRepository // optional; nil keeps legacy agent listing stub
 	PrefModel      ports.PreferenceModelRepository
 	OperationsLog  ports.OperationsLogRepository
+	// AutopilotScheduleReconcile re-scans products and enqueues Asynq per-product ticks (set from cmd/arms when Redis is configured).
+	AutopilotScheduleReconcile func(context.Context)
+}
+
+func (h *Handlers) maybeReconcileAutopilotSchedule(ctx context.Context) {
+	if h.AutopilotScheduleReconcile == nil {
+		return
+	}
+	h.AutopilotScheduleReconcile(ctx)
 }
 
 func (h *Handlers) health(w http.ResponseWriter, _ *http.Request) {
@@ -84,13 +93,18 @@ func (h *Handlers) createProduct(w http.ResponseWriter, r *http.Request) {
 		IdeationCadenceSec:   req.IdeationCadenceSec,
 		AutomationTier:       req.AutomationTier,
 		AutoDispatchEnabled:  req.AutoDispatchEnabled,
+		MergePolicyJSON:      strings.TrimSpace(req.MergePolicyJSON),
 	})
 	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	detail, _ := json.Marshal(map[string]string{"name": p.Name})
 	h.logOperation(r.Context(), "http", "product.create", "product", string(p.ID), string(detail), p.ID)
+	h.maybeReconcileAutopilotSchedule(r.Context())
 	writeJSON(w, http.StatusCreated, productToJSON(p))
 }
 
@@ -154,7 +168,13 @@ func (h *Handlers) getProduct(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, productToJSON(p))
+	m := productToJSON(p)
+	if h.MergeQueue != nil {
+		if n, qerr := h.MergeQueue.CountPendingByProduct(r.Context(), id); qerr == nil {
+			m["merge_queue_pending"] = n
+		}
+	}
+	writeJSON(w, http.StatusOK, m)
 }
 
 func (h *Handlers) runResearch(w http.ResponseWriter, r *http.Request) {
@@ -1215,6 +1235,7 @@ func (h *Handlers) enqueueMergeQueue(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	h.logOperation(r.Context(), "http", "merge_queue.enqueue", "task", string(id), "{}", t.ProductID)
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "queued"})
 }
 
@@ -1224,7 +1245,8 @@ func (h *Handlers) completeMergeQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := domain.TaskID(r.PathValue("id"))
-	if _, err := h.Task.Tasks.ByID(r.Context(), id); err != nil {
+	t, err := h.Task.Tasks.ByID(r.Context(), id)
+	if err != nil {
 		if mapDomainErr(w, err) {
 			return
 		}
@@ -1233,7 +1255,6 @@ func (h *Handlers) completeMergeQueue(w http.ResponseWriter, r *http.Request) {
 	}
 	skip := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("skip_ship")), "1") ||
 		strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("skip_real_merge")), "1")
-	var err error
 	if h.MergeShip != nil {
 		err = h.MergeShip.Complete(r.Context(), id, skip)
 	} else {
@@ -1246,6 +1267,8 @@ func (h *Handlers) completeMergeQueue(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	detail, _ := json.Marshal(map[string]any{"skip_ship": skip})
+	h.logOperation(r.Context(), "http", "merge_queue.complete", "task", string(id), string(detail), t.ProductID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "completed"})
 }
 
@@ -1271,11 +1294,13 @@ func (h *Handlers) listProductMergeQueue(w http.ResponseWriter, r *http.Request)
 		}
 		limit = n
 	}
-	list, err := h.MergeQueue.ListPendingByProduct(r.Context(), pid, limit)
+	ctx := r.Context()
+	list, err := h.MergeQueue.ListPendingByProduct(ctx, pid, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	pendingTotal, _ := h.MergeQueue.CountPendingByProduct(ctx, pid)
 	out := make([]any, 0, len(list))
 	for i := range list {
 		e := &list[i]
@@ -1307,9 +1332,44 @@ func (h *Handlers) listProductMergeQueue(w http.ResponseWriter, r *http.Request)
 				row["conflict_files"] = cf
 			}
 		}
+		row["queue_position"] = i + 1
+		if i == 0 {
+			row["is_head"] = true
+		} else {
+			row["is_head"] = false
+		}
 		out = append(out, row)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"merge_queue": out})
+	resp := map[string]any{"merge_queue": out, "pending_count": pendingTotal}
+	if len(list) > 0 {
+		resp["head_task_id"] = string(list[0].TaskID)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handlers) cancelMergeQueue(w http.ResponseWriter, r *http.Request) {
+	if h.MergeQueue == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "merge queue not available")
+		return
+	}
+	id := domain.TaskID(r.PathValue("id"))
+	t, err := h.Task.Tasks.ByID(r.Context(), id)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if err := h.MergeQueue.CancelPendingForTask(r.Context(), id); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	h.logOperation(r.Context(), "http", "merge_queue.cancel", "task", string(id), "{}", t.ProductID)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
 func (h *Handlers) allocateWorkspacePort(w http.ResponseWriter, r *http.Request) {
@@ -1595,6 +1655,11 @@ func parseTimeRangeQuery(r *http.Request) (from, to time.Time, err error) {
 // JSON views
 
 func productToJSON(p *domain.Product) map[string]any {
+	pol := domain.ParseMergePolicy(p.MergePolicyJSON)
+	polOut := map[string]any{"merge_method": pol.MergeMethod}
+	if o := strings.TrimSpace(pol.MergeBackendOverride); o != "" {
+		polOut["merge_backend_override"] = o
+	}
 	m := map[string]any{
 		"id":                    string(p.ID),
 		"name":                  p.Name,
@@ -1614,6 +1679,7 @@ func productToJSON(p *domain.Product) map[string]any {
 		"auto_dispatch_enabled": p.AutoDispatchEnabled,
 		"preference_model_json": p.PreferenceModelJSON,
 		"merge_policy_json":     p.MergePolicyJSON,
+		"merge_policy":          polOut,
 		"updated_at":            p.UpdatedAt.Format(time.RFC3339Nano),
 	}
 	if !p.LastAutoResearchAt.IsZero() {
@@ -1891,6 +1957,7 @@ func (h *Handlers) patchProductSchedule(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	h.logOperation(ctx, "http", "product_schedule.upsert", "product", string(pid), "{}", pid)
+	h.maybeReconcileAutopilotSchedule(ctx)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"product_id": string(pid),
 		"enabled":    row.Enabled,

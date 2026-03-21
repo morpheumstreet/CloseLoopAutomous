@@ -75,6 +75,94 @@ func TestSubmitSwipeMaybePoolAndPromote(t *testing.T) {
 	}
 }
 
+func TestTickProductMatchesTickScheduled(t *testing.T) {
+	ctx := context.Background()
+	t0 := time.Unix(1800000000, 0).UTC()
+	clock := timeadapter.Fixed{T: t0}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	ideas := memory.NewIdeaStore()
+	svc := &Service{
+		Products:   products,
+		Ideas:      ideas,
+		MaybePool:  memory.NewMaybePoolStore(),
+		Research:   ai.ResearchStub{},
+		Ideation:   ai.IdeationStub{},
+		Clock:      clock,
+		Identities: ids,
+	}
+	p := &domain.Product{
+		ID:                 "prod-1",
+		Name:               "x",
+		Stage:              domain.StageResearch,
+		WorkspaceID:        "w",
+		ResearchCadenceSec: 1,
+		IdeationCadenceSec: 0,
+		UpdatedAt:          t0,
+	}
+	_ = products.Save(ctx, p)
+
+	if err := svc.TickProduct(ctx, p.ID, t0.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	p1, _ := products.ByID(ctx, p.ID)
+	if p1.Stage != domain.StageIdeation {
+		t.Fatalf("after auto research want ideation got %s", p1.Stage)
+	}
+}
+
+func TestNextAutopilotEnqueueDelay(t *testing.T) {
+	ctx := context.Background()
+	t0 := time.Unix(1800000000, 0).UTC()
+	clock := timeadapter.Fixed{T: t0}
+	svc := &Service{
+		Products: memory.NewProductStore(),
+		Research: ai.ResearchStub{},
+		Ideation: ai.IdeationStub{},
+		Clock:    clock,
+	}
+	p := &domain.Product{
+		ID:                 "p1",
+		Name:               "x",
+		Stage:              domain.StageResearch,
+		WorkspaceID:        "w",
+		ResearchCadenceSec: 60,
+		LastAutoResearchAt: t0,
+		UpdatedAt:          t0,
+	}
+	_ = svc.Products.Save(ctx, p)
+
+	d, keep, err := svc.NextAutopilotEnqueueDelay(ctx, p.ID, t0.Add(30*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !keep {
+		t.Fatal("expected keep")
+	}
+	if d != 30*time.Second {
+		t.Fatalf("delay want 30s got %v", d)
+	}
+
+	d2, keep2, err := svc.NextAutopilotEnqueueDelay(ctx, p.ID, t0.Add(60*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !keep2 || d2 != 0 {
+		t.Fatalf("at due want delay 0 keep true got %v %v", d2, keep2)
+	}
+
+	p2, _ := svc.Products.ByID(ctx, p.ID)
+	p2.Stage = domain.StageSwipe
+	_ = svc.Products.Save(ctx, p2)
+	_, keep3, err := svc.NextAutopilotEnqueueDelay(ctx, p.ID, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keep3 {
+		t.Fatal("swipe stage should not keep chain")
+	}
+}
+
 func TestTickScheduledCadence(t *testing.T) {
 	ctx := context.Background()
 	t0 := time.Unix(1800000000, 0).UTC()

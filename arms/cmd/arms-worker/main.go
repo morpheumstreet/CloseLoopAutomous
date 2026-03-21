@@ -32,6 +32,9 @@ func main() {
 	}
 	defer func() { _ = app.Close() }()
 
+	enqueueClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr})
+	defer func() { _ = enqueueClient.Close() }()
+
 	srv := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
 		asynq.Config{
@@ -50,6 +53,21 @@ func main() {
 		err := app.Handlers.Autopilot.TickScheduled(tickCtx, time.Now().UTC())
 		if err != nil {
 			slog.Debug("autopilot tick", "err", err)
+		}
+		return err
+	})
+	mux.HandleFunc(jobs.TypeProductAutopilotTick, func(ctx context.Context, t *asynq.Task) error {
+		pid, err := jobs.ParseProductAutopilotPayload(t.Payload())
+		if err != nil {
+			slog.Debug("product autopilot task", "err", err)
+			return nil
+		}
+		tickCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		now := time.Now().UTC()
+		err = jobs.RunProductAutopilotTask(tickCtx, enqueueClient, app.Handlers.Autopilot, pid, now)
+		if err != nil {
+			slog.Debug("product autopilot tick", "product_id", string(pid), "err", err)
 		}
 		return err
 	})

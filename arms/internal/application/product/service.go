@@ -2,6 +2,7 @@ package product
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -32,6 +33,7 @@ type RegistrationInput struct {
 	IdeationCadenceSec  *int
 	AutomationTier      string // empty → supervised
 	AutoDispatchEnabled *bool
+	MergePolicyJSON     string // optional; validated as JSON when non-empty
 }
 
 func (s *Service) Register(ctx context.Context, in RegistrationInput) (*domain.Product, error) {
@@ -44,6 +46,10 @@ func (s *Service) Register(ctx context.Context, in RegistrationInput) (*domain.P
 	}
 	if in.IdeationCadenceSec != nil && *in.IdeationCadenceSec < 0 {
 		return nil, fmt.Errorf("%w: ideation_cadence_sec must be >= 0", domain.ErrInvalidInput)
+	}
+	mpj := strings.TrimSpace(in.MergePolicyJSON)
+	if mpj != "" && !json.Valid([]byte(mpj)) {
+		return nil, fmt.Errorf("%w: merge_policy_json must be valid JSON", domain.ErrInvalidInput)
 	}
 	now := s.Clock.Now()
 	p := &domain.Product{
@@ -69,6 +75,9 @@ func (s *Service) Register(ctx context.Context, in RegistrationInput) (*domain.P
 	}
 	if in.AutoDispatchEnabled != nil {
 		p.AutoDispatchEnabled = *in.AutoDispatchEnabled
+	}
+	if mpj != "" {
+		p.MergePolicyJSON = mpj
 	}
 	if err := s.Products.Save(ctx, p); err != nil {
 		return nil, err
