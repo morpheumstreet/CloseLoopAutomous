@@ -2,6 +2,7 @@ package shipping
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -67,7 +68,10 @@ func (g *GitHubPublisher) CreatePullRequest(ctx context.Context, in ports.Create
 	created, resp, err := g.client.PullRequests.Create(ctx, owner, repo, pr)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
-			return ports.CreatePullRequestResult{}, fmt.Errorf("%w: unauthorized (check token scopes: repo)", domain.ErrShipping)
+			return ports.CreatePullRequestResult{}, errors.Join(
+				domain.ErrShippingNonRetryable,
+				fmt.Errorf("%w: unauthorized (check token scopes: repo)", domain.ErrShipping),
+			)
 		}
 		return ports.CreatePullRequestResult{}, fmt.Errorf("%w: %v", domain.ErrShipping, err)
 	}

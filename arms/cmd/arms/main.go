@@ -36,37 +36,14 @@ func main() {
 		asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr})
 		defer func() { _ = asynqClient.Close() }()
 
-		sched := jobs.NewScheduler(asynqClient, app.ProductSchedules)
-		if sched != nil {
-			if err := sched.StartProductSchedules(context.Background()); err != nil {
-				slog.Debug("product schedule start", "err", err)
-			}
-			go func() {
-				ticker := time.NewTicker(5 * time.Minute)
-				defer ticker.Stop()
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					case <-ticker.C:
-						inner, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-						_ = sched.StartProductSchedules(inner)
-						cancel()
-					}
-				}
-			}()
+		if cfg.AutopilotTickSec > 0 {
+			slog.Warn("arms autopilot", "msg", "ARMS_AUTOPILOT_TICK_SEC is deprecated and ignored when ARMS_REDIS_ADDR is set; autopilot uses Asynq (product:schedule:tick, arms:product_autopilot_tick) with startup + 5m resync of schedules and per-product reconcile")
 		}
-		app.Handlers.ResyncProductSchedule = func(innerCtx context.Context, pid domain.ProductID) {
-			if sched == nil {
-				return
-			}
-			c, cancel := context.WithTimeout(innerCtx, 30*time.Second)
-			defer cancel()
-			if err := sched.ResyncProduct(c, pid); err != nil {
-				slog.Debug("product schedule resync", "product_id", string(pid), "err", err)
-			}
+		if cfg.UseAsynqScheduler {
+			slog.Warn("arms autopilot", "msg", "ARMS_USE_ASYNQ_SCHEDULER is deprecated and ignored; Asynq is always authoritative when Redis is configured")
 		}
 
+		sched := jobs.NewScheduler(asynqClient, app.ProductSchedules)
 		reconcile := func(innerCtx context.Context) {
 			if innerCtx == nil {
 				innerCtx = context.Background()
@@ -78,46 +55,48 @@ func main() {
 				slog.Debug("autopilot schedule reconcile", "err", err)
 			}
 		}
+		if sched != nil {
+			if err := sched.StartProductSchedules(context.Background()); err != nil {
+				slog.Debug("product schedule start", "err", err)
+			}
+		}
 		reconcile(context.Background())
 		app.Handlers.AutopilotScheduleReconcile = reconcile
+		app.Handlers.ResyncProductSchedule = func(innerCtx context.Context, pid domain.ProductID) {
+			if sched == nil {
+				return
+			}
+			c, cancel := context.WithTimeout(innerCtx, 30*time.Second)
+			defer cancel()
+			if err := sched.ResyncProduct(c, pid); err != nil {
+				slog.Debug("product schedule resync", "product_id", string(pid), "err", err)
+			}
+		}
 
-		if cfg.AutopilotTickSec > 0 && !cfg.UseAsynqScheduler {
-			go func() {
-				t := time.NewTicker(time.Duration(cfg.AutopilotTickSec) * time.Second)
-				defer t.Stop()
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					case <-t.C:
-						reconcile(context.Background())
-					}
-				}
-			}()
-		} else if cfg.AutopilotTickSec > 0 && cfg.UseAsynqScheduler {
-			slog.Warn("arms autopilot", "msg", "ARMS_AUTOPILOT_TICK_SEC ignored when ARMS_USE_ASYNQ_SCHEDULER=true; periodic reconcile disabled (startup + HTTP hooks + per-product Asynq chain)")
-		}
-	} else if cfg.AutopilotTickSec > 0 {
-		if cfg.UseAsynqScheduler {
-			slog.Warn("arms autopilot", "msg", "ARMS_USE_ASYNQ_SCHEDULER set but ARMS_REDIS_ADDR empty — using in-process TickScheduled; set Redis and run arms-worker for Asynq mode")
-		}
 		go func() {
-			t := time.NewTicker(time.Duration(cfg.AutopilotTickSec) * time.Second)
-			defer t.Stop()
+			ticker := time.NewTicker(5 * time.Minute)
+			defer ticker.Stop()
 			for {
 				select {
 				case <-ctx.Done():
 					return
-				case <-t.C:
-					tickCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-					err := app.Handlers.Autopilot.TickScheduled(tickCtx, time.Now())
-					cancel()
-					if err != nil {
-						slog.Debug("autopilot tick", "err", err)
+				case <-ticker.C:
+					inner, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+					if sched != nil {
+						_ = sched.StartProductSchedules(inner)
 					}
+					reconcile(inner)
+					cancel()
 				}
 			}
 		}()
+	} else {
+		if cfg.AutopilotTickSec > 0 {
+			slog.Warn("arms autopilot", "msg", "ARMS_AUTOPILOT_TICK_SEC is deprecated and ignored without ARMS_REDIS_ADDR; periodic autopilot requires Redis and cmd/arms-worker (product_schedules + arms:product_autopilot_tick)")
+		}
+		if cfg.UseAsynqScheduler {
+			slog.Warn("arms autopilot", "msg", "ARMS_USE_ASYNQ_SCHEDULER set but ARMS_REDIS_ADDR empty — ignored; set Redis and run arms-worker for background autopilot")
+		}
 	}
 
 	handler := httpapi.NewRouter(cfg, app.Handlers)
@@ -145,14 +124,10 @@ func main() {
 		authMode = "HTTP Basic (ARMS_ACL)"
 	}
 	switch {
-	case cfg.RedisAddr != "" && cfg.UseAsynqScheduler:
-		slog.Info("arms autopilot", "mode", "asynq_authoritative", "redis", cfg.RedisAddr, "use_asynq_scheduler", true)
-	case cfg.RedisAddr != "" && cfg.AutopilotTickSec > 0:
-		slog.Info("arms autopilot", "mode", "asynq_per_product", "redis", cfg.RedisAddr, "reconcile_sec", cfg.AutopilotTickSec)
 	case cfg.RedisAddr != "":
-		slog.Info("arms autopilot", "mode", "asynq_per_product", "redis", cfg.RedisAddr, "reconcile_sec", 0, "hint", "set ARMS_AUTOPILOT_TICK_SEC>0 for periodic reconcile, or ARMS_USE_ASYNQ_SCHEDULER=true to rely on worker chain only")
-	case cfg.AutopilotTickSec > 0:
-		slog.Info("arms autopilot", "mode", "in_process", "tick_sec", cfg.AutopilotTickSec)
+		slog.Info("arms autopilot", "mode", "asynq", "redis", cfg.RedisAddr, "periodic_resync", "5m product_schedules + per-product autopilot reconcile")
+	default:
+		slog.Info("arms autopilot", "mode", "off", "hint", "set ARMS_REDIS_ADDR and run cmd/arms-worker for product:schedule:tick and arms:product_autopilot_tick")
 	}
 	slog.Info("arms listening", "addr", cfg.ListenAddr, "auth", authMode)
 

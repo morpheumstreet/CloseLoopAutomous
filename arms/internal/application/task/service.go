@@ -144,6 +144,7 @@ func (s *Service) SetKanbanStatus(ctx context.Context, taskID domain.TaskID, to 
 }
 
 // maybeAutoMergeShip runs merge-queue ship when a task reaches done (best-effort): full_auto always attempts ship; semi_auto only if merge gates pass.
+// For full_auto and semi_auto, opens a PR first when pull_request_head_branch is set but no PR URL yet (e.g. agent-completion jumps straight to done without a review transition).
 func (s *Service) maybeAutoMergeShip(ctx context.Context, taskID domain.TaskID) {
 	if s.MergeShip == nil {
 		return
@@ -158,39 +159,44 @@ func (s *Service) maybeAutoMergeShip(ctx context.Context, taskID domain.TaskID) 
 	}
 	switch p.AutomationTier {
 	case domain.TierFullAuto:
+		_ = s.ensurePullRequestForAutoMerge(ctx, taskID, p.AutomationTier)
 		_ = s.MergeShip.Complete(ctx, taskID, false)
 	case domain.TierSemiAuto:
+		_ = s.ensurePullRequestForAutoMerge(ctx, taskID, p.AutomationTier)
 		_ = s.MergeShip.CompleteIfPolicyAllowsAuto(ctx, taskID)
 	default:
 		// supervised: merge queue completion stays manual
 	}
 }
 
-// tryAutoOpenPRIfApplicable opens a PR when entering review under full_auto if head branch is known and no PR yet.
+func (s *Service) ensurePullRequestForAutoMerge(ctx context.Context, taskID domain.TaskID, tier domain.AutomationTier) error {
+	return s.openPullRequestWhenEligible(ctx, taskID, tier, mergePrepAutoPRTiers)
+}
+
+// tryAutoOpenPRIfApplicable opens a PR when entering review from execution columns under full_auto (best-effort; errors ignored).
 func (s *Service) tryAutoOpenPRIfApplicable(ctx context.Context, taskID domain.TaskID, from, to domain.TaskStatus) error {
-	if to != domain.StatusReview || (from != domain.StatusTesting && from != domain.StatusInProgress) {
+	if to != domain.StatusReview {
 		return nil
 	}
+	switch from {
+	case domain.StatusTesting, domain.StatusInProgress, domain.StatusConvoyActive:
+	default:
+		return nil
+	}
+	p, err := s.productForTask(ctx, taskID)
+	if err != nil {
+		return nil
+	}
+	_ = s.openPullRequestWhenEligible(ctx, taskID, p.AutomationTier, reviewColumnAutoPRTiers)
+	return nil
+}
+
+func (s *Service) productForTask(ctx context.Context, taskID domain.TaskID) (*domain.Product, error) {
 	t, err := s.Tasks.ByID(ctx, taskID)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	p, err := s.Products.ByID(ctx, t.ProductID)
-	if err != nil {
-		return nil
-	}
-	if p.AutomationTier != domain.TierFullAuto {
-		return nil
-	}
-	if strings.TrimSpace(t.PullRequestURL) != "" {
-		return nil
-	}
-	head := strings.TrimSpace(t.PullRequestHeadBranch)
-	if head == "" {
-		return nil
-	}
-	_, _, _ = s.OpenPullRequest(ctx, taskID, head, "", "")
-	return nil
+	return s.Products.ByID(ctx, t.ProductID)
 }
 
 // UpdatePlanningArtifacts stores opaque planning JSON (e.g. clarifying Q&A) while in planning.
@@ -322,7 +328,11 @@ func (s *Service) RestoreCheckpoint(ctx context.Context, taskID domain.TaskID, h
 
 // OpenPullRequest opens a GitHub PR (requires product.repo_url; supports github.com and GitHub-like paths on GHES).
 // Persists pull_request_url, pull_request_number (when known), and pull_request_head_branch on the task.
+// When LiveTX is wired (SQLite), task row and pull_request_opened outbox row commit together; CreatePullRequest is retried a few times on transient shipping errors.
 func (s *Service) OpenPullRequest(ctx context.Context, taskID domain.TaskID, headBranch, title, body string) (prURL string, prNumber int, err error) {
+	if s.Ship == nil {
+		return "", 0, fmt.Errorf("%w: pull request publisher not configured", domain.ErrInvalidInput)
+	}
 	t, err := s.Tasks.ByID(ctx, taskID)
 	if err != nil {
 		return "", 0, err
@@ -352,7 +362,7 @@ func (s *Service) OpenPullRequest(ctx context.Context, taskID domain.TaskID, hea
 	if ti == "" {
 		ti = fmt.Sprintf("[%s] %s", taskID, trimSpecOneLine(t.Spec))
 	}
-	cre, err := s.Ship.CreatePullRequest(ctx, ports.CreatePullRequestInput{
+	cre, err := createPullRequestWithRetry(ctx, s.Ship, ports.CreatePullRequestInput{
 		ProductID:  t.ProductID,
 		TaskID:     taskID,
 		Owner:      owner,
@@ -371,23 +381,37 @@ func (s *Service) OpenPullRequest(ctx context.Context, taskID domain.TaskID, hea
 	t.PullRequestNumber = prNumber
 	t.PullRequestHeadBranch = head
 	t.UpdatedAt = s.Clock.Now()
-	if saveErr := s.Tasks.Save(ctx, t); saveErr != nil {
-		return prURL, prNumber, saveErr
-	}
-	if s.Events != nil && prURL != "" {
-		data := map[string]any{"html_url": prURL, "head": head}
-		if prNumber > 0 {
-			data["number"] = prNumber
-		}
-		_ = s.Events.Publish(ctx, ports.LiveActivityEvent{
-			Type:      "pull_request_opened",
-			Ts:        s.Clock.Now().UTC().Format(time.RFC3339Nano),
-			ProductID: string(t.ProductID),
-			TaskID:    string(taskID),
-			Data:      data,
-		})
+	if err := s.persistPullRequestOpen(ctx, t, taskID, prURL, prNumber, head); err != nil {
+		return prURL, prNumber, err
 	}
 	return prURL, prNumber, nil
+}
+
+func (s *Service) persistPullRequestOpen(ctx context.Context, t *domain.Task, taskID domain.TaskID, prURL string, prNumber int, head string) error {
+	if prURL == "" {
+		return s.Tasks.Save(ctx, t)
+	}
+	prData := map[string]any{"html_url": prURL, "head": head}
+	if prNumber > 0 {
+		prData["number"] = prNumber
+	}
+	ev := ports.LiveActivityEvent{
+		Type:      "pull_request_opened",
+		Ts:        s.Clock.Now().UTC().Format(time.RFC3339Nano),
+		ProductID: string(t.ProductID),
+		TaskID:    string(taskID),
+		Data:      prData,
+	}
+	if s.LiveTX != nil {
+		return s.LiveTX.SaveTaskWithEvent(ctx, t, ev)
+	}
+	if err := s.Tasks.Save(ctx, t); err != nil {
+		return err
+	}
+	if s.Events != nil {
+		_ = s.Events.Publish(ctx, ev)
+	}
+	return nil
 }
 
 func trimSpecOneLine(spec string) string {

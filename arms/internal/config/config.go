@@ -24,8 +24,8 @@ import (
 //   - ARMS_OPENCLAW_SESSION_KEY — sessionKey for chat.send dispatch
 //   - ARMS_LOG_JSON — "1" or "true" for JSON logs to stdout (default text)
 //   - ARMS_ACCESS_LOG — "0", "false", "off", "no" disables per-request access logging (default on)
-//   - ARMS_USE_ASYNQ_SCHEDULER — "1" or "true" when Redis is set: treat Asynq + arms-worker as authoritative; disables periodic ARMS_AUTOPILOT_TICK_SEC reconcile in cmd/arms (startup reconcile + HTTP hooks + per-product task chain remain). Without Redis, ignored with a warning if also set.
-//   - ARMS_AUTOPILOT_TICK_SEC — without Redis: interval for in-process global TickScheduled. With Redis: interval for re-scanning products and ensuring Asynq arms:product_autopilot_tick tasks exist (per-product chain + self-reschedule in arms-worker), unless ARMS_USE_ASYNQ_SCHEDULER=true; 0 = reconcile only on API startup and after product/schedule mutations (default 0). Deprecated for steady-state once Asynq cutover is complete.
+//   - ARMS_USE_ASYNQ_SCHEDULER — deprecated no-op (still parsed for compatibility). When ARMS_REDIS_ADDR is set, cmd/arms always uses Asynq as the scheduling plane; a warning is logged if this env is set.
+//   - ARMS_AUTOPILOT_TICK_SEC — deprecated no-op (still parsed so misconfigurations can be warned). Autopilot cadence uses Redis + cmd/arms-worker: product_schedules (product:schedule:tick) and arms:product_autopilot_tick, with cmd/arms running startup + 5m resync (schedules + per-product reconcile) and HTTP hooks.
 //   - ARMS_BUDGET_DEFAULT_CAP — cumulative spend ceiling per product when no cost_caps row exists (default 100); set 0 to disable
 //   - ARMS_GITHUB_TOKEN — PAT with repo scope for POST /api/tasks/{id}/pull-request when using API backend (falls back to GITHUB_TOKEN if empty)
 //   - ARMS_GITHUB_API_URL — optional GitHub Enterprise API root for REST backend, e.g. https://github.example.com/api/v3/
@@ -42,7 +42,7 @@ import (
 //   - ARMS_MERGE_METHOD — github merge method: merge | squash | rebase (default merge)
 //   - ARMS_MERGE_LEASE_SEC — lease TTL for merge-queue ship (default 90)
 //   - ARMS_MERGE_LEASE_OWNER — optional instance id for queue leases (default hostname)
-//   - ARMS_REDIS_ADDR — optional Redis (e.g. localhost:6379). When set, cmd/arms enqueues per-product arms:product_autopilot_tick tasks (reconcile on startup + optional periodic per ARMS_AUTOPILOT_TICK_SEC + after product/schedule HTTP changes); cmd/arms-worker runs each task (TickProduct + next delayed enqueue). arms:autopilot_tick remains supported for manual / legacy full TickScheduled sweeps. Without Redis, cmd/arms runs TickScheduled in-process when ARMS_AUTOPILOT_TICK_SEC>0.
+//   - ARMS_REDIS_ADDR — optional Redis (e.g. localhost:6379). When set, cmd/arms reconciles per-product arms:product_autopilot_tick on startup, every 5 minutes, and after product / product-schedule HTTP changes; cmd/arms-worker consumes the arms queue (product:schedule:tick, arms:product_autopilot_tick, arms:autopilot_tick for manual full TickScheduled sweeps). Without Redis, background autopilot is off (set Redis and run arms-worker).
 type Config struct {
 	ListenAddr                  string
 	MCAPIToken                  string

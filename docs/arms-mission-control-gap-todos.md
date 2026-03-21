@@ -4,9 +4,9 @@ Use this as the master backlog for bringing `arms` toward Autensa/Mission Contro
 
 **Backlog checklist (§1–§10):** `84` done · `22` open · **~79%** complete — see **[Master backlog (all checklist items)](#master-backlog-all-checklist-items)** for the full table; _grep_ `- [x]` / `- [ ]` in this file to refresh counts after edits._
 
-**Next priority:** **Deprecate `ARMS_AUTOPILOT_TICK_SEC` / in-process autopilot ticker** once you are satisfied **`product_schedules`** Asynq + **`product:schedule:tick`** covers your ops story alongside existing **`arms:product_autopilot_tick`** reconcile (§5, **Locked design decisions → Scheduling**). Other high-value slices: **#60** post-execution chain, ML on **`preference_models`**, convoy graph/mail.
+**Next priority:** **#60** post-execution chain (test → review → automatic PR + reliable merge for **`full_auto`**). Other high-value slices: ML on **`preference_models`**, convoy DAG + mail + health-based dispatch.
 
-**Asynq cutover (env):** Set **`ARMS_REDIS_ADDR`** and run **`cmd/arms-worker`** alongside **`cmd/arms`**. Enable authoritative mode with **`ARMS_USE_ASYNQ_SCHEDULER=true`**: `arms` stops the periodic **`ARMS_AUTOPILOT_TICK_SEC`** reconcile loop (startup reconcile + HTTP hooks + per-product worker chain remain). Rollout: run Redis + worker + API together; validate **`product:schedule:tick`** and **`arms:product_autopilot_tick`** in logs; then flip the flag in staging/prod; finally remove reliance on **`ARMS_AUTOPILOT_TICK_SEC`** and delete legacy paths when comfortable.
+**Asynq scheduling (steady state):** Set **`ARMS_REDIS_ADDR`** and run **`cmd/arms-worker`** alongside **`cmd/arms`**. **`ARMS_AUTOPILOT_TICK_SEC`** and **`ARMS_USE_ASYNQ_SCHEDULER`** are **deprecated** (ignored; warnings if set). **`cmd/arms`** runs startup + **5m** resync (**`product_schedules`** + per-product reconcile) plus HTTP hooks; worker runs **`product:schedule:tick`**, **`arms:product_autopilot_tick`**, and optional **`arms:autopilot_tick`**.
 
 **What this is:** a single checklist + design locks for **backend parity** with [mission-control](https://github.com/crshdn/mission-control): API routes, SQLite schema, OpenClaw wiring, safety/cost/workspace, realtime, and convoy/autopilot gaps. It is **not** a fishtank/UI spec; pair with [api-ref.md](api-ref.md) for HTTP details and [recomendeddesign.md](recomendeddesign.md) for the broader architecture sketch.
 
@@ -37,7 +37,7 @@ Direction for **100% MC-style behavior** while staying hexagonal (`ports` / `ada
 
 ```
 CloseLoopAutomous / arms (e.g. :8080)
-├── cmd/arms/                    # HTTP API, graceful shutdown; enqueues Asynq autopilot ticks when Redis + tick interval set
+├── cmd/arms/                    # HTTP API, graceful shutdown; with Redis: startup + 5m Asynq resync (schedules + per-product reconcile), HTTP hooks
 ├── cmd/arms-worker/             # Asynq consumer: arms:autopilot_tick, arms:product_autopilot_tick, product:schedule:tick (same DB/env as API)
 ├── internal/jobs/               # Shared Asynq task types + queue name **arms** (default queue)
 ├── internal/adapters/httpapi    # REST (+ alias routes for MC clients)
@@ -64,7 +64,7 @@ These resolve open questions from the backlog; implement against this table.
 | Topic | Decision |
 |-------|-----------|
 | **REST naming** | Keep **plural** canonical: `/api/convoys`, `/api/tasks`, … (Go/REST convention + current code). Add **optional alias** routes (`/api/convoy/{id}` → same handler) for Next.js MC clients that expect singular paths. |
-| **Scheduling** | **Asynq (Redis) + cron** for `product_schedules` and delayed jobs; **restart-safe** vs in-process ticker. Deprecate `ARMS_AUTOPILOT_TICK_SEC` once scheduler is wired (keep env until cutover). |
+| **Scheduling** | **Asynq (Redis) + cron** for `product_schedules` and delayed jobs; **`ARMS_AUTOPILOT_TICK_SEC` / in-process ticker deprecated** (2026-03); startup + **5m** API resync + worker chains. |
 | **Device identity** | **Ed25519 `connect` block optional** via env (e.g. `ARMS_DEVICE_SIGNING=enabled`); token-only remains default. |
 | **Automation tiers** | **supervised** — PRs created; human approve/merge; no unattended merge-queue ship on task **done**. **semi_auto** — merge-queue **auto-ship on task done** only when **GitHub merge gates** pass (approved review + `mergeable_state: clean` by default), overridable via **`merge_policy_json`**; manual **`POST …/merge-queue/complete`** still bypasses gates. **full_auto** — end-to-end autopilot including **ungated** merge-queue **`MergeShip.Complete`** on **done** (when queue/backend configured). Cross-check [MC README — Automation tiers](https://github.com/crshdn/mission-control). |
 | **Convoy DAG** | Full graph in domain + SQLite; **github.com/dominikbraun/graph** (or equivalent) for algorithms; **`convoy_subtasks` + `agent_mailbox`** persistence. |
@@ -104,9 +104,9 @@ Rough calendar: **~4 weeks core (A–C)** + **polish (D)**; optional future belo
 | **C — Polish** | ~1 wk | **Agent** domain + listing/health APIs (replace stub). **`product_schedules`** on **Asynq** (Redis) — **done:** migration **017**, **`product:schedule:tick`**, cron + one-shot **`delay_seconds`**, HTTP fields on **`GET/PATCH …/product-schedule`**; optional follow-up: cancel/replace stale Redis tasks on schedule edits. Autopilot tick offload via Redis **done**. Optional **Ed25519** on OpenClaw `connect`. **Maybe pool** resurface / batch re-eval. ~~**HTTP aliases** `/api/convoy/*`~~ (done in A). |
 | **D — Optional future** | — | Embedded UI (e.g. HTMX/templ), Postgres adapter, pure-Go agent runtime (replace OpenClaw). |
 
-**Done in-tree (former “first commits”):** Compose **redis** service (optional); **`ARMS_REDIS_ADDR`** + **`ARMS_AUTOPILOT_TICK_SEC`** → **`cmd/arms`** enqueues **`arms:autopilot_tick`**, **`cmd/arms-worker`** runs **`TickScheduled`**, transactional **outbox** + **`livefeed`** SSE hub, **workspace** ports + merge queue + optional git worktrees, **GitHub** / **`gh`** behind `PullRequestPublisher`, **swipe_history**, **cost_caps** + composite budget, **task agent health** APIs, **`preference_models`** + **`operations_log`** (migrations 014–015).
+**Done in-tree (former “first commits”):** Compose **redis** service (optional); **`ARMS_REDIS_ADDR`** + **`cmd/arms-worker`** → **`product:schedule:tick`** + **`arms:product_autopilot_tick`** (+ optional **`arms:autopilot_tick`**), **`cmd/arms`** startup + **5m** resync, transactional **outbox** + **`livefeed`** SSE hub, **workspace** ports + merge queue + optional git worktrees, **GitHub** / **`gh`** behind `PullRequestPublisher`, **swipe_history**, **cost_caps** + composite budget, **task agent health** APIs, **`preference_models`** + **`operations_log`** (migrations 014–015).
 
-**Next vertical slices (suggested):** **(1)** Cut over from **`ARMS_AUTOPILOT_TICK_SEC`** global tick when **`product_schedules`** + per-product Asynq paths are enough for you. **(2)** ML / preference pipeline consuming **`swipe_history`** + **`preference_models`**. **(3)** Convoy **graph algorithms + richer mailbox** (cross-agent). **(4)** Optional **`/api/openclaw/*`** HTTP proxy if the UI needs it. **(5)** Broaden **operations_log** coverage + operator filters.
+**Next vertical slices (suggested):** **(1)** **#60** post-execution chain. **(2)** ML / preference pipeline consuming **`swipe_history`** + **`preference_models`**. **(3)** Convoy **graph algorithms + richer mailbox** (cross-agent). **(4)** Optional **`/api/openclaw/*`** HTTP proxy if the UI needs it. **(5)** Broaden **operations_log** coverage + operator filters.
 
 ---
 
@@ -184,9 +184,9 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 | 51 | 4 | Open | Task images / attachments storage + API |
 | 52 | 4 | Open | Distinguish manual task flow vs autopilot-derived tasks where MC does |
 | 53 | 5 | Done | Product program / profile injection into research/ideation — stored on `Product` + HTTP; `ResearchPort` / `IdeationPort` godoc + `ai.ProductContextSnippet` + stub behavior (full MC “Product Program CRUD” UX still evolves with UI) |
-| 54 | 5 | Done | Scheduling (interim): `research_cadence_sec`, `ideation_cadence_sec`, `last_auto_*` on product; `autopilot.Service.TickScheduled`; `ARMS_AUTOPILOT_TICK_SEC` with **in-process** ticker in `cmd/arms` when **`ARMS_REDIS_ADDR`** is unset, or **Asynq enqueue** from `cmd/arms` + **`cmd/arms-worker`** consumer when Redis is set. `auto_dispatch_enabled` + tier stored; **task auto-dispatch from tier not wired** (manual dispatch unchanged). |
-| 55 | 5 | Done | **`product_schedules`** **Asynq** — migration **017** (`cron_expr`, `delay_seconds`, task metadata); task **`product:schedule:tick`** on **`arms-worker`**; **`cmd/arms`** startup + 5m resync + PATCH hook **`ResyncProductSchedule`**; chains **`TickProduct`** then next enqueue. **Follow-up:** deprecate **`ARMS_AUTOPILOT_TICK_SEC`** / in-process ticker when ready; optional Inspector cancel on schedule edits. |
-| 56 | 5 | Done | Background job — **`cmd/arms-worker`** runs **`arms:autopilot_tick`** → **`TickScheduled`** when Redis configured; otherwise **`cmd/arms`** in-process ticker only. |
+| 54 | 5 | Done | Scheduling (interim): `research_cadence_sec`, `ideation_cadence_sec`, `last_auto_*` on product; `autopilot.Service.TickScheduled` / `TickProduct`; **production cadence** via Redis + **`cmd/arms-worker`**; **`cmd/arms`** startup + **5m** resync + HTTP hooks. **`ARMS_AUTOPILOT_TICK_SEC`** deprecated (ignored). `auto_dispatch_enabled` + tier stored; **task auto-dispatch from tier not wired** (manual dispatch unchanged). |
+| 55 | 5 | Done | **`product_schedules`** **Asynq** — migration **017** (`cron_expr`, `delay_seconds`, task metadata); task **`product:schedule:tick`** on **`arms-worker`**; **`cmd/arms`** startup + 5m resync + PATCH hook **`ResyncProductSchedule`**; chains **`TickProduct`** then next enqueue. **`ARMS_AUTOPILOT_TICK_SEC`** follow-up **done** (deprecated); optional Inspector cancel on schedule edits. |
+| 56 | 5 | Done | Background job — **`cmd/arms-worker`**: **`product:schedule:tick`**, **`arms:product_autopilot_tick`**, optional **`arms:autopilot_tick`** → **`TickScheduled`**; **`cmd/arms`** no in-process autopilot ticker. |
 | 57 | 5 | Done | Preference data: each swipe appends to **`preference_model_json`** (JSON array) **and** **`swipe_history`**; **`GET/PUT …/preference-model`** reads/writes the **`preference_models`** table (GET falls back to legacy product field when no row); **`POST …/preference-model/recompute`** aggregates **`swipe_history`** into **`preference_models`** (heuristic JSON). **ML / training loop** still **TBD**. |
 | 58 | 5 | Done | Maybe pool (baseline): `maybe_pool` table + `MaybePoolRepository`; swipe `maybe` adds; `GET /api/products/{id}/maybe-pool`; `POST /api/ideas/{id}/promote-maybe` → yes + pool remove + stage advance when in swipe. Resurface / batch re-eval: still open (§2). |
 | 59 | 5 | Done | Automation tiers: `automation_tier` enum `supervised` \| `semi_auto` \| `full_auto` on product + create/patch/JSON (behavioral differences beyond storage/TBD for dispatch). |
@@ -318,14 +318,14 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 ## 5. Autopilot pipeline (extended)
 
 - [x] Product program / profile injection into research/ideation — stored on `Product` + HTTP; `ResearchPort` / `IdeationPort` godoc + `ai.ProductContextSnippet` + stub behavior (full MC “Product Program CRUD” UX still evolves with UI)
-- [x] Scheduling (interim): `research_cadence_sec`, `ideation_cadence_sec`, `last_auto_*` on product; `autopilot.Service.TickScheduled`; `ARMS_AUTOPILOT_TICK_SEC` with **in-process** ticker in `cmd/arms` when **`ARMS_REDIS_ADDR`** is unset, or **Asynq enqueue** from `cmd/arms` + **`cmd/arms-worker`** consumer when Redis is set. `auto_dispatch_enabled` + tier stored; **task auto-dispatch from tier not wired** (manual dispatch unchanged).
-- [x] **Asynq + Redis** — **`product_schedules`** per-row **cron** + **delayed** jobs (**`product:schedule:tick`**); **deprecate in-process ticker** / **`ARMS_AUTOPILOT_TICK_SEC`** when you choose cutover (**Locked design decisions** — still supported for no-Redis and reconcile).
-- [x] Background job — **`cmd/arms-worker`** runs **`arms:autopilot_tick`** → **`TickScheduled`** when Redis configured; otherwise **`cmd/arms`** in-process ticker only.
+- [x] Scheduling (interim): `research_cadence_sec`, `ideation_cadence_sec`, `last_auto_*` on product; `autopilot.Service.TickScheduled` / `TickProduct`; **production cadence** via Redis + **`cmd/arms-worker`** (**`product:schedule:tick`**, **`arms:product_autopilot_tick`**); **`cmd/arms`** startup + **5m** resync + HTTP hooks. **`ARMS_AUTOPILOT_TICK_SEC`** deprecated (ignored). `auto_dispatch_enabled` + tier stored; **task auto-dispatch from tier not wired** (manual dispatch unchanged).
+- [x] **Asynq + Redis** — **`product_schedules`** per-row **cron** + **delayed** jobs (**`product:schedule:tick`**); **`ARMS_AUTOPILOT_TICK_SEC` / in-process ticker deprecated** (2026-03).
+- [x] Background job — **`cmd/arms-worker`** handles **`product:schedule:tick`**, **`arms:product_autopilot_tick`**, optional **`arms:autopilot_tick`** → **`TickScheduled`**; **`cmd/arms`** no longer runs an in-process autopilot ticker.
 - [x] Preference data: each swipe appends to **`preference_model_json`** (JSON array) **and** **`swipe_history`**; **`GET/PUT …/preference-model`** reads/writes the **`preference_models`** table (GET falls back to legacy product field when no row); **`POST …/preference-model/recompute`** aggregates **`swipe_history`** into **`preference_models`** (heuristic JSON). **ML / training loop** still **TBD**.
 - [x] Maybe pool (baseline): `maybe_pool` table + `MaybePoolRepository`; swipe `maybe` adds; `GET /api/products/{id}/maybe-pool`; `POST /api/ideas/{id}/promote-maybe` → yes + pool remove + stage advance when in swipe. Resurface / batch re-eval: still open (§2).
 - [x] Automation tiers: `automation_tier` enum `supervised` | `semi_auto` | `full_auto` on product + create/patch/JSON (behavioral differences beyond storage/TBD for dispatch).
 - [x] **Merge-queue autopilot policy** — tier-derived **merge execution gates** (`require_approved_review`, `require_clean_mergeable` defaults + **`merge_policy_json`** overrides); **`full_auto`** → **`MergeShip.Complete`** on task **done**; **`semi_auto`** → **`CompleteIfPolicyAllowsAuto`** (GitHub gates when **`ARMS_MERGE_BACKEND=github`**); **`supervised`** no unattended ship; operator **`POST …/merge-queue/complete`** / **resolve** routes **ignore** gates (**#106**).
-- [ ] Post-execution chain: test → review → **automatic** PR on transitions — **partial:** **`full_auto`** + Kanban **`testing`/`in_progress` → `review`** opens PR when **`pull_request_head_branch`** set and URL empty (best-effort); **`full_auto`** + **`semi_auto`** (gated) **best-effort** merge-queue ship when task reaches **`done`** (see previous row); explicit **`POST /api/tasks/{id}/pull-request`** still primary; **auto test** steps / richer chain still TBD
+- [ ] Post-execution chain: test → review → **automatic** PR + merge — **partial:** **`full_auto`** / **`semi_auto`**: Kanban **`testing`/`in_progress`/`convoy_active` → `review`** opens PR when head branch set and no URL; **`done`** (incl. **`TryComplete`** / webhooks) runs **`ensurePullRequestForAutoMerge`** then merge-queue ship; **`OpenPullRequest`** — **SQLite `LiveTX`**: task row + **`pull_request_opened`** in **one outbox transaction**; **retries** (up to 3) on transient **`ErrShipping`** (skip when **`ErrShippingNonRetryable`**, e.g. REST **401**). **Still TBD:** **auto test** phase automation, richer PR idempotency (duplicate PR handling), merge/PR coordinated retries.
 - [x] GitHub **`PullRequestPublisher`** — `adapters/shipping` GitHub client (go-github v66) + noop; **`POST /api/tasks/{id}/pull-request`** (`head_branch`, optional `title`/`body`); **`ARMS_GITHUB_TOKEN`** / **`GITHUB_TOKEN`**; SSE **`pull_request_opened`** when URL returned.
 
 ---
@@ -403,12 +403,12 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 
 | Area            | Rough priority for a vertical slice                         |
 |-----------------|--------------------------------------------------------------|
-| SQLite + core tables | Unblocks everything else (current **v16** migrations)     |
+| SQLite + core tables | Unblocks everything else (current **v17** migrations)     |
 | HTTP + auth + tasks/products | Makes the service usable from a UI or CLI            |
 | Real OpenClaw WS   | Closes the execution-plane gap                            |
 | Webhooks           | Completes the async completion loop                       |
 | SSE + costs + workspace | Match MC ops and safety story                          |
-| Asynq + **`cmd/arms-worker`** | **`arms:autopilot_tick`**, **`arms:product_autopilot_tick`**, **`product:schedule:tick`** (**`product_schedules`** cron/delay) — **#55 done**; **next:** cut over / deprecate global **`ARMS_AUTOPILOT_TICK_SEC`** when ready |
+| Asynq + **`cmd/arms-worker`** | **`product:schedule:tick`**, **`arms:product_autopilot_tick`**, optional **`arms:autopilot_tick`** — **`ARMS_AUTOPILOT_TICK_SEC` deprecated**; **`cmd/arms`** **5m** resync |
 | Operations log + preference API | Audit trail + structured preference storage (ML later)   |
 | Stub routes → real domains | Settings stub, **`/api/openclaw/*`** proxy (if needed)   |
 | Roadmap phases A→D | See **Implementation roadmap** above                      |

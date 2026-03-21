@@ -3,6 +3,8 @@ package task
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -16,7 +18,67 @@ import (
 	"github.com/closeloopautomous/arms/internal/application/livefeed"
 	"github.com/closeloopautomous/arms/internal/application/product"
 	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/closeloopautomous/arms/internal/ports"
 )
+
+type fakePRPublisher struct{ creates int }
+
+func (f *fakePRPublisher) CreatePullRequest(_ context.Context, in ports.CreatePullRequestInput) (ports.CreatePullRequestResult, error) {
+	f.creates++
+	return ports.CreatePullRequestResult{HTMLURL: "https://github.com/acme/demo/pull/99", Number: 99}, nil
+}
+
+type mergeShipRecorder struct {
+	completeCalls            int
+	completeIfPolicyCalls    int
+	lastTaskOnComplete       domain.TaskID
+	tasks                    ports.TaskRepository
+	wantPRNumberBeforeMerge int
+}
+
+func (m *mergeShipRecorder) Complete(ctx context.Context, taskID domain.TaskID, _ bool) error {
+	m.completeCalls++
+	m.lastTaskOnComplete = taskID
+	if m.tasks != nil && m.wantPRNumberBeforeMerge > 0 {
+		t, err := m.tasks.ByID(ctx, taskID)
+		if err != nil {
+			return err
+		}
+		if t.PullRequestNumber != m.wantPRNumberBeforeMerge {
+			return fmt.Errorf("merge wanted pr#%d got %d", m.wantPRNumberBeforeMerge, t.PullRequestNumber)
+		}
+	}
+	return nil
+}
+
+func (m *mergeShipRecorder) CompleteIfPolicyAllowsAuto(ctx context.Context, taskID domain.TaskID) error {
+	m.completeIfPolicyCalls++
+	return m.Complete(ctx, taskID, false)
+}
+
+type flakyPRPublisher struct {
+	failRemaining int
+	calls         int
+}
+
+func (f *flakyPRPublisher) CreatePullRequest(_ context.Context, _ ports.CreatePullRequestInput) (ports.CreatePullRequestResult, error) {
+	f.calls++
+	if f.failRemaining > 0 {
+		f.failRemaining--
+		return ports.CreatePullRequestResult{}, fmt.Errorf("%w: transient failure", domain.ErrShipping)
+	}
+	return ports.CreatePullRequestResult{HTMLURL: "https://github.com/acme/demo/pull/7", Number: 7}, nil
+}
+
+type unauthorizedPRPublisher struct{ calls int }
+
+func (u *unauthorizedPRPublisher) CreatePullRequest(_ context.Context, _ ports.CreatePullRequestInput) (ports.CreatePullRequestResult, error) {
+	u.calls++
+	return ports.CreatePullRequestResult{}, errors.Join(
+		domain.ErrShippingNonRetryable,
+		fmt.Errorf("%w: unauthorized (check token scopes: repo)", domain.ErrShipping),
+	)
+}
 
 func TestKanbanDispatchAndCheckpoint(t *testing.T) {
 	ctx := context.Background()
@@ -292,5 +354,392 @@ func TestNudgeStallAndCompleteWithLiveActivityMemory(t *testing.T) {
 		case <-time.After(100 * time.Millisecond):
 			t.Fatal("timeout waiting for task_completed on hub")
 		}
+	}
+}
+
+func TestPostExecFullAutoOpensPROnCompleteWhenHeadSet(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	ideas := memory.NewIdeaStore()
+	tasks := memory.NewTaskStore()
+	costs := memory.NewCostStore()
+	checkpoints := memory.NewCheckpointStore()
+	gateway := &gw.Stub{}
+	prPub := &fakePRPublisher{}
+	mergeRec := &mergeShipRecorder{tasks: tasks, wantPRNumberBeforeMerge: 99}
+
+	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
+	p, err := prodSvc.Register(ctx, product.RegistrationInput{
+		Name:           "p",
+		WorkspaceID:    "w",
+		RepoURL:        "https://github.com/acme/demo",
+		AutomationTier: "full_auto",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	auto := &autopilot.Service{
+		Products: products, Ideas: ideas,
+		Research: aiStub{}, Ideation: ideationOneIdea{},
+		Clock: clock, Identities: ids,
+	}
+	svc := &Service{
+		Tasks:     tasks, Products: products, Ideas: ideas,
+		Gateway:   gateway,
+		Budget:    &budget.Static{Cap: 100, Costs: costs},
+		Checkpt:   checkpoints,
+		Clock:     clock,
+		IDs:       ids,
+		Ship:      prPub,
+		MergeShip: mergeRec,
+	}
+	_ = auto.RunResearch(ctx, p.ID)
+	_ = auto.RunIdeation(ctx, p.ID)
+	list, _ := ideas.ListByProduct(ctx, p.ID)
+	_ = auto.SubmitSwipe(ctx, list[0].ID, domain.DecisionYes)
+	tt, err := svc.CreateFromApprovedIdea(ctx, list[0].ID, "spec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = svc.ApprovePlan(ctx, tt.ID, "")
+	_ = svc.SetKanbanStatus(ctx, tt.ID, domain.StatusAssigned, "")
+	_ = svc.Dispatch(ctx, tt.ID, 1)
+	tt, _ = tasks.ByID(ctx, tt.ID)
+	tt.PullRequestHeadBranch = "feat/autopr"
+	if err := tasks.Save(ctx, tt); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Complete(ctx, tt.ID); err != nil {
+		t.Fatal(err)
+	}
+	if prPub.creates != 1 {
+		t.Fatalf("want 1 PR create, got %d", prPub.creates)
+	}
+	if mergeRec.completeCalls != 1 {
+		t.Fatalf("want 1 merge complete, got %d", mergeRec.completeCalls)
+	}
+	tt, _ = tasks.ByID(ctx, tt.ID)
+	if tt.PullRequestNumber != 99 || tt.Status != domain.StatusDone {
+		t.Fatalf("task after complete: %+v", tt)
+	}
+}
+
+func TestPostExecSemiAutoOpensPRBeforePolicyMerge(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	ideas := memory.NewIdeaStore()
+	tasks := memory.NewTaskStore()
+	costs := memory.NewCostStore()
+	checkpoints := memory.NewCheckpointStore()
+	gateway := &gw.Stub{}
+	prPub := &fakePRPublisher{}
+	mergeRec := &mergeShipRecorder{tasks: tasks, wantPRNumberBeforeMerge: 99}
+
+	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
+	p, err := prodSvc.Register(ctx, product.RegistrationInput{
+		Name:           "p",
+		WorkspaceID:    "w",
+		RepoURL:        "https://github.com/acme/demo",
+		AutomationTier: "semi_auto",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	auto := &autopilot.Service{
+		Products: products, Ideas: ideas,
+		Research: aiStub{}, Ideation: ideationOneIdea{},
+		Clock: clock, Identities: ids,
+	}
+	svc := &Service{
+		Tasks:     tasks, Products: products, Ideas: ideas,
+		Gateway:   gateway,
+		Budget:    &budget.Static{Cap: 100, Costs: costs},
+		Checkpt:   checkpoints,
+		Clock:     clock,
+		IDs:       ids,
+		Ship:      prPub,
+		MergeShip: mergeRec,
+	}
+	_ = auto.RunResearch(ctx, p.ID)
+	_ = auto.RunIdeation(ctx, p.ID)
+	list, _ := ideas.ListByProduct(ctx, p.ID)
+	_ = auto.SubmitSwipe(ctx, list[0].ID, domain.DecisionYes)
+	tt, err := svc.CreateFromApprovedIdea(ctx, list[0].ID, "spec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = svc.ApprovePlan(ctx, tt.ID, "")
+	_ = svc.SetKanbanStatus(ctx, tt.ID, domain.StatusAssigned, "")
+	_ = svc.Dispatch(ctx, tt.ID, 1)
+	tt, _ = tasks.ByID(ctx, tt.ID)
+	tt.PullRequestHeadBranch = "feat/semi"
+	if err := tasks.Save(ctx, tt); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Complete(ctx, tt.ID); err != nil {
+		t.Fatal(err)
+	}
+	if prPub.creates != 1 {
+		t.Fatalf("want 1 PR create, got %d", prPub.creates)
+	}
+	if mergeRec.completeIfPolicyCalls != 1 {
+		t.Fatalf("want 1 CompleteIfPolicyAllowsAuto, got %d", mergeRec.completeIfPolicyCalls)
+	}
+}
+
+func TestPostExecSupervisedDoesNotAutoMerge(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	ideas := memory.NewIdeaStore()
+	tasks := memory.NewTaskStore()
+	costs := memory.NewCostStore()
+	checkpoints := memory.NewCheckpointStore()
+	gateway := &gw.Stub{}
+	prPub := &fakePRPublisher{}
+	mergeRec := &mergeShipRecorder{}
+
+	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
+	p, err := prodSvc.Register(ctx, product.RegistrationInput{
+		Name:           "p",
+		WorkspaceID:    "w",
+		RepoURL:        "https://github.com/acme/demo",
+		AutomationTier: "supervised",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	auto := &autopilot.Service{
+		Products: products, Ideas: ideas,
+		Research: aiStub{}, Ideation: ideationOneIdea{},
+		Clock: clock, Identities: ids,
+	}
+	svc := &Service{
+		Tasks:     tasks, Products: products, Ideas: ideas,
+		Gateway:   gateway,
+		Budget:    &budget.Static{Cap: 100, Costs: costs},
+		Checkpt:   checkpoints,
+		Clock:     clock,
+		IDs:       ids,
+		Ship:      prPub,
+		MergeShip: mergeRec,
+	}
+	_ = auto.RunResearch(ctx, p.ID)
+	_ = auto.RunIdeation(ctx, p.ID)
+	list, _ := ideas.ListByProduct(ctx, p.ID)
+	_ = auto.SubmitSwipe(ctx, list[0].ID, domain.DecisionYes)
+	tt, err := svc.CreateFromApprovedIdea(ctx, list[0].ID, "spec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = svc.ApprovePlan(ctx, tt.ID, "")
+	_ = svc.SetKanbanStatus(ctx, tt.ID, domain.StatusAssigned, "")
+	_ = svc.Dispatch(ctx, tt.ID, 1)
+	tt, _ = tasks.ByID(ctx, tt.ID)
+	tt.PullRequestHeadBranch = "feat/sup"
+	if err := tasks.Save(ctx, tt); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Complete(ctx, tt.ID); err != nil {
+		t.Fatal(err)
+	}
+	if mergeRec.completeCalls != 0 || mergeRec.completeIfPolicyCalls != 0 {
+		t.Fatalf("supervised should not invoke merge ship, got complete=%d policy=%d",
+			mergeRec.completeCalls, mergeRec.completeIfPolicyCalls)
+	}
+	if prPub.creates != 0 {
+		t.Fatalf("supervised should not auto-open PR on complete, creates=%d", prPub.creates)
+	}
+}
+
+func TestPostExecSkipsPROpenWhenURLAlreadySet(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	ideas := memory.NewIdeaStore()
+	tasks := memory.NewTaskStore()
+	costs := memory.NewCostStore()
+	checkpoints := memory.NewCheckpointStore()
+	gateway := &gw.Stub{}
+	prPub := &fakePRPublisher{}
+	mergeRec := &mergeShipRecorder{tasks: tasks, wantPRNumberBeforeMerge: 42}
+
+	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
+	p, err := prodSvc.Register(ctx, product.RegistrationInput{
+		Name:           "p",
+		WorkspaceID:    "w",
+		RepoURL:        "https://github.com/acme/demo",
+		AutomationTier: "full_auto",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	auto := &autopilot.Service{
+		Products: products, Ideas: ideas,
+		Research: aiStub{}, Ideation: ideationOneIdea{},
+		Clock: clock, Identities: ids,
+	}
+	svc := &Service{
+		Tasks:     tasks, Products: products, Ideas: ideas,
+		Gateway:   gateway,
+		Budget:    &budget.Static{Cap: 100, Costs: costs},
+		Checkpt:   checkpoints,
+		Clock:     clock,
+		IDs:       ids,
+		Ship:      prPub,
+		MergeShip: mergeRec,
+	}
+	_ = auto.RunResearch(ctx, p.ID)
+	_ = auto.RunIdeation(ctx, p.ID)
+	list, _ := ideas.ListByProduct(ctx, p.ID)
+	_ = auto.SubmitSwipe(ctx, list[0].ID, domain.DecisionYes)
+	tt, err := svc.CreateFromApprovedIdea(ctx, list[0].ID, "spec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = svc.ApprovePlan(ctx, tt.ID, "")
+	_ = svc.SetKanbanStatus(ctx, tt.ID, domain.StatusAssigned, "")
+	_ = svc.Dispatch(ctx, tt.ID, 1)
+	tt, _ = tasks.ByID(ctx, tt.ID)
+	tt.PullRequestHeadBranch = "feat/existing"
+	tt.PullRequestURL = "https://github.com/acme/demo/pull/42"
+	tt.PullRequestNumber = 42
+	if err := tasks.Save(ctx, tt); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Complete(ctx, tt.ID); err != nil {
+		t.Fatal(err)
+	}
+	if prPub.creates != 0 {
+		t.Fatalf("want 0 PR create when URL set, got %d", prPub.creates)
+	}
+	if mergeRec.completeCalls != 1 {
+		t.Fatalf("want 1 merge complete, got %d", mergeRec.completeCalls)
+	}
+}
+
+func TestAutoPROnConvoyActiveToReviewFullAuto(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	ideas := memory.NewIdeaStore()
+	tasks := memory.NewTaskStore()
+	costs := memory.NewCostStore()
+	checkpoints := memory.NewCheckpointStore()
+	gateway := &gw.Stub{}
+	prPub := &fakePRPublisher{}
+
+	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
+	p, err := prodSvc.Register(ctx, product.RegistrationInput{
+		Name:           "p",
+		WorkspaceID:    "w",
+		RepoURL:        "https://github.com/acme/demo",
+		AutomationTier: "full_auto",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	auto := &autopilot.Service{
+		Products: products, Ideas: ideas,
+		Research: aiStub{}, Ideation: ideationOneIdea{},
+		Clock: clock, Identities: ids,
+	}
+	svc := &Service{
+		Tasks:   tasks, Products: products, Ideas: ideas,
+		Gateway: gateway,
+		Budget:  &budget.Static{Cap: 100, Costs: costs},
+		Checkpt: checkpoints,
+		Clock:   clock,
+		IDs:     ids,
+		Ship:    prPub,
+	}
+	_ = auto.RunResearch(ctx, p.ID)
+	_ = auto.RunIdeation(ctx, p.ID)
+	list, _ := ideas.ListByProduct(ctx, p.ID)
+	_ = auto.SubmitSwipe(ctx, list[0].ID, domain.DecisionYes)
+	tt, err := svc.CreateFromApprovedIdea(ctx, list[0].ID, "spec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = svc.ApprovePlan(ctx, tt.ID, "")
+	_ = svc.SetKanbanStatus(ctx, tt.ID, domain.StatusAssigned, "")
+	_ = svc.Dispatch(ctx, tt.ID, 1)
+	tt, _ = tasks.ByID(ctx, tt.ID)
+	tt.Status = domain.StatusConvoyActive
+	tt.PullRequestHeadBranch = "feat/convoy"
+	if err := tasks.Save(ctx, tt); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetKanbanStatus(ctx, tt.ID, domain.StatusReview, ""); err != nil {
+		t.Fatal(err)
+	}
+	if prPub.creates != 1 {
+		t.Fatalf("want 1 PR from convoy->review, got %d", prPub.creates)
+	}
+}
+
+func TestCreatePullRequestWithRetry(t *testing.T) {
+	ctx := context.Background()
+	in := ports.CreatePullRequestInput{Owner: "o", Repo: "r", HeadBranch: "h", BaseBranch: "main", Title: "t", TaskID: "tsk-1"}
+	f := &flakyPRPublisher{failRemaining: 2}
+	cre, err := createPullRequestWithRetry(ctx, f, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cre.Number != 7 || f.calls != 3 {
+		t.Fatalf("got calls=%d cre=%+v", f.calls, cre)
+	}
+}
+
+func TestCreatePullRequestWithRetryUnauthorizedNoRetry(t *testing.T) {
+	ctx := context.Background()
+	in := ports.CreatePullRequestInput{Owner: "o", Repo: "r", HeadBranch: "h", BaseBranch: "main", Title: "t"}
+	u := &unauthorizedPRPublisher{}
+	_, err := createPullRequestWithRetry(ctx, u, in)
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if u.calls != 1 {
+		t.Fatalf("want single attempt, got %d", u.calls)
+	}
+}
+
+func TestOpenPullRequestNilShip(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	tasks := memory.NewTaskStore()
+	costs := memory.NewCostStore()
+	checkpoints := memory.NewCheckpointStore()
+	gateway := &gw.Stub{}
+	p, err := (&product.Service{Products: products, Clock: clock, IDs: ids}).Register(ctx, product.RegistrationInput{
+		Name: "p", WorkspaceID: "w", RepoURL: "https://github.com/acme/demo",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tt := &domain.Task{
+		ID: "t1", ProductID: p.ID, IdeaID: "i1", Spec: "s", Status: domain.StatusInProgress,
+		PlanApproved: true, CreatedAt: clock.Now(), UpdatedAt: clock.Now(),
+	}
+	if err := tasks.Save(ctx, tt); err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{
+		Tasks: tasks, Products: products, Ideas: memory.NewIdeaStore(),
+		Gateway: gateway, Budget: &budget.Static{Cap: 100, Costs: costs},
+		Checkpt: checkpoints, Clock: clock, IDs: ids, Ship: nil,
+	}
+	_, _, err = svc.OpenPullRequest(ctx, tt.ID, "feat/x", "", "")
+	if err == nil || !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("want ErrInvalidInput, got %v", err)
 	}
 }

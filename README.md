@@ -27,7 +27,7 @@ cd arms
 go run ./cmd/arms
 ```
 
-**Docker** (SQLite volume + optional Redis for Asynq-backed autopilot when you set **`ARMS_REDIS_ADDR`** + **`ARMS_AUTOPILOT_TICK_SEC`** and run **`cmd/arms-worker`**):
+**Docker** (SQLite volume + optional Redis for Asynq-backed autopilot when you set **`ARMS_REDIS_ADDR`** and run **`cmd/arms-worker`** alongside **`cmd/arms`**):
 
 ```bash
 docker compose -f arms/docker-compose.yml up --build
