@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -190,6 +191,28 @@ func (s *TaskStore) ListByProduct(_ context.Context, productID domain.ProductID)
 	return out, nil
 }
 
+func (s *TaskStore) TryComplete(_ context.Context, taskID domain.TaskID, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.data[taskID]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	switch t.Status {
+	case domain.StatusDone:
+		return nil
+	case domain.StatusInProgress, domain.StatusTesting, domain.StatusReview:
+		cp := *t
+		cp.Status = domain.StatusDone
+		cp.StatusReason = ""
+		cp.UpdatedAt = at.UTC()
+		s.data[taskID] = &cp
+		return nil
+	default:
+		return fmt.Errorf("%w: complete from %s", domain.ErrInvalidTransition, t.Status)
+	}
+}
+
 var _ ports.TaskRepository = (*TaskStore)(nil)
 
 type ConvoyStore struct {
@@ -270,32 +293,321 @@ func (s *CostStore) SumByProduct(_ context.Context, productID domain.ProductID) 
 	return sum, nil
 }
 
+func (s *CostStore) SumByProductSince(_ context.Context, productID domain.ProductID, since time.Time) (float64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var sum float64
+	for _, e := range s.rows {
+		if e.ProductID != productID {
+			continue
+		}
+		if !since.IsZero() && e.At.Before(since) {
+			continue
+		}
+		sum += e.Amount
+	}
+	return sum, nil
+}
+
+func (s *CostStore) ListByProductBetween(_ context.Context, productID domain.ProductID, from, to time.Time) ([]domain.CostEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []domain.CostEvent
+	for _, e := range s.rows {
+		if e.ProductID != productID {
+			continue
+		}
+		if !from.IsZero() && e.At.Before(from) {
+			continue
+		}
+		if !to.IsZero() && e.At.After(to) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out, nil
+}
+
 var _ ports.CostRepository = (*CostStore)(nil)
 
+type checkpointHist struct {
+	id        int64
+	task      domain.TaskID
+	payload   string
+	createdAt time.Time
+}
+
 type CheckpointStore struct {
-	mu   sync.RWMutex
-	data map[domain.TaskID]string
+	mu       sync.RWMutex
+	latest   map[domain.TaskID]string
+	history  []checkpointHist
+	nextHist int64
 }
 
 func NewCheckpointStore() *CheckpointStore {
-	return &CheckpointStore{data: make(map[domain.TaskID]string)}
+	return &CheckpointStore{latest: make(map[domain.TaskID]string)}
 }
 
 func (s *CheckpointStore) Save(_ context.Context, taskID domain.TaskID, payload string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data[taskID] = payload
+	s.nextHist++
+	s.history = append(s.history, checkpointHist{
+		id: s.nextHist, task: taskID, payload: payload, createdAt: time.Now().UTC(),
+	})
+	s.latest[taskID] = payload
 	return nil
 }
 
 func (s *CheckpointStore) Load(_ context.Context, taskID domain.TaskID) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	v, ok := s.data[taskID]
+	v, ok := s.latest[taskID]
 	if !ok {
 		return "", domain.ErrNotFound
 	}
 	return v, nil
 }
 
+func (s *CheckpointStore) ListHistory(_ context.Context, taskID domain.TaskID, limit int) ([]domain.CheckpointHistoryEntry, error) {
+	if limit < 1 {
+		limit = 50
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []domain.CheckpointHistoryEntry
+	for i := len(s.history) - 1; i >= 0 && len(out) < limit; i-- {
+		h := s.history[i]
+		if h.task != taskID {
+			continue
+		}
+		out = append(out, domain.CheckpointHistoryEntry{
+			ID: h.id, TaskID: h.task, Payload: h.payload, CreatedAt: h.createdAt,
+		})
+	}
+	return out, nil
+}
+
+func (s *CheckpointStore) HistoryByID(_ context.Context, id int64) (*domain.CheckpointHistoryEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i := range s.history {
+		if s.history[i].id == id {
+			h := s.history[i]
+			return &domain.CheckpointHistoryEntry{
+				ID: h.id, TaskID: h.task, Payload: h.payload, CreatedAt: h.createdAt,
+			}, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
 var _ ports.CheckpointRepository = (*CheckpointStore)(nil)
+
+// —— cost caps ——
+
+type CostCapStore struct {
+	mu   sync.RWMutex
+	data map[domain.ProductID]*domain.ProductCostCaps
+}
+
+func NewCostCapStore() *CostCapStore {
+	return &CostCapStore{data: make(map[domain.ProductID]*domain.ProductCostCaps)}
+}
+
+func (s *CostCapStore) Get(_ context.Context, productID domain.ProductID) (*domain.ProductCostCaps, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	c, ok := s.data[productID]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	cp := *c
+	return &cp, nil
+}
+
+func (s *CostCapStore) Upsert(_ context.Context, caps *domain.ProductCostCaps) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := *caps
+	s.data[caps.ProductID] = &cp
+	return nil
+}
+
+var _ ports.CostCapRepository = (*CostCapStore)(nil)
+
+// —— workspace ——
+
+const memWorkspacePortMin, memWorkspacePortMax = 4200, 4299
+
+type mergeQueueRow struct {
+	id          int64
+	productID   domain.ProductID
+	taskID      domain.TaskID
+	status      string
+	createdAt   time.Time
+	completedAt time.Time
+}
+
+type WorkspaceStore struct {
+	mu       sync.Mutex
+	ports    map[int]domain.AllocatedPort
+	mq       []mergeQueueRow
+	nextMQID int64
+}
+
+func NewWorkspaceStore() *WorkspaceStore {
+	return &WorkspaceStore{ports: make(map[int]domain.AllocatedPort)}
+}
+
+func (s *WorkspaceStore) Allocate(ctx context.Context, productID domain.ProductID, taskID domain.TaskID, at time.Time) (int, error) {
+	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for p := memWorkspacePortMin; p <= memWorkspacePortMax; p++ {
+		if _, taken := s.ports[p]; taken {
+			continue
+		}
+		s.ports[p] = domain.AllocatedPort{
+			Port: p, ProductID: productID, TaskID: taskID, AllocatedAt: at,
+		}
+		return p, nil
+	}
+	return 0, domain.ErrNotFound
+}
+
+func (s *WorkspaceStore) Release(ctx context.Context, port int) error {
+	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.ports[port]; !ok {
+		return domain.ErrNotFound
+	}
+	delete(s.ports, port)
+	return nil
+}
+
+func (s *WorkspaceStore) ListByProduct(ctx context.Context, productID domain.ProductID) ([]domain.AllocatedPort, error) {
+	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []domain.AllocatedPort
+	for _, a := range s.ports {
+		if a.ProductID == productID {
+			out = append(out, a)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Port < out[j].Port })
+	return out, nil
+}
+
+func (s *WorkspaceStore) ListAll(ctx context.Context) ([]domain.AllocatedPort, error) {
+	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]domain.AllocatedPort, 0, len(s.ports))
+	for _, a := range s.ports {
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Port < out[j].Port })
+	return out, nil
+}
+
+func (s *WorkspaceStore) CountPending(_ context.Context) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var n int64
+	for i := range s.mq {
+		if s.mq[i].status == "pending" {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (s *WorkspaceStore) Enqueue(_ context.Context, productID domain.ProductID, taskID domain.TaskID, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.mq {
+		if s.mq[i].taskID == taskID && s.mq[i].status == "pending" {
+			return domain.ErrConflict
+		}
+	}
+	s.nextMQID++
+	s.mq = append(s.mq, mergeQueueRow{
+		id:        s.nextMQID,
+		productID: productID,
+		taskID:    taskID,
+		status:    "pending",
+		createdAt: at.UTC(),
+	})
+	return nil
+}
+
+func (s *WorkspaceStore) ListPendingByProduct(_ context.Context, productID domain.ProductID, limit int) ([]domain.MergeQueueEntry, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []domain.MergeQueueEntry
+	for i := range s.mq {
+		row := &s.mq[i]
+		if row.productID == productID && row.status == "pending" {
+			out = append(out, domain.MergeQueueEntry{
+				ID:        row.id,
+				ProductID: row.productID,
+				TaskID:    row.taskID,
+				Status:    row.status,
+				CreatedAt: row.createdAt,
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *WorkspaceStore) CompletePendingForTask(_ context.Context, taskID domain.TaskID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var productID domain.ProductID
+	var myIdx = -1
+	for i := range s.mq {
+		if s.mq[i].taskID == taskID && s.mq[i].status == "pending" {
+			myIdx = i
+			productID = s.mq[i].productID
+			break
+		}
+	}
+	if myIdx < 0 {
+		return domain.ErrNotFound
+	}
+	var headID int64
+	var haveHead bool
+	for i := range s.mq {
+		row := &s.mq[i]
+		if row.productID == productID && row.status == "pending" {
+			if !haveHead || row.id < headID {
+				headID = row.id
+				haveHead = true
+			}
+		}
+	}
+	if !haveHead || s.mq[myIdx].id != headID {
+		return domain.ErrNotMergeQueueHead
+	}
+	s.mq[myIdx].status = "done"
+	s.mq[myIdx].completedAt = time.Now().UTC()
+	return nil
+}
+
+var (
+	_ ports.WorkspacePortRepository       = (*WorkspaceStore)(nil)
+	_ ports.WorkspaceMergeQueueRepository = (*WorkspaceStore)(nil)
+)

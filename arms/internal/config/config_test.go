@@ -35,3 +35,17 @@ func TestLoadFromEnvOverrides(t *testing.T) {
 		t.Fatalf("log flags %+v", c)
 	}
 }
+
+func TestLoadFromEnvARMSACL(t *testing.T) {
+	t.Setenv("ARMS_ACL", "alice|s1|admin;bob|s2|read")
+	c := LoadFromEnv()
+	if len(c.ACLUsers) != 2 {
+		t.Fatalf("want 2 users got %+v", c.ACLUsers)
+	}
+	if c.ACLUsers[0].UserID != "alice" || c.ACLUsers[0].Role != "admin" {
+		t.Fatalf("user0 %+v", c.ACLUsers[0])
+	}
+	if c.ACLUsers[1].UserID != "bob" || c.ACLUsers[1].Role != "read" {
+		t.Fatalf("user1 %+v", c.ACLUsers[1])
+	}
+}

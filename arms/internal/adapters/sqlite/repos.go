@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -27,18 +28,19 @@ func (s *ProductStore) Save(ctx context.Context, p *domain.Product) error {
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO products (
   id, name, stage, research_summary, workspace_id,
-  repo_url, repo_branch, description, program_document, settings_json, icon_url,
+  repo_url, repo_clone_path, repo_branch, description, program_document, settings_json, icon_url,
   research_cadence_sec, ideation_cadence_sec, automation_tier, auto_dispatch_enabled,
   last_auto_research_at, last_auto_ideation_at, preference_model_json,
   updated_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   name = excluded.name,
   stage = excluded.stage,
   research_summary = excluded.research_summary,
   workspace_id = excluded.workspace_id,
   repo_url = excluded.repo_url,
+  repo_clone_path = excluded.repo_clone_path,
   repo_branch = excluded.repo_branch,
   description = excluded.description,
   program_document = excluded.program_document,
@@ -53,7 +55,7 @@ ON CONFLICT(id) DO UPDATE SET
   preference_model_json = excluded.preference_model_json,
   updated_at = excluded.updated_at
 `, string(p.ID), p.Name, int(p.Stage), p.ResearchSummary, p.WorkspaceID,
-		p.RepoURL, p.RepoBranch, p.Description, p.ProgramDocument, p.SettingsJSON, p.IconURL,
+		p.RepoURL, p.RepoClonePath, p.RepoBranch, p.Description, p.ProgramDocument, p.SettingsJSON, p.IconURL,
 		p.ResearchCadenceSec, p.IdeationCadenceSec, tier, boolInt(p.AutoDispatchEnabled),
 		formatOptionalTime(p.LastAutoResearchAt), formatOptionalTime(p.LastAutoIdeationAt), p.PreferenceModelJSON,
 		p.UpdatedAt.Format(time.RFC3339Nano))
@@ -61,7 +63,7 @@ ON CONFLICT(id) DO UPDATE SET
 }
 
 const productSelectCols = `id, name, stage, research_summary, workspace_id,
-  repo_url, repo_branch, description, program_document, settings_json, icon_url,
+  repo_url, repo_clone_path, repo_branch, description, program_document, settings_json, icon_url,
   research_cadence_sec, ideation_cadence_sec, automation_tier, auto_dispatch_enabled,
   last_auto_research_at, last_auto_ideation_at, preference_model_json,
   updated_at`
@@ -97,14 +99,14 @@ func (s *ProductStore) ListAll(ctx context.Context) ([]domain.Product, error) {
 
 func scanProductRow(row interface{ Scan(dest ...any) error }) (*domain.Product, error) {
 	var (
-		sid, name, summary, ws                                  string
-		repoURL, branch, desc, program, settings, icon, updated string
-		tierStr, prefJSON                                       string
-		lastRes, lastIde                                        string
-		stage, resCad, ideCad, autoDisp                         int
+		sid, name, summary, ws                                        string
+		repoURL, repoClone, branch, desc, program, settings, icon, updated string
+		tierStr, prefJSON                                             string
+		lastRes, lastIde                                              string
+		stage, resCad, ideCad, autoDisp                               int
 	)
 	if err := row.Scan(&sid, &name, &stage, &summary, &ws,
-		&repoURL, &branch, &desc, &program, &settings, &icon,
+		&repoURL, &repoClone, &branch, &desc, &program, &settings, &icon,
 		&resCad, &ideCad, &tierStr, &autoDisp, &lastRes, &lastIde, &prefJSON,
 		&updated); err != nil {
 		return nil, err
@@ -126,6 +128,7 @@ func scanProductRow(row interface{ Scan(dest ...any) error }) (*domain.Product, 
 		ResearchSummary:     summary,
 		WorkspaceID:         ws,
 		RepoURL:             repoURL,
+		RepoClonePath:       repoClone,
 		RepoBranch:          branch,
 		Description:         desc,
 		ProgramDocument:     program,
@@ -297,8 +300,8 @@ func (s *TaskStore) Save(ctx context.Context, t *domain.Task) error {
 		pa = 1
 	}
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO tasks (id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO tasks (id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   product_id = excluded.product_id,
   idea_id = excluded.idea_id,
@@ -309,17 +312,19 @@ ON CONFLICT(id) DO UPDATE SET
   clarifications_json = excluded.clarifications_json,
   checkpoint = excluded.checkpoint,
   external_ref = excluded.external_ref,
+  sandbox_path = excluded.sandbox_path,
+  worktree_path = excluded.worktree_path,
   created_at = excluded.created_at,
   updated_at = excluded.updated_at
 `, string(t.ID), string(t.ProductID), string(t.IdeaID), t.Spec, string(t.Status), t.StatusReason, pa, t.ClarificationsJSON,
-		t.Checkpoint, t.ExternalRef,
+		t.Checkpoint, t.ExternalRef, t.SandboxPath, t.WorktreePath,
 		t.CreatedAt.Format(time.RFC3339Nano), t.UpdatedAt.Format(time.RFC3339Nano))
 	return err
 }
 
 func (s *TaskStore) ByID(ctx context.Context, id domain.TaskID) (*domain.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, created_at, updated_at
+SELECT id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, created_at, updated_at
 FROM tasks WHERE id = ?`, string(id))
 	t, err := scanTaskRow(row)
 	if err != nil {
@@ -333,7 +338,7 @@ FROM tasks WHERE id = ?`, string(id))
 
 func (s *TaskStore) ListByProduct(ctx context.Context, productID domain.ProductID) ([]domain.Task, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, created_at, updated_at
+SELECT id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, created_at, updated_at
 FROM tasks WHERE product_id = ?
 ORDER BY updated_at DESC`, string(productID))
 	if err != nil {
@@ -353,27 +358,27 @@ ORDER BY updated_at DESC`, string(productID))
 
 func scanTaskRow(row *sql.Row) (*domain.Task, error) {
 	var (
-		sid, pid, iid, spec, st, sreason, clar, ck, ref, ca, ua string
-		pa                                                      int
+		sid, pid, iid, spec, st, sreason, clar, ck, ref, sand, wt, ca, ua string
+		pa                                                                int
 	)
-	if err := row.Scan(&sid, &pid, &iid, &spec, &st, &sreason, &pa, &clar, &ck, &ref, &ca, &ua); err != nil {
+	if err := row.Scan(&sid, &pid, &iid, &spec, &st, &sreason, &pa, &clar, &ck, &ref, &sand, &wt, &ca, &ua); err != nil {
 		return nil, err
 	}
-	return buildTaskFromScan(sid, pid, iid, spec, st, sreason, pa, clar, ck, ref, ca, ua)
+	return buildTaskFromScan(sid, pid, iid, spec, st, sreason, pa, clar, ck, ref, sand, wt, ca, ua)
 }
 
 func scanTaskRows(rows *sql.Rows) (*domain.Task, error) {
 	var (
-		sid, pid, iid, spec, st, sreason, clar, ck, ref, ca, ua string
-		pa                                                      int
+		sid, pid, iid, spec, st, sreason, clar, ck, ref, sand, wt, ca, ua string
+		pa                                                                int
 	)
-	if err := rows.Scan(&sid, &pid, &iid, &spec, &st, &sreason, &pa, &clar, &ck, &ref, &ca, &ua); err != nil {
+	if err := rows.Scan(&sid, &pid, &iid, &spec, &st, &sreason, &pa, &clar, &ck, &ref, &sand, &wt, &ca, &ua); err != nil {
 		return nil, err
 	}
-	return buildTaskFromScan(sid, pid, iid, spec, st, sreason, pa, clar, ck, ref, ca, ua)
+	return buildTaskFromScan(sid, pid, iid, spec, st, sreason, pa, clar, ck, ref, sand, wt, ca, ua)
 }
 
-func buildTaskFromScan(sid, pid, iid, spec, st, sreason string, pa int, clar, ck, ref, ca, ua string) (*domain.Task, error) {
+func buildTaskFromScan(sid, pid, iid, spec, st, sreason string, pa int, clar, ck, ref, sand, wt, ca, ua string) (*domain.Task, error) {
 	cat, err := time.Parse(time.RFC3339Nano, ca)
 	if err != nil {
 		cat, _ = time.Parse(time.RFC3339, ca)
@@ -393,9 +398,43 @@ func buildTaskFromScan(sid, pid, iid, spec, st, sreason string, pa int, clar, ck
 		ClarificationsJSON: clar,
 		Checkpoint:         ck,
 		ExternalRef:        ref,
+		SandboxPath:        sand,
+		WorktreePath:       wt,
 		CreatedAt:          cat,
 		UpdatedAt:          uat,
 	}, nil
+}
+
+func (s *TaskStore) TryComplete(ctx context.Context, taskID domain.TaskID, at time.Time) error {
+	atStr := at.UTC().Format(time.RFC3339Nano)
+	res, err := s.db.ExecContext(ctx, `
+UPDATE tasks SET status = ?, status_reason = '', updated_at = ?
+WHERE id = ? AND status IN (?, ?, ?)`,
+		string(domain.StatusDone), atStr, string(taskID),
+		string(domain.StatusInProgress), string(domain.StatusTesting), string(domain.StatusReview),
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	var st string
+	err = s.db.QueryRowContext(ctx, `SELECT status FROM tasks WHERE id = ?`, string(taskID)).Scan(&st)
+	if err == sql.ErrNoRows {
+		return domain.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if st == string(domain.StatusDone) {
+		return nil
+	}
+	return fmt.Errorf("%w: complete from %s", domain.ErrInvalidTransition, st)
 }
 
 // —— convoys ——
@@ -547,9 +586,9 @@ var _ ports.CostRepository = (*CostStore)(nil)
 
 func (s *CostStore) Append(ctx context.Context, e domain.CostEvent) error {
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO cost_events (id, product_id, task_id, amount, note, at)
-VALUES (?, ?, ?, ?, ?, ?)
-`, e.ID, string(e.ProductID), string(e.TaskID), e.Amount, e.Note, e.At.Format(time.RFC3339Nano))
+INSERT INTO cost_events (id, product_id, task_id, amount, note, agent, model, at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`, e.ID, string(e.ProductID), string(e.TaskID), e.Amount, e.Note, e.Agent, e.Model, e.At.Format(time.RFC3339Nano))
 	return err
 }
 
@@ -566,6 +605,82 @@ SELECT COALESCE(SUM(amount), 0) FROM cost_events WHERE product_id = ?`, string(p
 	return sum.Float64, nil
 }
 
+func (s *CostStore) SumByProductSince(ctx context.Context, productID domain.ProductID, since time.Time) (float64, error) {
+	if since.IsZero() {
+		return s.SumByProduct(ctx, productID)
+	}
+	sinceStr := since.UTC().Format(time.RFC3339Nano)
+	var sum sql.NullFloat64
+	err := s.db.QueryRowContext(ctx, `
+SELECT COALESCE(SUM(amount), 0) FROM cost_events
+WHERE product_id = ? AND at >= ?`, string(productID), sinceStr).Scan(&sum)
+	if err != nil {
+		return 0, err
+	}
+	if !sum.Valid {
+		return 0, nil
+	}
+	return sum.Float64, nil
+}
+
+func (s *CostStore) ListByProductBetween(ctx context.Context, productID domain.ProductID, from, to time.Time) ([]domain.CostEvent, error) {
+	fromStr := ""
+	if !from.IsZero() {
+		fromStr = from.UTC().Format(time.RFC3339Nano)
+	}
+	toStr := ""
+	if !to.IsZero() {
+		toStr = to.UTC().Format(time.RFC3339Nano)
+	}
+	var rows *sql.Rows
+	var err error
+	switch {
+	case fromStr != "" && toStr != "":
+		rows, err = s.db.QueryContext(ctx, `
+SELECT id, product_id, task_id, amount, note, agent, model, at FROM cost_events
+WHERE product_id = ? AND at >= ? AND at <= ? ORDER BY at ASC`, string(productID), fromStr, toStr)
+	case fromStr != "":
+		rows, err = s.db.QueryContext(ctx, `
+SELECT id, product_id, task_id, amount, note, agent, model, at FROM cost_events
+WHERE product_id = ? AND at >= ? ORDER BY at ASC`, string(productID), fromStr)
+	case toStr != "":
+		rows, err = s.db.QueryContext(ctx, `
+SELECT id, product_id, task_id, amount, note, agent, model, at FROM cost_events
+WHERE product_id = ? AND at <= ? ORDER BY at ASC`, string(productID), toStr)
+	default:
+		rows, err = s.db.QueryContext(ctx, `
+SELECT id, product_id, task_id, amount, note, agent, model, at FROM cost_events
+WHERE product_id = ? ORDER BY at ASC`, string(productID))
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanCostEventRows(rows)
+}
+
+func scanCostEventRows(rows *sql.Rows) ([]domain.CostEvent, error) {
+	var out []domain.CostEvent
+	for rows.Next() {
+		var (
+			id, pid, tid, note, agent, model, ats string
+			amount                                float64
+		)
+		if err := rows.Scan(&id, &pid, &tid, &amount, &note, &agent, &model, &ats); err != nil {
+			return nil, err
+		}
+		at, err := time.Parse(time.RFC3339Nano, ats)
+		if err != nil {
+			at, _ = time.Parse(time.RFC3339, ats)
+		}
+		out = append(out, domain.CostEvent{
+			ID: id, ProductID: domain.ProductID(pid), TaskID: domain.TaskID(tid),
+			Amount: amount, Note: note, Agent: agent, Model: model, At: at,
+		})
+	}
+	return out, rows.Err()
+}
+
 // —— checkpoints ——
 
 type CheckpointStore struct{ db *sql.DB }
@@ -575,11 +690,26 @@ func NewCheckpointStore(db *sql.DB) *CheckpointStore { return &CheckpointStore{d
 var _ ports.CheckpointRepository = (*CheckpointStore)(nil)
 
 func (s *CheckpointStore) Save(ctx context.Context, taskID domain.TaskID, payload string) error {
-	_, err := s.db.ExecContext(ctx, `
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO checkpoint_history (task_id, payload, created_at) VALUES (?, ?, ?)
+`, string(taskID), payload, now)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
 INSERT INTO checkpoints (task_id, payload) VALUES (?, ?)
 ON CONFLICT(task_id) DO UPDATE SET payload = excluded.payload
 `, string(taskID), payload)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *CheckpointStore) Load(ctx context.Context, taskID domain.TaskID) (string, error) {
@@ -589,6 +719,56 @@ func (s *CheckpointStore) Load(ctx context.Context, taskID domain.TaskID) (strin
 		return "", domain.ErrNotFound
 	}
 	return p, err
+}
+
+func (s *CheckpointStore) ListHistory(ctx context.Context, taskID domain.TaskID, limit int) ([]domain.CheckpointHistoryEntry, error) {
+	if limit < 1 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, task_id, payload, created_at FROM checkpoint_history
+WHERE task_id = ? ORDER BY id DESC LIMIT ?`, string(taskID), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.CheckpointHistoryEntry
+	for rows.Next() {
+		var e domain.CheckpointHistoryEntry
+		var taskStr, ats string
+		if err := rows.Scan(&e.ID, &taskStr, &e.Payload, &ats); err != nil {
+			return nil, err
+		}
+		e.TaskID = domain.TaskID(taskStr)
+		e.CreatedAt, err = time.Parse(time.RFC3339Nano, ats)
+		if err != nil {
+			e.CreatedAt, _ = time.Parse(time.RFC3339, ats)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func (s *CheckpointStore) HistoryByID(ctx context.Context, id int64) (*domain.CheckpointHistoryEntry, error) {
+	var e domain.CheckpointHistoryEntry
+	var taskStr, ats string
+	err := s.db.QueryRowContext(ctx, `
+SELECT id, task_id, payload, created_at FROM checkpoint_history WHERE id = ?`, id).Scan(&e.ID, &taskStr, &e.Payload, &ats)
+	if err == sql.ErrNoRows {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	e.TaskID = domain.TaskID(taskStr)
+	e.CreatedAt, err = time.Parse(time.RFC3339Nano, ats)
+	if err != nil {
+		e.CreatedAt, _ = time.Parse(time.RFC3339, ats)
+	}
+	return &e, nil
 }
 
 func boolInt(b bool) int {

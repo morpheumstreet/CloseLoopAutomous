@@ -74,6 +74,8 @@ type Task struct {
 	ClarificationsJSON string // optional Q&A JSON from planning (opaque to DB)
 	Checkpoint         string
 	ExternalRef        string
+	SandboxPath        string // optional operator/CI path hint (worktree isolation metadata)
+	WorktreePath       string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }

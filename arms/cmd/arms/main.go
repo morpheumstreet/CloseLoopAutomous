@@ -49,6 +49,7 @@ func main() {
 	}
 
 	handler := httpapi.NewRouter(cfg, app.Handlers)
+	handler = httpapi.CORSMiddleware(cfg.CORSAllowOrigin, handler)
 	if cfg.DatabasePath != "" {
 		slog.Info("arms persistence", "database_path", cfg.DatabasePath)
 	} else {
@@ -63,8 +64,13 @@ func main() {
 		slog.Info("arms gateway", "kind", "stub")
 	}
 	authMode := "disabled"
-	if cfg.MCAPIToken != "" {
+	switch {
+	case cfg.MCAPIToken != "" && len(cfg.ACLUsers) > 0:
+		authMode = "bearer MC_API_TOKEN and/or Basic ARMS_ACL"
+	case cfg.MCAPIToken != "":
 		authMode = "bearer MC_API_TOKEN"
+	case len(cfg.ACLUsers) > 0:
+		authMode = "HTTP Basic (ARMS_ACL)"
 	}
 	if cfg.AutopilotTickSec > 0 {
 		slog.Info("arms autopilot", "tick_sec", cfg.AutopilotTickSec)

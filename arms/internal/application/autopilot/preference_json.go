@@ -9,21 +9,6 @@ import (
 	"github.com/closeloopautomous/arms/internal/domain"
 )
 
-func swipeDecisionString(d domain.SwipeDecision) string {
-	switch d {
-	case domain.DecisionPass:
-		return "pass"
-	case domain.DecisionMaybe:
-		return "maybe"
-	case domain.DecisionYes:
-		return "yes"
-	case domain.DecisionNow:
-		return "now"
-	default:
-		return ""
-	}
-}
-
 func appendSwipePreferenceJSON(raw string, ideaID domain.IdeaID, dec domain.SwipeDecision, at time.Time) (string, error) {
 	var events []map[string]any
 	raw = strings.TrimSpace(raw)
@@ -37,7 +22,7 @@ func appendSwipePreferenceJSON(raw string, ideaID domain.IdeaID, dec domain.Swip
 	}
 	events = append(events, map[string]any{
 		"idea_id":  string(ideaID),
-		"decision": swipeDecisionString(dec),
+		"decision": domain.SwipeDecisionKey(dec),
 		"at":       at.Format(time.RFC3339Nano),
 	})
 	b, err := json.Marshal(events)

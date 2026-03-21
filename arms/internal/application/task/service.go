@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -15,12 +16,16 @@ type Service struct {
 	Tasks    ports.TaskRepository
 	Products ports.ProductRepository
 	Ideas    ports.IdeaRepository
-	Gateway  ports.AgentGateway
-	Budget   ports.BudgetPolicy
-	Checkpt  ports.CheckpointRepository
-	Clock    ports.Clock
-	IDs      ports.IdentityGenerator
-	Events   ports.LiveActivityPublisher // optional: live activity / outbox
+	Gateway      ports.AgentGateway
+	Budget       ports.BudgetPolicy
+	Checkpt      ports.CheckpointRepository
+	Clock        ports.Clock
+	IDs          ports.IdentityGenerator
+	Events       ports.LiveActivityPublisher // optional: live activity / outbox
+	LiveTX       ports.LiveActivityTX        // optional: SQLite same-transaction outbox with domain writes
+	Gate         *ProductGate               // optional: per-product mutex (e.g. completion)
+	Ship         ports.PullRequestPublisher // GitHub / noop
+	AgentHealth  ports.AgentHealthRepository // optional: stall nudge heartbeats
 }
 
 // CreateFromApprovedIdea starts the Kanban in planning until ApprovePlan moves to inbox.
@@ -176,19 +181,26 @@ func (s *Service) Dispatch(ctx context.Context, taskID domain.TaskID, estimatedC
 	t.Status = domain.StatusInProgress
 	t.ExternalRef = ref
 	t.UpdatedAt = s.Clock.Now()
+	ev := ports.LiveActivityEvent{
+		Type:      "task_dispatched",
+		Ts:        s.Clock.Now().UTC().Format(time.RFC3339Nano),
+		ProductID: string(t.ProductID),
+		TaskID:    string(t.ID),
+		Data: map[string]any{
+			"external_ref": ref,
+		},
+	}
+	if s.LiveTX != nil {
+		if err := s.LiveTX.SaveTaskWithEvent(ctx, t, ev); err != nil {
+			return err
+		}
+		return nil
+	}
 	if err := s.Tasks.Save(ctx, t); err != nil {
 		return err
 	}
 	if s.Events != nil {
-		_ = s.Events.Publish(ctx, ports.LiveActivityEvent{
-			Type:      "task_dispatched",
-			Ts:        s.Clock.Now().UTC().Format(time.RFC3339Nano),
-			ProductID: string(t.ProductID),
-			TaskID:    string(t.ID),
-			Data: map[string]any{
-				"external_ref": ref,
-			},
-		})
+		_ = s.Events.Publish(ctx, ev)
 	}
 	return nil
 }
@@ -204,13 +216,117 @@ func (s *Service) RecordCheckpoint(ctx context.Context, taskID domain.TaskID, pa
 	default:
 		return fmt.Errorf("%w: checkpoint not allowed in %s", domain.ErrInvalidTransition, t.Status)
 	}
-	if err := s.Checkpt.Save(ctx, taskID, payload); err != nil {
-		return err
-	}
 	t.Checkpoint = payload
 	t.Status = domain.StatusInProgress
 	t.UpdatedAt = s.Clock.Now()
-	return s.Tasks.Save(ctx, t)
+	ev := ports.LiveActivityEvent{
+		Type:      "checkpoint_saved",
+		Ts:        s.Clock.Now().UTC().Format(time.RFC3339Nano),
+		ProductID: string(t.ProductID),
+		TaskID:    string(taskID),
+		Data:      map[string]any{"payload_len": len(payload)},
+	}
+	if s.LiveTX != nil {
+		return s.LiveTX.RecordCheckpointWithEvent(ctx, taskID, payload, t, ev)
+	}
+	if err := s.Checkpt.Save(ctx, taskID, payload); err != nil {
+		return err
+	}
+	if err := s.Tasks.Save(ctx, t); err != nil {
+		return err
+	}
+	if s.Events != nil {
+		_ = s.Events.Publish(ctx, ev)
+	}
+	return nil
+}
+
+// ListCheckpointHistory returns recent checkpoint revisions newest-first.
+func (s *Service) ListCheckpointHistory(ctx context.Context, taskID domain.TaskID, limit int) ([]domain.CheckpointHistoryEntry, error) {
+	if _, err := s.Tasks.ByID(ctx, taskID); err != nil {
+		return nil, err
+	}
+	return s.Checkpt.ListHistory(ctx, taskID, limit)
+}
+
+// RestoreCheckpoint applies a historical payload through the same gate as RecordCheckpoint.
+func (s *Service) RestoreCheckpoint(ctx context.Context, taskID domain.TaskID, historyID int64) error {
+	e, err := s.Checkpt.HistoryByID(ctx, historyID)
+	if err != nil {
+		return err
+	}
+	if e.TaskID != taskID {
+		return domain.ErrNotFound
+	}
+	return s.RecordCheckpoint(ctx, taskID, e.Payload)
+}
+
+// OpenPullRequest opens a GitHub PR (requires product.repo_url to point at github.com and head branch to exist on the remote).
+func (s *Service) OpenPullRequest(ctx context.Context, taskID domain.TaskID, headBranch, title, body string) (prURL string, err error) {
+	t, err := s.Tasks.ByID(ctx, taskID)
+	if err != nil {
+		return "", err
+	}
+	switch t.Status {
+	case domain.StatusInProgress, domain.StatusTesting, domain.StatusReview, domain.StatusDone:
+	default:
+		return "", fmt.Errorf("%w: pull request not allowed in %s", domain.ErrInvalidTransition, t.Status)
+	}
+	p, err := s.Products.ByID(ctx, t.ProductID)
+	if err != nil {
+		return "", err
+	}
+	owner, repo, err := domain.ParseGitHubRepoURL(p.RepoURL)
+	if err != nil {
+		return "", fmt.Errorf("%w: product.repo_url: %v", domain.ErrInvalidInput, err)
+	}
+	base := strings.TrimSpace(p.RepoBranch)
+	if base == "" {
+		base = "main"
+	}
+	head := strings.TrimSpace(headBranch)
+	if head == "" {
+		return "", fmt.Errorf("%w: head_branch required", domain.ErrInvalidInput)
+	}
+	ti := strings.TrimSpace(title)
+	if ti == "" {
+		ti = fmt.Sprintf("[%s] %s", taskID, trimSpecOneLine(t.Spec))
+	}
+	prURL, err = s.Ship.CreatePullRequest(ctx, ports.CreatePullRequestInput{
+		ProductID:  t.ProductID,
+		TaskID:     taskID,
+		Owner:      owner,
+		Repo:       repo,
+		Title:      ti,
+		Body:       body,
+		HeadBranch: head,
+		BaseBranch: base,
+	})
+	if err != nil {
+		return "", err
+	}
+	if s.Events != nil && prURL != "" {
+		_ = s.Events.Publish(ctx, ports.LiveActivityEvent{
+			Type:      "pull_request_opened",
+			Ts:        s.Clock.Now().UTC().Format(time.RFC3339Nano),
+			ProductID: string(t.ProductID),
+			TaskID:    string(taskID),
+			Data:      map[string]any{"html_url": prURL, "head": head},
+		})
+	}
+	return prURL, nil
+}
+
+func trimSpecOneLine(spec string) string {
+	s := strings.TrimSpace(spec)
+	s = strings.ReplaceAll(s, "\n", " ")
+	if len(s) > 80 {
+		return s[:77] + "..."
+	}
+	if s == "" {
+		return "update"
+	}
+	return s
 }
 
 // Complete marks the task finished (e.g. after agent-completion webhook).
@@ -219,13 +335,152 @@ func (s *Service) Complete(ctx context.Context, taskID domain.TaskID) error {
 	if err != nil {
 		return err
 	}
-	switch t.Status {
-	case domain.StatusInProgress, domain.StatusTesting, domain.StatusReview:
-	default:
-		return fmt.Errorf("%w: complete from %s", domain.ErrInvalidTransition, t.Status)
+	run := func() error {
+		return s.Tasks.TryComplete(ctx, taskID, s.Clock.Now())
 	}
-	t.Status = domain.StatusDone
-	t.StatusReason = ""
+	if s.Gate != nil {
+		return s.Gate.WithLock(t.ProductID, run)
+	}
+	return run()
+}
+
+// UsesLiveActivityTX is true when task completion can persist agent health + outbox in the same SQLite transaction.
+func (s *Service) UsesLiveActivityTX() bool { return s.LiveTX != nil }
+
+// CompleteWithLiveActivity completes the task, records agent health as completed when SQLite LiveTX is wired,
+// and emits task_completed (same DB transaction as domain writes, or hub/outbox publish on memory path).
+// source is stored in agent-health detail JSON (e.g. api_task_complete, agent_completion_webhook).
+func (s *Service) CompleteWithLiveActivity(ctx context.Context, taskID domain.TaskID, source string) error {
+	t, err := s.Tasks.ByID(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	productID := t.ProductID
+	detailB, err := json.Marshal(map[string]string{"source": source})
+	if err != nil {
+		return err
+	}
+	now := s.Clock.Now()
+	ev := ports.LiveActivityEvent{
+		Type:      "task_completed",
+		Ts:        now.UTC().Format(time.RFC3339Nano),
+		ProductID: string(productID),
+		TaskID:    string(taskID),
+		Data:      map[string]any{"source": source},
+	}
+	run := func() error {
+		if s.LiveTX != nil {
+			return s.LiveTX.CompleteTaskWithEvent(ctx, taskID, now, "completed", string(detailB), ev)
+		}
+		if err := s.Tasks.TryComplete(ctx, taskID, now); err != nil {
+			return err
+		}
+		if s.Events != nil {
+			_ = s.Events.Publish(ctx, ev)
+		}
+		return nil
+	}
+	if s.Gate != nil {
+		return s.Gate.WithLock(productID, run)
+	}
+	return run()
+}
+
+// NudgeStall records an operator nudge for tasks in active execution statuses (Phase A manual policy).
+// Updates task_agent_health detail (when wired), prepends a short line to status_reason, and emits task_stall_nudged.
+func (s *Service) NudgeStall(ctx context.Context, taskID domain.TaskID, note string) error {
+	t, err := s.Tasks.ByID(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	switch t.Status {
+	case domain.StatusInProgress, domain.StatusTesting, domain.StatusReview, domain.StatusConvoyActive:
+	default:
+		return fmt.Errorf("%w: stall nudge only for in_progress, testing, review, convoy_active (got %s)", domain.ErrInvalidTransition, t.Status)
+	}
+	now := s.Clock.Now()
+	note = strings.TrimSpace(note)
+	line := fmt.Sprintf("[stall_nudge %s]", now.UTC().Format(time.RFC3339Nano))
+	if note != "" {
+		line += " " + note
+	}
+	if len(line) > 500 {
+		line = line[:500]
+	}
+	reason := strings.TrimSpace(t.StatusReason)
+	if reason != "" {
+		reason = line + "; " + reason
+	} else {
+		reason = line
+	}
+	t.StatusReason = reason
+	t.UpdatedAt = now
+	if err := s.Tasks.Save(ctx, t); err != nil {
+		return err
+	}
+	pid := t.ProductID
+	if s.AgentHealth != nil {
+		detail := mergeStallNudgeDetail("", note, now)
+		st := string(t.Status)
+		if h, herr := s.AgentHealth.ByTask(ctx, taskID); herr == nil && h != nil {
+			if strings.TrimSpace(h.DetailJSON) != "" {
+				detail = mergeStallNudgeDetail(h.DetailJSON, note, now)
+			}
+			if strings.TrimSpace(h.Status) != "" && h.Status != "unknown" {
+				st = h.Status
+			}
+		}
+		_ = s.AgentHealth.UpsertHeartbeat(ctx, taskID, pid, st, detail, now)
+	}
+	if s.Events != nil {
+		_ = s.Events.Publish(ctx, ports.LiveActivityEvent{
+			Type:      "task_stall_nudged",
+			Ts:        now.UTC().Format(time.RFC3339Nano),
+			ProductID: string(pid),
+			TaskID:    string(taskID),
+			Data:      map[string]any{"note": note},
+		})
+	}
+	return nil
+}
+
+func mergeStallNudgeDetail(existingJSON, note string, at time.Time) string {
+	var m map[string]any
+	if strings.TrimSpace(existingJSON) != "" && json.Valid([]byte(existingJSON)) {
+		_ = json.Unmarshal([]byte(existingJSON), &m)
+	}
+	if m == nil {
+		m = map[string]any{}
+	}
+	var arr []any
+	if raw, ok := m["stall_nudges"].([]any); ok {
+		arr = raw
+	}
+	entry := map[string]any{"at": at.UTC().Format(time.RFC3339Nano)}
+	if strings.TrimSpace(note) != "" {
+		entry["note"] = note
+	}
+	arr = append(arr, entry)
+	m["stall_nudges"] = arr
+	b, err := json.Marshal(m)
+	if err != nil {
+		return `{"stall_nudges":[]}`
+	}
+	return string(b)
+}
+
+// PatchWorkspacePaths sets optional sandbox / worktree path metadata (operator-managed).
+func (s *Service) PatchWorkspacePaths(ctx context.Context, taskID domain.TaskID, sandboxPath, worktreePath *string) error {
+	t, err := s.Tasks.ByID(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if sandboxPath != nil {
+		t.SandboxPath = *sandboxPath
+	}
+	if worktreePath != nil {
+		t.WorktreePath = *worktreePath
+	}
 	t.UpdatedAt = s.Clock.Now()
 	return s.Tasks.Save(ctx, t)
 }

@@ -25,6 +25,18 @@ import (
 //   - ARMS_LOG_JSON — "1" or "true" for JSON logs to stdout (default text)
 //   - ARMS_ACCESS_LOG — "0", "false", "off", "no" disables per-request access logging (default on)
 //   - ARMS_AUTOPILOT_TICK_SEC — interval for in-process autopilot cadence ticks; 0 or unset disables (default 0)
+//   - ARMS_BUDGET_DEFAULT_CAP — cumulative spend ceiling per product when no cost_caps row exists (default 100); set 0 to disable
+//   - ARMS_GITHUB_TOKEN — PAT with repo scope for POST /api/tasks/{id}/pull-request when using API backend (falls back to GITHUB_TOKEN if empty)
+//   - ARMS_GITHUB_API_URL — optional GitHub Enterprise API root for REST backend, e.g. https://github.example.com/api/v3/
+//   - ARMS_GITHUB_PR_BACKEND — pr create backend: empty or "api" uses REST + token; "gh" uses `gh pr create` (see ARMS_GH_BIN, ARMS_GITHUB_HOST)
+//   - ARMS_GH_BIN — optional path to gh executable (default: look up "gh" on PATH)
+//   - ARMS_GITHUB_HOST — optional GH_HOST for GitHub Enterprise when using the gh CLI backend
+//   - ARMS_ENABLE_GIT_WORKTREES — "1" or "true" to allow POST /api/tasks/{id}/workspace/git-worktree (requires ARMS_WORKSPACE_ROOT + product.repo_clone_path)
+//   - ARMS_GIT_BIN — git executable (default: look up "git" on PATH)
+//   - ARMS_WORKSPACE_ROOT — absolute base directory for per-task worktree directories
+//   - ARMS_AGENT_STALE_SEC — heartbeats older than this are flagged stale in JSON (default 300); 0 uses default
+//   - ARMS_CORS_ALLOW_ORIGIN — optional; when non-empty, enables CORS for browser UIs on another origin (e.g. http://localhost:3000 for Fishtank). Use * only for quick local experiments.
+//   - ARMS_ACL — optional HTTP Basic ACL: semicolon-separated entries "user|password|role". Role is admin (default) or read (GET/HEAD only). Non-empty enables auth when MC_API_TOKEN is empty, or adds Basic as an alternative when both are set. User/password must not contain '|' or ';'.
 type Config struct {
 	ListenAddr                  string
 	MCAPIToken                  string
@@ -40,6 +52,25 @@ type Config struct {
 	LogJSON                     bool
 	AccessLog                   bool
 	AutopilotTickSec            int
+	BudgetDefaultCap            float64
+	GitHubToken                 string
+	GitHubAPIURL                string
+	GitHubPRBackend             string
+	GhPath                      string
+	GitHubHost                  string
+	EnableGitWorktrees          bool
+	GitBin                      string
+	WorkspaceRoot               string
+	AgentStaleSec               int
+	CORSAllowOrigin             string
+	ACLUsers                    []ACLUser
+}
+
+// ACLUser is one Basic-auth principal for coarse HTTP ACL (admin vs read-only).
+type ACLUser struct {
+	UserID   string
+	Password string
+	Role     string // "admin" or "read"
 }
 
 // LoadFromEnv reads configuration from the process environment.
@@ -78,6 +109,32 @@ func LoadFromEnv() Config {
 			autopilotTick = n
 		}
 	}
+	budgetCap := 100.0
+	if s := strings.TrimSpace(os.Getenv("ARMS_BUDGET_DEFAULT_CAP")); s != "" {
+		if f, err := strconv.ParseFloat(s, 64); err == nil && f >= 0 {
+			budgetCap = f
+		}
+	}
+	ghTok := strings.TrimSpace(os.Getenv("ARMS_GITHUB_TOKEN"))
+	if ghTok == "" {
+		ghTok = strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+	}
+	ghAPI := strings.TrimSpace(os.Getenv("ARMS_GITHUB_API_URL"))
+	ghBackend := strings.ToLower(strings.TrimSpace(os.Getenv("ARMS_GITHUB_PR_BACKEND")))
+	ghBin := strings.TrimSpace(os.Getenv("ARMS_GH_BIN"))
+	ghHost := strings.TrimSpace(os.Getenv("ARMS_GITHUB_HOST"))
+	gitWorktrees := strings.EqualFold(os.Getenv("ARMS_ENABLE_GIT_WORKTREES"), "1") ||
+		strings.EqualFold(os.Getenv("ARMS_ENABLE_GIT_WORKTREES"), "true")
+	gitExe := strings.TrimSpace(os.Getenv("ARMS_GIT_BIN"))
+	wsRoot := strings.TrimSpace(os.Getenv("ARMS_WORKSPACE_ROOT"))
+	agentStale := 300
+	if s, ok := os.LookupEnv("ARMS_AGENT_STALE_SEC"); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+			agentStale = n
+		}
+	}
+	corsOrigin := strings.TrimSpace(os.Getenv("ARMS_CORS_ALLOW_ORIGIN"))
+	acl := parseARMSACL(os.Getenv("ARMS_ACL"))
 	return Config{
 		ListenAddr:                  addr,
 		MCAPIToken:                  strings.TrimSpace(token),
@@ -93,5 +150,51 @@ func LoadFromEnv() Config {
 		LogJSON:                     logJSON,
 		AccessLog:                   accessLog,
 		AutopilotTickSec:            autopilotTick,
+		BudgetDefaultCap:            budgetCap,
+		GitHubToken:                 ghTok,
+		GitHubAPIURL:                ghAPI,
+		GitHubPRBackend:             ghBackend,
+		GhPath:                      ghBin,
+		GitHubHost:                  ghHost,
+		EnableGitWorktrees:          gitWorktrees,
+		GitBin:                      gitExe,
+		WorkspaceRoot:               wsRoot,
+		AgentStaleSec:               agentStale,
+		CORSAllowOrigin:             corsOrigin,
+		ACLUsers:                    acl,
 	}
+}
+
+// parseARMSACL parses ARMS_ACL: "user|password|role" entries separated by ';'.
+// Empty role defaults to admin. Only admin and read roles are accepted.
+func parseARMSACL(s string) []ACLUser {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	var out []ACLUser
+	for _, ent := range strings.Split(s, ";") {
+		ent = strings.TrimSpace(ent)
+		if ent == "" {
+			continue
+		}
+		parts := strings.SplitN(ent, "|", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		uid := strings.TrimSpace(parts[0])
+		pw := strings.TrimSpace(parts[1])
+		role := strings.TrimSpace(strings.ToLower(parts[2]))
+		if uid == "" || pw == "" {
+			continue
+		}
+		if role == "" {
+			role = "admin"
+		}
+		if role != "admin" && role != "read" {
+			continue
+		}
+		out = append(out, ACLUser{UserID: uid, Password: pw, Role: role})
+	}
+	return out
 }

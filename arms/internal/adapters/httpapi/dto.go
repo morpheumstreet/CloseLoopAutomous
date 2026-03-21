@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,7 @@ type createProductReq struct {
 	Name            string `json:"name"`
 	WorkspaceID     string `json:"workspace_id"`
 	RepoURL         string `json:"repo_url,omitempty"`
+	RepoClonePath   string `json:"repo_clone_path,omitempty"`
 	RepoBranch      string `json:"repo_branch,omitempty"`
 	Description     string `json:"description,omitempty"`
 	ProgramDocument string `json:"program_document,omitempty"`
@@ -42,6 +44,7 @@ func (r *createProductReq) validate() error {
 type patchProductReq struct {
 	Name            *string `json:"name,omitempty"`
 	RepoURL         *string `json:"repo_url,omitempty"`
+	RepoClonePath   *string `json:"repo_clone_path,omitempty"`
 	RepoBranch      *string `json:"repo_branch,omitempty"`
 	Description     *string `json:"description,omitempty"`
 	ProgramDocument *string `json:"program_document,omitempty"`
@@ -55,7 +58,7 @@ type patchProductReq struct {
 }
 
 func (r *patchProductReq) validate() error {
-	if r.Name == nil && r.RepoURL == nil && r.RepoBranch == nil && r.Description == nil &&
+	if r.Name == nil && r.RepoURL == nil && r.RepoClonePath == nil && r.RepoBranch == nil && r.Description == nil &&
 		r.ProgramDocument == nil && r.SettingsJSON == nil && r.IconURL == nil &&
 		r.ResearchCadenceSec == nil && r.IdeationCadenceSec == nil && r.AutomationTier == nil && r.AutoDispatchEnabled == nil {
 		return fmt.Errorf("at least one field is required")
@@ -112,11 +115,13 @@ type patchTaskReq struct {
 	Status             *string `json:"status,omitempty"`
 	StatusReason       *string `json:"status_reason,omitempty"`
 	ClarificationsJSON *string `json:"clarifications_json,omitempty"`
+	SandboxPath        *string `json:"sandbox_path,omitempty"`
+	WorktreePath       *string `json:"worktree_path,omitempty"`
 }
 
 func (r *patchTaskReq) validate() error {
-	if r.Status == nil && r.StatusReason == nil && r.ClarificationsJSON == nil {
-		return fmt.Errorf("at least one of status, status_reason, clarifications_json is required")
+	if r.Status == nil && r.StatusReason == nil && r.ClarificationsJSON == nil && r.SandboxPath == nil && r.WorktreePath == nil {
+		return fmt.Errorf("at least one of status, status_reason, clarifications_json, sandbox_path, worktree_path is required")
 	}
 	return nil
 }
@@ -131,6 +136,10 @@ type rejectPlanReq struct {
 
 type checkpointReq struct {
 	Payload string `json:"payload"`
+}
+
+type stallNudgeReq struct {
+	Note string `json:"note,omitempty"`
 }
 
 func (r *checkpointReq) validate() error {
@@ -175,6 +184,8 @@ type recordCostReq struct {
 	TaskID    string  `json:"task_id"`
 	Amount    float64 `json:"amount"`
 	Note      string  `json:"note,omitempty"`
+	Agent     string  `json:"agent,omitempty"`
+	Model     string  `json:"model,omitempty"`
 }
 
 func (r *recordCostReq) validate() error {
@@ -190,6 +201,58 @@ func (r *recordCostReq) validate() error {
 	return nil
 }
 
+type patchCostCapsReq struct {
+	DailyCap       *float64 `json:"daily_cap"`
+	MonthlyCap     *float64 `json:"monthly_cap"`
+	CumulativeCap  *float64 `json:"cumulative_cap"`
+}
+
+func (r *patchCostCapsReq) validate() error {
+	if r.DailyCap == nil && r.MonthlyCap == nil && r.CumulativeCap == nil {
+		return fmt.Errorf("at least one of daily_cap, monthly_cap, cumulative_cap is required")
+	}
+	return nil
+}
+
+type restoreCheckpointReq struct {
+	HistoryID int64 `json:"history_id"`
+}
+
+func (r *restoreCheckpointReq) validate() error {
+	if r.HistoryID < 1 {
+		return fmt.Errorf("history_id is required")
+	}
+	return nil
+}
+
+type allocatePortReq struct {
+	ProductID string `json:"product_id"`
+	TaskID    string `json:"task_id"`
+}
+
+type openPullRequestReq struct {
+	HeadBranch string `json:"head_branch"`
+	Title      string `json:"title,omitempty"`
+	Body       string `json:"body,omitempty"`
+}
+
+func (r *openPullRequestReq) validate() error {
+	if strings.TrimSpace(r.HeadBranch) == "" {
+		return fmt.Errorf("head_branch is required")
+	}
+	return nil
+}
+
+func (r *allocatePortReq) validate() error {
+	if strings.TrimSpace(r.ProductID) == "" {
+		return fmt.Errorf("product_id is required")
+	}
+	if strings.TrimSpace(r.TaskID) == "" {
+		return fmt.Errorf("task_id is required")
+	}
+	return nil
+}
+
 type agentCompletionReq struct {
 	TaskID string `json:"task_id"`
 }
@@ -197,6 +260,29 @@ type agentCompletionReq struct {
 func (r *agentCompletionReq) validate() error {
 	if strings.TrimSpace(r.TaskID) == "" {
 		return fmt.Errorf("task_id is required")
+	}
+	return nil
+}
+
+type patchAgentHealthReq struct {
+	Status string          `json:"status"`
+	Detail json.RawMessage `json:"detail,omitempty"`
+}
+
+func (r *patchAgentHealthReq) validate() error {
+	if strings.TrimSpace(r.Status) == "" {
+		return fmt.Errorf("status is required")
+	}
+	return nil
+}
+
+type gitWorktreeReq struct {
+	Branch string `json:"branch"`
+}
+
+func (r *gitWorktreeReq) validate() error {
+	if strings.TrimSpace(r.Branch) == "" {
+		return fmt.Errorf("branch is required")
 	}
 	return nil
 }

@@ -777,6 +777,7 @@ paths:
       security: []
       description: |
         `text/event-stream`. When `MC_API_TOKEN` is set, pass `?token=` with the same value (EventSource cannot set Bearer).
+        First payload is a `hello` object; then JSON activity events (e.g. `task_dispatched` after task dispatch) as SSE `data:` lines; comment lines for keep-alive ping.
       parameters:
         - name: token
           in: query

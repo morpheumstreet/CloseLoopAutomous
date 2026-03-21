@@ -1,6 +1,11 @@
 package ports
 
-import "context"
+import (
+	"context"
+	"time"
+
+	"github.com/closeloopautomous/arms/internal/domain"
+)
 
 // LiveActivityEvent is the JSON shape for SSE / future WebSocket activity feeds.
 type LiveActivityEvent struct {
@@ -31,4 +36,14 @@ type EventOutbox interface {
 type OutboxEntry struct {
 	ID      int64
 	Payload []byte
+}
+
+// LiveActivityTX persists domain writes and the matching live-activity payload in one DB transaction (SQLite).
+type LiveActivityTX interface {
+	SaveTaskWithEvent(ctx context.Context, t *domain.Task, ev LiveActivityEvent) error
+	RecordCheckpointWithEvent(ctx context.Context, taskID domain.TaskID, checkpointPayload string, t *domain.Task, ev LiveActivityEvent) error
+	AppendCostWithEvent(ctx context.Context, e domain.CostEvent, ev LiveActivityEvent) error
+	// CompleteTaskWithEvent sets the task to done (when allowed), upserts task_agent_health, and appends the outbox row in one transaction.
+	// Idempotent when the task is already done (still upserts health + outbox).
+	CompleteTaskWithEvent(ctx context.Context, taskID domain.TaskID, at time.Time, healthStatus, healthDetailJSON string, ev LiveActivityEvent) error
 }

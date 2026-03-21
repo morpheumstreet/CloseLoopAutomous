@@ -1,15 +1,19 @@
 import { ChevronRight, Search, Zap } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useMissionUi } from '../../context/MissionUiContext';
 import type { Agent } from '../../domain/types';
 
 export function AgentsPanel() {
   const { activeWorkspace, agents } = useMissionUi();
+  const [query, setQuery] = useState('');
 
   const list = useMemo(() => {
     if (!activeWorkspace) return [];
-    return agents.filter((a) => a.workspaceId === activeWorkspace.id);
-  }, [agents, activeWorkspace]);
+    const scoped = agents.filter((a) => a.workspaceId === activeWorkspace.id);
+    const q = query.trim().toLowerCase();
+    if (!q) return scoped;
+    return scoped.filter((a) => a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q));
+  }, [agents, activeWorkspace, query]);
 
   return (
     <aside className="ft-sidebar">
@@ -25,8 +29,9 @@ export function AgentsPanel() {
             style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
           />
           <input
-            disabled
-            placeholder="Search (shell)"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter by task or status"
             aria-label="Search agents"
             style={{
               width: '100%',
@@ -42,9 +47,13 @@ export function AgentsPanel() {
         </div>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
-        {list.map((agent) => (
-          <AgentRow key={agent.id} agent={agent} />
-        ))}
+        {list.length === 0 ? (
+          <p className="ft-muted" style={{ fontSize: '0.75rem', padding: '0.5rem' }}>
+            No agent heartbeats for this product (or agent health is disabled on the server).
+          </p>
+        ) : (
+          list.map((agent) => <AgentRow key={agent.id} agent={agent} />)
+        )}
       </div>
     </aside>
   );

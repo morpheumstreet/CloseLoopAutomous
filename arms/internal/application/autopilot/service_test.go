@@ -20,10 +20,12 @@ func TestSubmitSwipeMaybePoolAndPromote(t *testing.T) {
 	products := memory.NewProductStore()
 	ideas := memory.NewIdeaStore()
 	pool := memory.NewMaybePoolStore()
+	swipes := memory.NewSwipeHistoryStore()
 	svc := &Service{
 		Products:   products,
 		Ideas:      ideas,
 		MaybePool:  pool,
+		Swipes:     swipes,
 		Research:   ai.ResearchStub{},
 		Ideation:   ai.IdeationStub{},
 		Clock:      clock,
@@ -39,6 +41,10 @@ func TestSubmitSwipeMaybePoolAndPromote(t *testing.T) {
 	if err := svc.SubmitSwipe(ctx, iid, domain.DecisionMaybe); err != nil {
 		t.Fatal(err)
 	}
+	h1, _ := swipes.ListByProduct(ctx, p.ID, 10)
+	if len(h1) != 1 || h1[0].Decision != "maybe" || h1[0].IdeaID != iid {
+		t.Fatalf("swipe history after maybe: %#v", h1)
+	}
 	idsInPool, _ := pool.ListIdeaIDsByProduct(ctx, p.ID)
 	if len(idsInPool) != 1 || idsInPool[0] != iid {
 		t.Fatalf("pool: %#v", idsInPool)
@@ -50,6 +56,10 @@ func TestSubmitSwipeMaybePoolAndPromote(t *testing.T) {
 
 	if err := svc.PromoteMaybe(ctx, iid); err != nil {
 		t.Fatal(err)
+	}
+	h2, _ := swipes.ListByProduct(ctx, p.ID, 10)
+	if len(h2) != 2 || h2[0].Decision != "yes" || h2[1].Decision != "maybe" {
+		t.Fatalf("swipe history after promote: %#v", h2)
 	}
 	idea, _ := ideas.ByID(ctx, iid)
 	if idea.Decision != domain.DecisionYes {

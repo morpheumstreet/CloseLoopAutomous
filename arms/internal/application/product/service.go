@@ -21,6 +21,7 @@ type RegistrationInput struct {
 	Name            string
 	WorkspaceID     string
 	RepoURL         string
+	RepoClonePath   string
 	RepoBranch      string
 	Description     string
 	ProgramDocument string
@@ -51,6 +52,7 @@ func (s *Service) Register(ctx context.Context, in RegistrationInput) (*domain.P
 		Stage:               domain.StageResearch,
 		WorkspaceID:         in.WorkspaceID,
 		RepoURL:             strings.TrimSpace(in.RepoURL),
+		RepoClonePath:       strings.TrimSpace(in.RepoClonePath),
 		RepoBranch:          strings.TrimSpace(in.RepoBranch),
 		Description:         strings.TrimSpace(in.Description),
 		ProgramDocument:     strings.TrimSpace(in.ProgramDocument),
@@ -78,6 +80,7 @@ func (s *Service) Register(ctx context.Context, in RegistrationInput) (*domain.P
 type MetadataPatch struct {
 	Name            *string
 	RepoURL         *string
+	RepoClonePath   *string
 	RepoBranch      *string
 	Description     *string
 	ProgramDocument *string
@@ -105,6 +108,9 @@ func (s *Service) PatchMetadata(ctx context.Context, id domain.ProductID, patch 
 	}
 	if patch.RepoURL != nil {
 		p.RepoURL = strings.TrimSpace(*patch.RepoURL)
+	}
+	if patch.RepoClonePath != nil {
+		p.RepoClonePath = strings.TrimSpace(*patch.RepoClonePath)
 	}
 	if patch.RepoBranch != nil {
 		p.RepoBranch = strings.TrimSpace(*patch.RepoBranch)

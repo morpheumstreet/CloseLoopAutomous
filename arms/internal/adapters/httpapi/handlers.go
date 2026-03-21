@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -10,9 +11,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	workgit "github.com/closeloopautomous/arms/internal/adapters/workspace"
 	"github.com/closeloopautomous/arms/internal/application/autopilot"
 	"github.com/closeloopautomous/arms/internal/application/convoy"
 	"github.com/closeloopautomous/arms/internal/application/cost"
@@ -24,6 +30,8 @@ import (
 
 const webhookSigHeader = "X-Arms-Signature"
 
+var gitBranchTokenRE = regexp.MustCompile(`^[a-zA-Z0-9/._-]+$`)
+
 // Handlers holds application services for the HTTP adapter.
 type Handlers struct {
 	Config    Config
@@ -31,8 +39,11 @@ type Handlers struct {
 	Autopilot *autopilot.Service
 	Task      *task.Service
 	Convoy    *convoy.Service
-	Cost      *cost.Service
-	Live      ports.ActivityStream // SSE subscribers; required for live routes
+	Cost           *cost.Service
+	Live           ports.ActivityStream // SSE subscribers; required for live routes
+	WorkspacePorts ports.WorkspacePortRepository
+	MergeQueue     ports.WorkspaceMergeQueueRepository
+	AgentHealth    ports.AgentHealthRepository // optional; nil keeps legacy agent listing stub
 }
 
 func (h *Handlers) health(w http.ResponseWriter, _ *http.Request) {
@@ -57,6 +68,7 @@ func (h *Handlers) createProduct(w http.ResponseWriter, r *http.Request) {
 		Name:                 req.Name,
 		WorkspaceID:          req.WorkspaceID,
 		RepoURL:              req.RepoURL,
+		RepoClonePath:        strings.TrimSpace(req.RepoClonePath),
 		RepoBranch:           req.RepoBranch,
 		Description:          req.Description,
 		ProgramDocument:      req.ProgramDocument,
@@ -74,6 +86,19 @@ func (h *Handlers) createProduct(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, productToJSON(p))
 }
 
+func (h *Handlers) listProducts(w http.ResponseWriter, r *http.Request) {
+	list, err := h.Autopilot.Products.ListAll(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	out := make([]any, 0, len(list))
+	for i := range list {
+		out = append(out, productToJSON(&list[i]))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"products": out})
+}
+
 func (h *Handlers) patchProduct(w http.ResponseWriter, r *http.Request) {
 	var req patchProductReq
 	if err := decodeJSON(r, &req); err != nil {
@@ -88,6 +113,7 @@ func (h *Handlers) patchProduct(w http.ResponseWriter, r *http.Request) {
 	patch := productapp.MetadataPatch{
 		Name:                 req.Name,
 		RepoURL:              req.RepoURL,
+		RepoClonePath:        req.RepoClonePath,
 		RepoBranch:           req.RepoBranch,
 		Description:          req.Description,
 		ProgramDocument:      req.ProgramDocument,
@@ -231,6 +257,43 @@ func (h *Handlers) swipe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ideaToJSON(idea))
 }
 
+func (h *Handlers) listSwipeHistory(w http.ResponseWriter, r *http.Request) {
+	pid := domain.ProductID(r.PathValue("id"))
+	if _, err := h.Autopilot.Products.ByID(r.Context(), pid); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	limit := 100
+	if q := strings.TrimSpace(r.URL.Query().Get("limit")); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, "validation", "limit must be a positive integer")
+			return
+		}
+		limit = n
+	}
+	list, err := h.Autopilot.ListSwipeHistory(r.Context(), pid, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	out := make([]any, 0, len(list))
+	for i := range list {
+		e := &list[i]
+		out = append(out, map[string]any{
+			"id":         e.ID,
+			"idea_id":    string(e.IdeaID),
+			"product_id": string(e.ProductID),
+			"decision":   e.Decision,
+			"created_at": e.CreatedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"swipes": out})
+}
+
 func (h *Handlers) listMaybePool(w http.ResponseWriter, r *http.Request) {
 	pid := domain.ProductID(r.PathValue("id"))
 	if _, err := h.Autopilot.Products.ByID(r.Context(), pid); err != nil {
@@ -358,6 +421,15 @@ func (h *Handlers) patchTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.SandboxPath != nil || req.WorktreePath != nil {
+		if err := h.Task.PatchWorkspacePaths(ctx, id, req.SandboxPath, req.WorktreePath); err != nil {
+			if mapDomainErr(w, err) {
+				return
+			}
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+	}
 	t, err := h.Task.Tasks.ByID(ctx, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
@@ -410,6 +482,28 @@ func (h *Handlers) rejectPlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, taskToJSON(t))
 }
 
+func (h *Handlers) openPullRequest(w http.ResponseWriter, r *http.Request) {
+	var req openPullRequestReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if err := req.validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	id := domain.TaskID(r.PathValue("id"))
+	url, err := h.Task.OpenPullRequest(r.Context(), id, req.HeadBranch, req.Title, req.Body)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"pr_url": url})
+}
+
 func (h *Handlers) dispatchTask(w http.ResponseWriter, r *http.Request) {
 	var req dispatchReq
 	if err := decodeJSON(r, &req); err != nil {
@@ -458,9 +552,21 @@ func (h *Handlers) checkpoint(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, taskToJSON(t))
 }
 
-func (h *Handlers) completeTask(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) nudgeStallTask(w http.ResponseWriter, r *http.Request) {
+	var req stallNudgeReq
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<14))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "body", err.Error())
+		return
+	}
+	if s := strings.TrimSpace(string(body)); s != "" {
+		if err := json.Unmarshal([]byte(s), &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+	}
 	id := domain.TaskID(r.PathValue("id"))
-	if err := h.Task.Complete(r.Context(), id); err != nil {
+	if err := h.Task.NudgeStall(r.Context(), id, req.Note); err != nil {
 		if mapDomainErr(w, err) {
 			return
 		}
@@ -468,6 +574,27 @@ func (h *Handlers) completeTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, err := h.Task.Tasks.ByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, taskToJSON(t))
+}
+
+func (h *Handlers) completeTask(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := domain.TaskID(r.PathValue("id"))
+	if err := h.Task.CompleteWithLiveActivity(ctx, id, "api_task_complete"); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if !h.Task.UsesLiveActivityTX() {
+		h.recordAgentHealthCompletion(ctx, id, "api_task_complete")
+	}
+	t, err := h.Task.Tasks.ByID(ctx, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -548,23 +675,582 @@ func (h *Handlers) recordCost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation", err.Error())
 		return
 	}
-	if err := h.Cost.Record(r.Context(), domain.ProductID(req.ProductID), domain.TaskID(req.TaskID), req.Amount, req.Note); err != nil {
+	if err := h.Cost.Record(r.Context(), domain.ProductID(req.ProductID), domain.TaskID(req.TaskID), req.Amount, req.Note, req.Agent, req.Model); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "recorded"})
 }
 
-func (h *Handlers) agentsStub(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"items": []any{}, "stub": true})
+func (h *Handlers) listAgents(w http.ResponseWriter, r *http.Request) {
+	if h.AgentHealth == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []any{}, "stub": true})
+		return
+	}
+	list, err := h.AgentHealth.ListRecent(r.Context(), 200)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	items := make([]any, 0, len(list))
+	for i := range list {
+		items = append(items, agentHealthToJSON(&list[i], h.agentHeartbeatStale(list[i].LastHeartbeatAt)))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *Handlers) getTaskAgentHealth(w http.ResponseWriter, r *http.Request) {
+	if h.AgentHealth == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "agent health not available")
+		return
+	}
+	id := domain.TaskID(r.PathValue("id"))
+	row, err := h.AgentHealth.ByTask(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if row == nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"task_id":             string(id),
+			"status":              "unknown",
+			"detail":              map[string]any{},
+			"last_heartbeat_at":   nil,
+			"heartbeat_stale":     false,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, agentHealthToJSON(row, h.agentHeartbeatStale(row.LastHeartbeatAt)))
+}
+
+func (h *Handlers) patchTaskAgentHealth(w http.ResponseWriter, r *http.Request) {
+	if h.AgentHealth == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "agent health not available")
+		return
+	}
+	var req patchAgentHealthReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if err := req.validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	ctx := r.Context()
+	id := domain.TaskID(r.PathValue("id"))
+	t, err := h.Task.Tasks.ByID(ctx, id)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	detail := string(req.Detail)
+	if detail == "" {
+		detail = "{}"
+	}
+	if !json.Valid([]byte(detail)) {
+		writeError(w, http.StatusBadRequest, "validation", "detail must be JSON")
+		return
+	}
+	if err := h.AgentHealth.UpsertHeartbeat(ctx, id, t.ProductID, strings.TrimSpace(req.Status), detail, time.Now().UTC()); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	row, err := h.AgentHealth.ByTask(ctx, id)
+	if err != nil || row == nil {
+		writeError(w, http.StatusInternalServerError, "internal", "heartbeat persist failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, agentHealthToJSON(row, h.agentHeartbeatStale(row.LastHeartbeatAt)))
+}
+
+func (h *Handlers) listProductAgentHealth(w http.ResponseWriter, r *http.Request) {
+	if h.AgentHealth == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "agent health not available")
+		return
+	}
+	pid := domain.ProductID(r.PathValue("id"))
+	if _, err := h.Autopilot.Products.ByID(r.Context(), pid); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	limit := 100
+	if q := strings.TrimSpace(r.URL.Query().Get("limit")); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, "validation", "limit must be a positive integer")
+			return
+		}
+		limit = n
+	}
+	list, err := h.AgentHealth.ListByProduct(r.Context(), pid, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	items := make([]any, 0, len(list))
+	for i := range list {
+		items = append(items, agentHealthToJSON(&list[i], h.agentHeartbeatStale(list[i].LastHeartbeatAt)))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *Handlers) listStalledTasks(w http.ResponseWriter, r *http.Request) {
+	if h.AgentHealth == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "agent health not available")
+		return
+	}
+	ctx := r.Context()
+	pid := domain.ProductID(r.PathValue("id"))
+	if _, err := h.Autopilot.Products.ByID(ctx, pid); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	staleSec := h.Config.AgentStaleSec
+	if staleSec <= 0 {
+		staleSec = 300
+	}
+	if q := strings.TrimSpace(r.URL.Query().Get("stale_sec")); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, "validation", "stale_sec must be a positive integer")
+			return
+		}
+		staleSec = n
+	}
+	threshold := time.Duration(staleSec) * time.Second
+
+	tasks, err := h.Task.ListByProduct(ctx, pid)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	stalled := make([]map[string]any, 0)
+	for i := range tasks {
+		t := &tasks[i]
+		if !taskExpectsAgentHeartbeat(t.Status) {
+			continue
+		}
+		row, err := h.AgentHealth.ByTask(ctx, t.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		var reason string
+		var lastAny any
+		if row == nil {
+			reason = "no_heartbeat"
+			lastAny = nil
+		} else if time.Since(row.LastHeartbeatAt) > threshold {
+			reason = "heartbeat_stale"
+			lastAny = row.LastHeartbeatAt.UTC().Format(time.RFC3339Nano)
+		} else {
+			continue
+		}
+		stalled = append(stalled, map[string]any{
+			"task_id":           string(t.ID),
+			"status":            t.Status.String(),
+			"reason":            reason,
+			"last_heartbeat_at": lastAny,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"product_id": string(pid),
+		"stale_sec":  staleSec,
+		"stalled":    stalled,
+	})
+}
+
+func taskExpectsAgentHeartbeat(st domain.TaskStatus) bool {
+	switch st {
+	case domain.StatusInProgress, domain.StatusTesting, domain.StatusReview, domain.StatusConvoyActive:
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *Handlers) prepareGitWorktree(w http.ResponseWriter, r *http.Request) {
+	if !h.Config.EnableGitWorktrees {
+		writeError(w, http.StatusServiceUnavailable, "not_enabled", "set ARMS_ENABLE_GIT_WORKTREES=1 and ARMS_WORKSPACE_ROOT")
+		return
+	}
+	root := strings.TrimSpace(h.Config.WorkspaceRoot)
+	if root == "" {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "ARMS_WORKSPACE_ROOT is required")
+		return
+	}
+	var req gitWorktreeReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if err := req.validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	branch := strings.TrimSpace(req.Branch)
+	if utf8.RuneCountInString(branch) > 200 || !gitBranchTokenRE.MatchString(branch) {
+		writeError(w, http.StatusBadRequest, "validation", "branch must match [a-zA-Z0-9/._-]+ and len <= 200")
+		return
+	}
+	ctx := r.Context()
+	id := domain.TaskID(r.PathValue("id"))
+	t, err := h.Task.Tasks.ByID(ctx, id)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	p, err := h.Autopilot.Products.ByID(ctx, t.ProductID)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	mainRepo := strings.TrimSpace(p.RepoClonePath)
+	if mainRepo == "" {
+		writeError(w, http.StatusBadRequest, "invalid_input", "product.repo_clone_path must be set (PATCH /api/products/{id})")
+		return
+	}
+	wtPath := filepath.Join(root, string(t.ProductID), string(t.ID))
+	cleanWT, err := workgit.EnsurePathUnderRoot(root, wtPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	execCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if err := workgit.PrepareGitWorktree(execCtx, h.Config.GitBin, filepath.Clean(mainRepo), cleanWT, branch); err != nil {
+		writeError(w, http.StatusBadGateway, "git_error", err.Error())
+		return
+	}
+	pathStr := cleanWT
+	if err := h.Task.PatchWorkspacePaths(ctx, id, nil, &pathStr); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"worktree_path": cleanWT, "branch": branch})
+}
+
+func (h *Handlers) recordAgentHealthCompletion(ctx context.Context, taskID domain.TaskID, source string) {
+	if h.AgentHealth == nil {
+		return
+	}
+	t, err := h.Task.Tasks.ByID(ctx, taskID)
+	if err != nil {
+		return
+	}
+	detail, err := json.Marshal(map[string]string{"source": source})
+	if err != nil {
+		return
+	}
+	_ = h.AgentHealth.UpsertHeartbeat(ctx, taskID, t.ProductID, "completed", string(detail), time.Now().UTC())
+}
+
+func (h *Handlers) agentHeartbeatStale(last time.Time) bool {
+	if h.Config.AgentStaleSec <= 0 || last.IsZero() {
+		return false
+	}
+	return time.Since(last) > time.Duration(h.Config.AgentStaleSec)*time.Second
+}
+
+func agentHealthToJSON(h *domain.TaskAgentHealth, stale bool) map[string]any {
+	m := map[string]any{
+		"task_id":           string(h.TaskID),
+		"product_id":        string(h.ProductID),
+		"status":            h.Status,
+		"heartbeat_stale":   stale,
+		"last_heartbeat_at": h.LastHeartbeatAt.UTC().Format(time.RFC3339Nano),
+	}
+	var detail any
+	if strings.TrimSpace(h.DetailJSON) != "" && json.Valid([]byte(h.DetailJSON)) {
+		_ = json.Unmarshal([]byte(h.DetailJSON), &detail)
+	}
+	if detail == nil {
+		detail = map[string]any{}
+	}
+	m["detail"] = detail
+	return m
 }
 
 func (h *Handlers) openclawStub(w http.ResponseWriter, _ *http.Request) {
 	writeError(w, http.StatusNotImplemented, "not_implemented", "openclaw proxy not implemented; use AgentGateway adapter")
 }
 
-func (h *Handlers) workspacesStub(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"items": []any{}, "stub": true})
+func (h *Handlers) workspacesView(w http.ResponseWriter, r *http.Request) {
+	if h.WorkspacePorts == nil || h.MergeQueue == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ports": []any{}, "merge_queue_pending": 0, "stub": true})
+		return
+	}
+	ctx := r.Context()
+	portsList, err := h.WorkspacePorts.ListAll(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	n, err := h.MergeQueue.CountPending(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	items := make([]map[string]any, 0, len(portsList))
+	for _, a := range portsList {
+		items = append(items, map[string]any{
+			"port":         a.Port,
+			"product_id":   string(a.ProductID),
+			"task_id":      string(a.TaskID),
+			"allocated_at": a.AllocatedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ports":               items,
+		"merge_queue_pending": n,
+	})
+}
+
+func (h *Handlers) enqueueMergeQueue(w http.ResponseWriter, r *http.Request) {
+	if h.MergeQueue == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "merge queue not available")
+		return
+	}
+	id := domain.TaskID(r.PathValue("id"))
+	t, err := h.Task.Tasks.ByID(r.Context(), id)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if err := h.MergeQueue.Enqueue(r.Context(), t.ProductID, t.ID, time.Now().UTC()); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "queued"})
+}
+
+func (h *Handlers) completeMergeQueue(w http.ResponseWriter, r *http.Request) {
+	if h.MergeQueue == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "merge queue not available")
+		return
+	}
+	id := domain.TaskID(r.PathValue("id"))
+	if _, err := h.Task.Tasks.ByID(r.Context(), id); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if err := h.MergeQueue.CompletePendingForTask(r.Context(), id); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "completed"})
+}
+
+func (h *Handlers) listProductMergeQueue(w http.ResponseWriter, r *http.Request) {
+	if h.MergeQueue == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "merge queue not available")
+		return
+	}
+	pid := domain.ProductID(r.PathValue("id"))
+	if _, err := h.Autopilot.Products.ByID(r.Context(), pid); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	limit := 50
+	if q := strings.TrimSpace(r.URL.Query().Get("limit")); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, "validation", "limit must be a positive integer")
+			return
+		}
+		limit = n
+	}
+	list, err := h.MergeQueue.ListPendingByProduct(r.Context(), pid, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	out := make([]any, 0, len(list))
+	for i := range list {
+		e := &list[i]
+		out = append(out, map[string]any{
+			"id":         e.ID,
+			"product_id": string(e.ProductID),
+			"task_id":    string(e.TaskID),
+			"status":     e.Status,
+			"created_at": e.CreatedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"merge_queue": out})
+}
+
+func (h *Handlers) allocateWorkspacePort(w http.ResponseWriter, r *http.Request) {
+	if h.WorkspacePorts == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "workspace ports not available")
+		return
+	}
+	var req allocatePortReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if err := req.validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	port, err := h.WorkspacePorts.Allocate(r.Context(), domain.ProductID(req.ProductID), domain.TaskID(req.TaskID), time.Now().UTC())
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "ports_exhausted", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"port": port})
+}
+
+func (h *Handlers) releaseWorkspacePort(w http.ResponseWriter, r *http.Request) {
+	if h.WorkspacePorts == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "workspace ports not available")
+		return
+	}
+	pstr := r.PathValue("port")
+	p, err := strconv.Atoi(strings.TrimSpace(pstr))
+	if err != nil || p < 4200 || p > 4299 {
+		writeError(w, http.StatusBadRequest, "validation", "port must be 4200-4299")
+		return
+	}
+	if err := h.WorkspacePorts.Release(r.Context(), p); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "released"})
+}
+
+func (h *Handlers) patchProductCostCaps(w http.ResponseWriter, r *http.Request) {
+	var req patchCostCapsReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if err := req.validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	pid := domain.ProductID(r.PathValue("id"))
+	if err := h.Cost.PatchCaps(r.Context(), pid, req.DailyCap, req.MonthlyCap, req.CumulativeCap); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handlers) productCostBreakdown(w http.ResponseWriter, r *http.Request) {
+	pid := domain.ProductID(r.PathValue("id"))
+	from, to, err := parseTimeRangeQuery(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	if _, err := h.Autopilot.Products.ByID(r.Context(), pid); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	out, err := h.Cost.Breakdown(r.Context(), pid, from, to)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *Handlers) listTaskCheckpoints(w http.ResponseWriter, r *http.Request) {
+	id := domain.TaskID(r.PathValue("id"))
+	limit := 50
+	if s := strings.TrimSpace(r.URL.Query().Get("limit")); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+	list, err := h.Task.ListCheckpointHistory(r.Context(), id, limit)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	items := make([]map[string]any, 0, len(list))
+	for _, e := range list {
+		items = append(items, map[string]any{
+			"id":         e.ID,
+			"task_id":    string(e.TaskID),
+			"payload":    e.Payload,
+			"created_at": e.CreatedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"checkpoints": items})
+}
+
+func (h *Handlers) restoreTaskCheckpoint(w http.ResponseWriter, r *http.Request) {
+	var req restoreCheckpointReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if err := req.validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	id := domain.TaskID(r.PathValue("id"))
+	if err := h.Task.RestoreCheckpoint(r.Context(), id, req.HistoryID); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	t, err := h.Task.Tasks.ByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, taskToJSON(t))
 }
 
 func (h *Handlers) settingsStub(w http.ResponseWriter, _ *http.Request) {
@@ -595,12 +1281,17 @@ func (h *Handlers) agentCompletionWebhook(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "validation", err.Error())
 		return
 	}
-	if err := h.Task.Complete(r.Context(), domain.TaskID(req.TaskID)); err != nil {
+	ctx := r.Context()
+	tid := domain.TaskID(req.TaskID)
+	if err := h.Task.CompleteWithLiveActivity(ctx, tid, "agent_completion_webhook"); err != nil {
 		if mapDomainErr(w, err) {
 			return
 		}
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
+	}
+	if !h.Task.UsesLiveActivityTX() {
+		h.recordAgentHealthCompletion(ctx, tid, "agent_completion_webhook")
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -634,6 +1325,7 @@ func (h *Handlers) liveSSE(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", b)
 		fl.Flush()
 	}
+	filterProduct := strings.TrimSpace(r.URL.Query().Get("product_id"))
 	enc(map[string]any{"event": "hello", "ts": time.Now().UTC().Format(time.RFC3339Nano)})
 	ch, unsub := h.Live.Subscribe()
 	defer unsub()
@@ -645,6 +1337,9 @@ func (h *Handlers) liveSSE(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case payload := <-ch:
+			if filterProduct != "" && !ssePayloadMatchesProduct(filterProduct, payload) {
+				continue
+			}
 			_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 			fl.Flush()
 		case <-tick.C:
@@ -652,6 +1347,38 @@ func (h *Handlers) liveSSE(w http.ResponseWriter, r *http.Request) {
 			fl.Flush()
 		}
 	}
+}
+
+func ssePayloadMatchesProduct(wantProduct string, payload []byte) bool {
+	var m struct {
+		ProductID string `json:"product_id"`
+	}
+	if json.Unmarshal(payload, &m) != nil || m.ProductID == "" {
+		return true
+	}
+	return m.ProductID == wantProduct
+}
+
+func parseTimeRangeQuery(r *http.Request) (from, to time.Time, err error) {
+	if s := strings.TrimSpace(r.URL.Query().Get("from")); s != "" {
+		from, err = time.Parse(time.RFC3339Nano, s)
+		if err != nil {
+			from, err = time.Parse(time.RFC3339, s)
+		}
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid from time")
+		}
+	}
+	if s := strings.TrimSpace(r.URL.Query().Get("to")); s != "" {
+		to, err = time.Parse(time.RFC3339Nano, s)
+		if err != nil {
+			to, err = time.Parse(time.RFC3339, s)
+		}
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid to time")
+		}
+	}
+	return from, to, nil
 }
 
 // JSON views
@@ -664,6 +1391,7 @@ func productToJSON(p *domain.Product) map[string]any {
 		"research_summary":      p.ResearchSummary,
 		"workspace_id":          p.WorkspaceID,
 		"repo_url":              p.RepoURL,
+		"repo_clone_path":       p.RepoClonePath,
 		"repo_branch":           p.RepoBranch,
 		"description":           p.Description,
 		"program_document":      p.ProgramDocument,
@@ -727,6 +1455,8 @@ func taskToJSON(t *domain.Task) map[string]any {
 		"clarifications_json": t.ClarificationsJSON,
 		"checkpoint":          t.Checkpoint,
 		"external_ref":        t.ExternalRef,
+		"sandbox_path":        t.SandboxPath,
+		"worktree_path":       t.WorktreePath,
 		"created_at":          t.CreatedAt.Format(time.RFC3339Nano),
 		"updated_at":          t.UpdatedAt.Format(time.RFC3339Nano),
 	}

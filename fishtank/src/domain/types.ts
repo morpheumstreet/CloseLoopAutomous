@@ -5,7 +5,9 @@ export type TaskStatus =
   | 'in_progress'
   | 'testing'
   | 'review'
-  | 'done';
+  | 'done'
+  | 'failed'
+  | 'convoy_active';
 
 export interface Workspace {
   id: string;
@@ -38,6 +40,10 @@ export type FeedEventType =
   | 'task_created'
   | 'task_status_changed'
   | 'task_completed'
+  | 'task_dispatched'
+  | 'cost_recorded'
+  | 'checkpoint_saved'
+  | 'pull_request_opened'
   | 'agent_status_changed'
   | 'system';
 

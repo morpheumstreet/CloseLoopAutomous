@@ -11,7 +11,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/closeloopautomous/arms/internal/adapters/httpapi"
 	"github.com/closeloopautomous/arms/internal/config"
@@ -41,6 +43,14 @@ func TestHTTP_ProductToTaskDispatch(t *testing.T) {
 		t.Fatalf("product id missing: %#v", prod)
 	}
 
+	var productsList struct {
+		Products []map[string]any `json:"products"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products", nil, http.StatusOK, &productsList)
+	if len(productsList.Products) < 1 {
+		t.Fatalf("GET /api/products: want >=1 product, got %#v", productsList)
+	}
+
 	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/research", nil, http.StatusOK, &prod)
 	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/ideation", nil, http.StatusOK, &prod)
 
@@ -59,6 +69,17 @@ func TestHTTP_ProductToTaskDispatch(t *testing.T) {
 	swipe := []byte(`{"decision":"yes"}`)
 	var idea map[string]any
 	mustJSON(t, cli, http.MethodPost, base+"/api/ideas/"+iid+"/swipe", swipe, http.StatusOK, &idea)
+
+	var swipeHist struct {
+		Swipes []map[string]any `json:"swipes"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/swipe-history", nil, http.StatusOK, &swipeHist)
+	if len(swipeHist.Swipes) != 1 {
+		t.Fatalf("expected one swipe history row: %#v", swipeHist)
+	}
+	if swipeHist.Swipes[0]["decision"] != "yes" {
+		t.Fatalf("want decision yes: %#v", swipeHist.Swipes[0])
+	}
 
 	taskCreate := []byte(fmt.Sprintf(`{"idea_id":%q,"spec":"integration spec"}`, iid))
 	var task map[string]any
@@ -90,6 +111,154 @@ func TestHTTP_ProductToTaskDispatch(t *testing.T) {
 	if task["external_ref"] == nil || task["external_ref"] == "" {
 		t.Fatalf("want external_ref from stub gateway: %#v", task["external_ref"])
 	}
+}
+
+func TestHTTP_LiveSSEOnDispatch(t *testing.T) {
+	cfg := config.Config{AccessLog: false}
+	app := platform.NewInMemoryApp(cfg)
+	t.Cleanup(func() { _ = app.Close() })
+
+	srv := httptest.NewServer(httpapi.NewRouter(cfg, app.Handlers))
+	t.Cleanup(srv.Close)
+	base := srv.URL
+	cli := srv.Client()
+
+	done := make(chan string, 1)
+	go func() {
+		req, err := http.NewRequest(http.MethodGet, base+"/api/live/events", nil)
+		if err != nil {
+			done <- ""
+			return
+		}
+		res, err := cli.Do(req)
+		if err != nil {
+			done <- ""
+			return
+		}
+		defer res.Body.Close()
+		buf := make([]byte, 16384)
+		var acc strings.Builder
+		for {
+			n, err := res.Body.Read(buf)
+			acc.Write(buf[:n])
+			s := acc.String()
+			if strings.Contains(s, `"type":"task_dispatched"`) {
+				done <- s
+				return
+			}
+			if err != nil {
+				done <- ""
+				return
+			}
+		}
+	}()
+
+	// Same pipeline as TestHTTP_ProductToTaskDispatch up to dispatch
+	var prod map[string]any
+	var created map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/products", []byte(`{"name":"sse-p","workspace_id":"ws-sse"}`), http.StatusCreated, &created)
+	pid, _ := created["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/research", nil, http.StatusOK, &prod)
+	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/ideation", nil, http.StatusOK, &prod)
+	var ideasWrap struct {
+		Ideas []map[string]any `json:"ideas"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/ideas", nil, http.StatusOK, &ideasWrap)
+	iid, _ := ideasWrap.Ideas[0]["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/ideas/"+iid+"/swipe", []byte(`{"decision":"yes"}`), http.StatusOK, nil)
+	taskCreate := []byte(fmt.Sprintf(`{"idea_id":%q,"spec":"sse spec"}`, iid))
+	var task map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks", taskCreate, http.StatusCreated, &task)
+	tid, _ := task["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/plan/approve", []byte(`{}`), http.StatusOK, &task)
+	mustJSON(t, cli, http.MethodPatch, base+"/api/tasks/"+tid, []byte(`{"status":"assigned"}`), http.StatusOK, &task)
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/dispatch", []byte(`{"estimated_cost":1}`), http.StatusOK, &task)
+
+	select {
+	case body := <-done:
+		if body == "" || !strings.Contains(body, tid) {
+			t.Fatalf("expected task_dispatched with task id in SSE buffer, got len=%d", len(body))
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for SSE task_dispatched")
+	}
+}
+
+func TestHTTP_MergeQueueEnqueueAndList(t *testing.T) {
+	cfg := config.Config{AccessLog: false}
+	app := platform.NewInMemoryApp(cfg)
+	t.Cleanup(func() { _ = app.Close() })
+
+	srv := httptest.NewServer(httpapi.NewRouter(cfg, app.Handlers))
+	t.Cleanup(srv.Close)
+	cli := srv.Client()
+	base := srv.URL
+
+	var prod map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/products", []byte(`{"name":"mq-p","workspace_id":"ws-mq"}`), http.StatusCreated, &prod)
+	pid, _ := prod["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/research", nil, http.StatusOK, &prod)
+	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/ideation", nil, http.StatusOK, &prod)
+
+	var ideasWrap struct {
+		Ideas []map[string]any `json:"ideas"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/ideas", nil, http.StatusOK, &ideasWrap)
+	iid, _ := ideasWrap.Ideas[0]["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/ideas/"+iid+"/swipe", []byte(`{"decision":"yes"}`), http.StatusOK, nil)
+
+	taskCreate := []byte(fmt.Sprintf(`{"idea_id":%q,"spec":"merge queue spec"}`, iid))
+	var task map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks", taskCreate, http.StatusCreated, &task)
+	tid, _ := task["id"].(string)
+
+	var emptyQ struct {
+		MergeQueue []map[string]any `json:"merge_queue"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/merge-queue", nil, http.StatusOK, &emptyQ)
+	if len(emptyQ.MergeQueue) != 0 {
+		t.Fatalf("want empty merge queue: %#v", emptyQ)
+	}
+
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/merge-queue", nil, http.StatusCreated, nil)
+
+	var ws struct {
+		MergeQueuePending int64 `json:"merge_queue_pending"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/workspaces", nil, http.StatusOK, &ws)
+	if ws.MergeQueuePending != 1 {
+		t.Fatalf("workspaces merge_queue_pending: want 1 got %d", ws.MergeQueuePending)
+	}
+
+	var q1 struct {
+		MergeQueue []map[string]any `json:"merge_queue"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/merge-queue", nil, http.StatusOK, &q1)
+	if len(q1.MergeQueue) != 1 || q1.MergeQueue[0]["task_id"] != tid {
+		t.Fatalf("merge queue: %#v", q1.MergeQueue)
+	}
+
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/merge-queue", nil, http.StatusConflict, nil)
+
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/merge-queue/complete", nil, http.StatusOK, nil)
+
+	var ws2 struct {
+		MergeQueuePending int64 `json:"merge_queue_pending"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/workspaces", nil, http.StatusOK, &ws2)
+	if ws2.MergeQueuePending != 0 {
+		t.Fatalf("after complete want merge_queue_pending 0 got %d", ws2.MergeQueuePending)
+	}
+	var q2 struct {
+		MergeQueue []map[string]any `json:"merge_queue"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/merge-queue", nil, http.StatusOK, &q2)
+	if len(q2.MergeQueue) != 0 {
+		t.Fatalf("after complete want empty pending list: %#v", q2)
+	}
+
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/merge-queue/complete", nil, http.StatusNotFound, nil)
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/merge-queue", nil, http.StatusCreated, nil)
 }
 
 func mustJSON(t *testing.T, cli *http.Client, method, url string, body []byte, wantStatus int, out any) {

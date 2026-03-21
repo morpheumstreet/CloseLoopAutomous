@@ -13,6 +13,7 @@ type Product struct {
 
 	// Extended fields (Mission Control–style product profile).
 	RepoURL         string
+	RepoClonePath   string // optional absolute path to local git clone on the arms host (worktree / CI)
 	RepoBranch      string
 	Description     string // short blurb
 	ProgramDocument string // product program / charter (injected into research/ideation later)

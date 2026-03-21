@@ -34,6 +34,9 @@ func mapDomainErr(w http.ResponseWriter, err error) bool {
 	case errors.Is(err, domain.ErrConflict):
 		writeError(w, http.StatusConflict, "conflict", err.Error())
 		return true
+	case errors.Is(err, domain.ErrNotMergeQueueHead):
+		writeError(w, http.StatusConflict, "merge_queue_head", err.Error())
+		return true
 	case errors.Is(err, domain.ErrInvalidTransition):
 		writeError(w, http.StatusBadRequest, "invalid_transition", err.Error())
 		return true
@@ -42,6 +45,9 @@ func mapDomainErr(w http.ResponseWriter, err error) bool {
 		return true
 	case errors.Is(err, domain.ErrGateway):
 		writeError(w, http.StatusBadGateway, "gateway", err.Error())
+		return true
+	case errors.Is(err, domain.ErrShipping):
+		writeError(w, http.StatusBadGateway, "shipping", err.Error())
 		return true
 	default:
 		return false

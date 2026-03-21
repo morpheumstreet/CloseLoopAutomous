@@ -14,6 +14,7 @@ type Service struct {
 	Products   ports.ProductRepository
 	Ideas      ports.IdeaRepository
 	MaybePool  ports.MaybePoolRepository // optional; nil skips pool persistence
+	Swipes     ports.SwipeHistoryRepository // optional; nil skips persisted swipe log
 	Research   ports.ResearchPort
 	Ideation   ports.IdeationPort
 	Clock      ports.Clock
@@ -113,7 +114,27 @@ func (s *Service) SubmitSwipe(ctx context.Context, ideaID domain.IdeaID, decisio
 		p.Stage = domain.StagePlanning
 	}
 	p.UpdatedAt = now
-	return s.Products.Save(ctx, p)
+	if err := s.Products.Save(ctx, p); err != nil {
+		return err
+	}
+	if s.Swipes != nil {
+		key := domain.SwipeDecisionKey(decision)
+		if key == "" {
+			return fmt.Errorf("%w: unknown swipe decision", domain.ErrInvalidInput)
+		}
+		if err := s.Swipes.Append(ctx, ideaID, idea.ProductID, key, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ListSwipeHistory returns newest-first swipe audit rows for a product.
+func (s *Service) ListSwipeHistory(ctx context.Context, productID domain.ProductID, limit int) ([]domain.SwipeHistoryEntry, error) {
+	if s.Swipes == nil {
+		return nil, nil
+	}
+	return s.Swipes.ListByProduct(ctx, productID, limit)
 }
 
 // PromoteMaybe turns a "maybe" swipe into an approval (yes) and advances the product when still in swipe.
@@ -136,6 +157,11 @@ func (s *Service) PromoteMaybe(ctx context.Context, ideaID domain.IdeaID) error 
 	}
 	if s.MaybePool != nil {
 		if err := s.MaybePool.Remove(ctx, ideaID); err != nil {
+			return err
+		}
+	}
+	if s.Swipes != nil {
+		if err := s.Swipes.Append(ctx, ideaID, idea.ProductID, domain.SwipeDecisionKey(domain.DecisionYes), now); err != nil {
 			return err
 		}
 	}

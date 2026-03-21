@@ -1,9 +1,20 @@
-import { Activity, Folder, Plus, Rocket } from 'lucide-react';
+import { useState } from 'react';
+import { Activity, Folder, Plus, RefreshCw, Rocket } from 'lucide-react';
 import { useMissionUi } from '../../context/MissionUiContext';
 import type { WorkspaceStats } from '../../domain/types';
+import { CreateProductModal } from './CreateProductModal';
 
 export function WorkspaceDashboardView() {
-  const { workspaces, openWorkspace } = useMissionUi();
+  const {
+    workspaces,
+    openWorkspace,
+    refreshWorkspaces,
+    registerProduct,
+    listLoading,
+    apiError,
+    dismissError,
+  } = useMissionUi();
+  const [modalOpen, setModalOpen] = useState(false);
 
   return (
     <div className="ft-screen">
@@ -17,17 +28,27 @@ export function WorkspaceDashboardView() {
               <h1 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Mission Control</h1>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <button type="button" className="ft-btn-ghost">
+              <button
+                type="button"
+                className="ft-btn-ghost"
+                onClick={() => void refreshWorkspaces()}
+                disabled={listLoading}
+                title="Reload products from arms"
+              >
+                <RefreshCw size={16} className={listLoading ? 'ft-spin' : ''} />
+                Refresh
+              </button>
+              <button type="button" className="ft-btn-ghost" disabled title="Autopilot UI (next)">
                 <Rocket size={16} />
                 Autopilot
               </button>
-              <button type="button" className="ft-btn-ghost">
+              <button type="button" className="ft-btn-ghost" disabled title="Activity dashboard (next)">
                 <Activity size={16} />
                 Activity Dashboard
               </button>
-              <button type="button" className="ft-btn-primary">
+              <button type="button" className="ft-btn-primary" onClick={() => setModalOpen(true)}>
                 <Plus size={16} />
-                New Workspace
+                New product
               </button>
             </div>
           </div>
@@ -35,41 +56,65 @@ export function WorkspaceDashboardView() {
       </header>
 
       <main className="ft-container" style={{ paddingBlock: '1.5rem' }}>
+        {apiError ? (
+          <div className="ft-banner ft-banner--error" style={{ marginBottom: '1rem' }} role="alert">
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem' }}>
+              <span>{apiError}</span>
+              <button type="button" className="ft-btn-ghost" onClick={dismissError}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.35rem' }}>All Workspaces</h2>
-          <p className="ft-muted">Select a workspace to view its mission queue and agents</p>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.35rem' }}>Products</h2>
+          <p className="ft-muted">
+            Data from arms — each card is a <code style={{ fontSize: '0.85em' }}>GET /api/products</code> row with live
+            task counts
+          </p>
         </div>
 
-        {workspaces.length === 0 ? (
-          <EmptyWorkspaces />
+        {listLoading && workspaces.length === 0 ? (
+          <p className="ft-muted" style={{ padding: '2rem 0' }}>
+            Loading products…
+          </p>
+        ) : workspaces.length === 0 ? (
+          <EmptyWorkspaces onCreate={() => setModalOpen(true)} />
         ) : (
           <div className="ft-grid-ws ft-animate-slide-in">
             {workspaces.map((w) => (
-              <WorkspaceCard key={w.id} workspace={w} onOpen={() => openWorkspace(w)} />
+              <WorkspaceCard key={w.id} workspace={w} onOpen={() => void openWorkspace(w)} />
             ))}
-            <button type="button" className="ft-add-card">
+            <button type="button" className="ft-add-card" onClick={() => setModalOpen(true)}>
               <div className="ft-add-card-icon">
                 <Plus size={24} className="ft-muted" />
               </div>
-              <span style={{ fontWeight: 600 }}>Add Workspace</span>
+              <span style={{ fontWeight: 600 }}>Add product</span>
             </button>
           </div>
         )}
       </main>
+
+      <CreateProductModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreate={(name, workspaceId) => registerProduct(name, workspaceId)}
+      />
     </div>
   );
 }
 
-function EmptyWorkspaces() {
+function EmptyWorkspaces({ onCreate }: { onCreate: () => void }) {
   return (
     <div style={{ textAlign: 'center', padding: '4rem 1rem' }}>
       <Folder size={64} className="ft-muted" style={{ marginInline: 'auto', marginBottom: '1rem' }} />
-      <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.5rem' }}>No workspaces yet</h3>
+      <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.5rem' }}>No products yet</h3>
       <p className="ft-muted" style={{ marginBottom: '1.5rem' }}>
-        Create your first workspace to get started
+        Create a product in arms to see it here, or use the button below.
       </p>
-      <button type="button" className="ft-btn-primary">
-        Create Workspace
+      <button type="button" className="ft-btn-primary" onClick={onCreate}>
+        Create product
       </button>
     </div>
   );

@@ -10,6 +10,7 @@ import (
 	gw "github.com/closeloopautomous/arms/internal/adapters/gateway"
 	"github.com/closeloopautomous/arms/internal/adapters/identity"
 	"github.com/closeloopautomous/arms/internal/adapters/memory"
+	"github.com/closeloopautomous/arms/internal/adapters/shipping"
 	timeadapter "github.com/closeloopautomous/arms/internal/adapters/time"
 	"github.com/closeloopautomous/arms/internal/application/autopilot"
 	"github.com/closeloopautomous/arms/internal/application/convoy"
@@ -30,6 +31,7 @@ func main() {
 	tasks := memory.NewTaskStore()
 	convoys := memory.NewConvoyStore()
 	costs := memory.NewCostStore()
+	costCaps := memory.NewCostCapStore()
 	checkpoints := memory.NewCheckpointStore()
 	maybePool := memory.NewMaybePoolStore()
 	gateway := &gw.Stub{}
@@ -53,6 +55,7 @@ func main() {
 		Checkpt:  checkpoints,
 		Clock:    clock,
 		IDs:      ids,
+		Ship:     shipping.PullRequestNoop{},
 	}
 	convoySvc := &convoy.Service{
 		Convoys:  convoys,
@@ -62,7 +65,7 @@ func main() {
 		Clock:    clock,
 		IDs:      ids,
 	}
-	costSvc := &cost.Service{Costs: costs, Clock: clock, IDs: ids}
+	costSvc := &cost.Service{Costs: costs, Caps: costCaps, Clock: clock, IDs: ids}
 
 	p, err := productSvc.Register(ctx, product.RegistrationInput{Name: "demo", WorkspaceID: "ws-default"})
 	if err != nil {
@@ -95,7 +98,7 @@ func main() {
 	if err := taskSvc.Dispatch(ctx, t.ID, 5); err != nil {
 		log.Fatal(err)
 	}
-	if err := costSvc.Record(ctx, p.ID, t.ID, 4.5, "llm"); err != nil {
+	if err := costSvc.Record(ctx, p.ID, t.ID, 4.5, "llm", "", ""); err != nil {
 		log.Fatal(err)
 	}
 

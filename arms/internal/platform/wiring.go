@@ -1,15 +1,13 @@
 package platform
 
 import (
-	"context"
-	"time"
-
 	"github.com/closeloopautomous/arms/internal/adapters/ai"
 	"github.com/closeloopautomous/arms/internal/adapters/budget"
 	gw "github.com/closeloopautomous/arms/internal/adapters/gateway"
 	"github.com/closeloopautomous/arms/internal/adapters/httpapi"
 	"github.com/closeloopautomous/arms/internal/adapters/identity"
 	"github.com/closeloopautomous/arms/internal/adapters/memory"
+	"github.com/closeloopautomous/arms/internal/adapters/shipping"
 	timeadapter "github.com/closeloopautomous/arms/internal/adapters/time"
 	"github.com/closeloopautomous/arms/internal/application/autopilot"
 	"github.com/closeloopautomous/arms/internal/application/convoy"
@@ -56,10 +54,14 @@ func NewInMemoryApp(cfg config.Config) *App {
 	tasks := memory.NewTaskStore()
 	convoys := memory.NewConvoyStore()
 	costs := memory.NewCostStore()
+	costCaps := memory.NewCostCapStore()
 	checkpoints := memory.NewCheckpointStore()
+	ws := memory.NewWorkspaceStore()
 	maybePool := memory.NewMaybePoolStore()
+	swipes := memory.NewSwipeHistoryStore()
 	hub := livefeed.NewHub()
-	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, checkpoints, maybePool, hub, hub)
+	agentHealth := memory.NewAgentHealthStore()
+	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, agentHealth, hub, hub, nil)
 	return &App{Handlers: h, Products: products, Ideas: ideas, Tasks: tasks, db: nil, cleanup: cleanup}
 }
 
@@ -70,10 +72,16 @@ func buildHandlers(
 	tasks ports.TaskRepository,
 	convoys ports.ConvoyRepository,
 	costs ports.CostRepository,
+	costCaps ports.CostCapRepository,
 	checkpoints ports.CheckpointRepository,
+	workspacePorts ports.WorkspacePortRepository,
+	mergeQueue ports.WorkspaceMergeQueueRepository,
 	maybePool ports.MaybePoolRepository,
+	swipes ports.SwipeHistoryRepository,
+	agentHealth ports.AgentHealthRepository,
 	hub *livefeed.Hub,
 	taskEvents ports.LiveActivityPublisher,
+	liveTX ports.LiveActivityTX,
 ) (*httpapi.Handlers, func()) {
 	clock := timeadapter.System{}
 	ids := &identity.Sequential{}
@@ -85,26 +93,45 @@ func buildHandlers(
 		cfg.OpenClawDispatchTimeout,
 	)
 
+	budgetPolicy := &budget.Composite{
+		Costs:             costs,
+		Caps:              costCaps,
+		Clock:             clock,
+		DefaultCumulative: cfg.BudgetDefaultCap,
+	}
+
 	productSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	autoSvc := &autopilot.Service{
 		Products:   products,
 		Ideas:      ideas,
 		MaybePool:  maybePool,
+		Swipes:     swipes,
 		Research:   ai.ResearchStub{},
 		Ideation:   ai.IdeationStub{},
 		Clock:      clock,
 		Identities: ids,
 	}
+	ship := shipping.NewPullRequestPublisher(shipping.PublisherSettings{
+		PRBackend:  cfg.GitHubPRBackend,
+		APIToken:   cfg.GitHubToken,
+		APIBaseURL: cfg.GitHubAPIURL,
+		GhPath:     cfg.GhPath,
+		GitHubHost: cfg.GitHubHost,
+	})
 	taskSvc := &task.Service{
-		Tasks:    tasks,
-		Products: products,
-		Ideas:    ideas,
-		Gateway:  agentGW,
-		Budget:   &budget.Static{Cap: 100, Costs: costs},
-		Checkpt:  checkpoints,
-		Clock:    clock,
-		IDs:      ids,
-		Events:   taskEvents,
+		Tasks:       tasks,
+		Products:    products,
+		Ideas:       ideas,
+		Gateway:     agentGW,
+		Budget:      budgetPolicy,
+		Checkpt:     checkpoints,
+		Clock:       clock,
+		IDs:         ids,
+		Events:      taskEvents,
+		LiveTX:      liveTX,
+		Gate:        task.NewProductGate(),
+		Ship:        ship,
+		AgentHealth: agentHealth,
 	}
 	convoySvc := &convoy.Service{
 		Convoys:  convoys,
@@ -114,15 +141,25 @@ func buildHandlers(
 		Clock:    clock,
 		IDs:      ids,
 	}
-	costSvc := &cost.Service{Costs: costs, Clock: clock, IDs: ids}
+	costSvc := &cost.Service{
+		Costs:  costs,
+		Caps:   costCaps,
+		Clock:  clock,
+		IDs:    ids,
+		Events: taskEvents,
+		LiveTX: liveTX,
+	}
 
 	return &httpapi.Handlers{
-		Config:    cfg,
-		Product:   productSvc,
-		Autopilot: autoSvc,
-		Task:      taskSvc,
-		Convoy:    convoySvc,
-		Cost:      costSvc,
-		Live:      hub,
+		Config:         cfg,
+		Product:        productSvc,
+		Autopilot:      autoSvc,
+		Task:           taskSvc,
+		Convoy:         convoySvc,
+		Cost:           costSvc,
+		Live:           hub,
+		WorkspacePorts: workspacePorts,
+		MergeQueue:     mergeQueue,
+		AgentHealth:    agentHealth,
 	}, gwCleanup
 }

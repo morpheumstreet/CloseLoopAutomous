@@ -5,7 +5,7 @@ import { KANBAN_COLUMNS, tasksForStatus } from '../../domain/kanban';
 import { TaskCard } from './TaskCard';
 
 export function MissionQueuePanel() {
-  const { activeWorkspace, tasks } = useMissionUi();
+  const { activeWorkspace, tasks, boardLoading } = useMissionUi();
 
   const scoped = useMemo(() => {
     if (!activeWorkspace) return [];
@@ -13,7 +13,7 @@ export function MissionQueuePanel() {
   }, [tasks, activeWorkspace]);
 
   return (
-    <section className="ft-queue-flex">
+    <section className="ft-queue-flex ft-queue-relative">
       <div className="ft-border-b" style={{ padding: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
           <ChevronRight size={16} className="ft-muted" />
@@ -24,7 +24,8 @@ export function MissionQueuePanel() {
           New Task
         </button>
       </div>
-      <div className="ft-kanban-scroll ft-mission-queue-scroll">
+      <div className="ft-kanban-scroll ft-mission-queue-scroll" style={{ position: 'relative' }}>
+        {boardLoading ? <div className="ft-queue-loading">Loading Kanban…</div> : null}
         {KANBAN_COLUMNS.map((col) => {
           const colTasks = tasksForStatus(scoped, col.id);
           return (

@@ -49,8 +49,15 @@ export function LiveFeedPanel() {
 
 function matchesFilter(event: FeedEvent, filter: FeedFilter): boolean {
   if (filter === 'all') return true;
-  const taskTypes: FeedEventType[] = ['task_created', 'task_status_changed', 'task_completed'];
-  const agentTypes: FeedEventType[] = ['agent_status_changed'];
+  const taskTypes: FeedEventType[] = [
+    'task_created',
+    'task_status_changed',
+    'task_completed',
+    'task_dispatched',
+    'checkpoint_saved',
+    'pull_request_opened',
+  ];
+  const agentTypes: FeedEventType[] = ['agent_status_changed', 'cost_recorded'];
   if (filter === 'tasks') return taskTypes.includes(event.type);
   if (filter === 'agents') return agentTypes.includes(event.type);
   return true;
@@ -83,6 +90,14 @@ function eventIcon(type: FeedEventType): string {
       return '🔄';
     case 'task_completed':
       return '✅';
+    case 'task_dispatched':
+      return '🚀';
+    case 'checkpoint_saved':
+      return '💾';
+    case 'cost_recorded':
+      return '💰';
+    case 'pull_request_opened':
+      return '🔗';
     case 'agent_status_changed':
       return '🔔';
     default:

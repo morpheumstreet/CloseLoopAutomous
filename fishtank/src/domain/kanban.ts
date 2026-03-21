@@ -8,7 +8,9 @@ export const KANBAN_COLUMNS: KanbanColumn[] = [
   { id: 'in_progress', label: 'In Progress', columnClass: 'ft-col-in_progress' },
   { id: 'testing', label: 'Testing', columnClass: 'ft-col-testing' },
   { id: 'review', label: 'Review', columnClass: 'ft-col-review' },
+  { id: 'convoy_active', label: 'Convoy', columnClass: 'ft-col-assigned' },
   { id: 'done', label: 'Done', columnClass: 'ft-col-done' },
+  { id: 'failed', label: 'Failed', columnClass: 'ft-col-review' },
 ];
 
 export function tasksForStatus<T extends { status: TaskStatus }>(

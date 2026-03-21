@@ -6,16 +6,19 @@ import (
 	"github.com/closeloopautomous/arms/internal/domain"
 )
 
-// CreatePullRequestInput is a minimal contract for post-ship automation (GitHub or other forge).
+// CreatePullRequestInput is the contract for opening a PR on GitHub (or compatible API).
 type CreatePullRequestInput struct {
-	ProductID domain.ProductID
-	TaskID    domain.TaskID
-	Title     string
-	Body      string
-	Branch    string
+	ProductID  domain.ProductID
+	TaskID     domain.TaskID
+	Owner      string
+	Repo       string
+	Title      string
+	Body       string
+	HeadBranch string
+	BaseBranch string
 }
 
-// PullRequestPublisher opens a PR after task completion; real adapters plug in later.
+// PullRequestPublisher opens a PR after task completion; noop until forge token is configured.
 type PullRequestPublisher interface {
 	CreatePullRequest(ctx context.Context, in CreatePullRequestInput) (htmlURL string, err error)
 }
