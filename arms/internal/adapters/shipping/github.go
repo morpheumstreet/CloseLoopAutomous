@@ -40,11 +40,11 @@ func NewGitHubPublisher(token, apiBaseURL string) (*GitHubPublisher, error) {
 var _ ports.PullRequestPublisher = (*GitHubPublisher)(nil)
 
 // CreatePullRequest opens a PR from HeadBranch into BaseBranch on Owner/Repo.
-func (g *GitHubPublisher) CreatePullRequest(ctx context.Context, in ports.CreatePullRequestInput) (string, error) {
+func (g *GitHubPublisher) CreatePullRequest(ctx context.Context, in ports.CreatePullRequestInput) (ports.CreatePullRequestResult, error) {
 	owner := strings.TrimSpace(in.Owner)
 	repo := strings.TrimSpace(in.Repo)
 	if owner == "" || repo == "" {
-		return "", fmt.Errorf("%w: owner and repo required", domain.ErrInvalidInput)
+		return ports.CreatePullRequestResult{}, fmt.Errorf("%w: owner and repo required", domain.ErrInvalidInput)
 	}
 	base := strings.TrimSpace(in.BaseBranch)
 	if base == "" {
@@ -52,7 +52,7 @@ func (g *GitHubPublisher) CreatePullRequest(ctx context.Context, in ports.Create
 	}
 	head := strings.TrimSpace(in.HeadBranch)
 	if head == "" {
-		return "", fmt.Errorf("%w: head_branch required", domain.ErrInvalidInput)
+		return ports.CreatePullRequestResult{}, fmt.Errorf("%w: head_branch required", domain.ErrInvalidInput)
 	}
 	title := strings.TrimSpace(in.Title)
 	if title == "" {
@@ -67,14 +67,18 @@ func (g *GitHubPublisher) CreatePullRequest(ctx context.Context, in ports.Create
 	created, resp, err := g.client.PullRequests.Create(ctx, owner, repo, pr)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
-			return "", fmt.Errorf("%w: unauthorized (check token scopes: repo)", domain.ErrShipping)
+			return ports.CreatePullRequestResult{}, fmt.Errorf("%w: unauthorized (check token scopes: repo)", domain.ErrShipping)
 		}
-		return "", fmt.Errorf("%w: %v", domain.ErrShipping, err)
+		return ports.CreatePullRequestResult{}, fmt.Errorf("%w: %v", domain.ErrShipping, err)
 	}
 	if created == nil || created.HTMLURL == nil || strings.TrimSpace(*created.HTMLURL) == "" {
-		return "", fmt.Errorf("%w: empty response", domain.ErrShipping)
+		return ports.CreatePullRequestResult{}, fmt.Errorf("%w: empty response", domain.ErrShipping)
 	}
-	return *created.HTMLURL, nil
+	n := 0
+	if created.Number != nil {
+		n = *created.Number
+	}
+	return ports.CreatePullRequestResult{HTMLURL: *created.HTMLURL, Number: n}, nil
 }
 
 // PublisherSettings selects how POST /api/tasks/{id}/pull-request opens a PR (REST PAT vs gh CLI).

@@ -1,6 +1,8 @@
 package platform
 
 import (
+	"strings"
+
 	"github.com/closeloopautomous/arms/internal/adapters/ai"
 	"github.com/closeloopautomous/arms/internal/adapters/budget"
 	gw "github.com/closeloopautomous/arms/internal/adapters/gateway"
@@ -13,6 +15,7 @@ import (
 	"github.com/closeloopautomous/arms/internal/application/convoy"
 	"github.com/closeloopautomous/arms/internal/application/cost"
 	"github.com/closeloopautomous/arms/internal/application/livefeed"
+	"github.com/closeloopautomous/arms/internal/application/mergequeue"
 	"github.com/closeloopautomous/arms/internal/application/product"
 	"github.com/closeloopautomous/arms/internal/application/task"
 	"github.com/closeloopautomous/arms/internal/config"
@@ -151,6 +154,19 @@ func buildHandlers(
 		LiveTX: liveTX,
 	}
 
+	prMerger := shipping.NewPullRequestMergerFromConfig(cfg.GitHubToken, cfg.GitHubAPIURL)
+	var wtMerger ports.WorktreeMerger
+	if strings.EqualFold(strings.TrimSpace(cfg.MergeBackend), "local") {
+		wtMerger = shipping.NewLocalGitMerger()
+	}
+	mergeShip := mergequeue.New(mergequeue.MergeConfig{
+		Backend:     cfg.MergeBackend,
+		MergeMethod: cfg.MergeMethod,
+		LeaseOwner:  cfg.MergeLeaseOwner,
+		LeaseTTLSec: cfg.MergeLeaseSec,
+		GitBin:      cfg.GitBin,
+	}, mergeQueue, tasks, products, prMerger, wtMerger, taskEvents, clock)
+
 	return &httpapi.Handlers{
 		Config:         cfg,
 		Product:        productSvc,
@@ -161,6 +177,7 @@ func buildHandlers(
 		Live:           hub,
 		WorkspacePorts: workspacePorts,
 		MergeQueue:     mergeQueue,
+		MergeShip:      mergeShip,
 		AgentHealth:    agentHealth,
 	}, gwCleanup
 }

@@ -76,6 +76,10 @@ type Task struct {
 	ExternalRef        string
 	SandboxPath        string // optional operator/CI path hint (worktree isolation metadata)
 	WorktreePath       string
+	// PullRequestURL / PullRequestNumber / PullRequestHeadBranch are set when a PR is opened (merge ship uses these).
+	PullRequestURL       string
+	PullRequestNumber    int
+	PullRequestHeadBranch string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }

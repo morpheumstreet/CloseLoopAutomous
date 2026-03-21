@@ -143,7 +143,7 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for beha
 - [x] Checkpoint **history** + restore — `checkpoint_history` + APIs (latest still in `checkpoints`); MC **`work_checkpoints`** naming parity optional
 - [ ] `agent_mailbox`
 - [x] `workspace_ports` (4200–4299) + HTTP allocate/release
-- [x] `workspace_merge_queue` table + pending **count** in `GET /api/workspaces`; FIFO **head** completion + **`completed_at`** on done (not git merge execution)
+- [x] `workspace_merge_queue` table + pending **count** in `GET /api/workspaces`; FIFO **head** completion + **`completed_at`** on done; **real ship** optional via **`ARMS_MERGE_BACKEND=github|local`** (lease columns, merge outcome fields, **`mergequeue` service**); query **`skip_ship=1`** for break-glass metadata-only advance
 - [ ] Broader MC parity: soft deletes, extra cascade paths, concurrency guards, ops tooling
 
 ---

@@ -49,6 +49,12 @@ func mapDomainErr(w http.ResponseWriter, err error) bool {
 	case errors.Is(err, domain.ErrShipping):
 		writeError(w, http.StatusBadGateway, "shipping", err.Error())
 		return true
+	case errors.Is(err, domain.ErrMergeConflict):
+		writeError(w, http.StatusConflict, "merge_conflict", err.Error())
+		return true
+	case errors.Is(err, domain.ErrMergeShipBusy):
+		writeError(w, http.StatusServiceUnavailable, "merge_lease_busy", err.Error())
+		return true
 	default:
 		return false
 	}

@@ -36,7 +36,7 @@ func routeCatalog() []RouteEntry {
 		{"POST", "/api/tasks/{id}/plan/reject", "Reject / recall plan → planning (inbox or assigned pre-dispatch; optional {status_reason})"},
 		{"POST", "/api/tasks/{id}/dispatch", "Dispatch to agent gateway (requires assigned + approved plan)"},
 		{"POST", "/api/tasks/{id}/merge-queue", "Enqueue task for serialized merge (409 if already pending)"},
-		{"POST", "/api/tasks/{id}/merge-queue/complete", "Mark pending merge-queue row done for this task (404 if none pending; 409 if not FIFO head)"},
+		{"POST", "/api/tasks/{id}/merge-queue/complete", "Complete merge queue head; optional ?skip_ship=1 skips forge/git merge; with ARMS_MERGE_BACKEND=github|local runs real merge (409 merge_conflict, 503 merge_lease_busy)"},
 		{"POST", "/api/tasks/{id}/workspace/git-worktree", "Optional git worktree add (ARMS_ENABLE_GIT_WORKTREES=1, ARMS_WORKSPACE_ROOT, product.repo_clone_path); body {branch}"},
 		{"GET", "/api/tasks/{id}/agent-health", "Agent heartbeat row for task (unknown if never reported)"},
 		{"PATCH", "/api/tasks/{id}/agent-health", "Record heartbeat {status, detail?}"},

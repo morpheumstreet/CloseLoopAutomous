@@ -86,6 +86,7 @@ type MetadataPatch struct {
 	ProgramDocument *string
 	SettingsJSON    *string
 	IconURL         *string
+	MergePolicyJSON *string
 
 	ResearchCadenceSec  *int
 	IdeationCadenceSec  *int
@@ -126,6 +127,9 @@ func (s *Service) PatchMetadata(ctx context.Context, id domain.ProductID, patch 
 	}
 	if patch.IconURL != nil {
 		p.IconURL = strings.TrimSpace(*patch.IconURL)
+	}
+	if patch.MergePolicyJSON != nil {
+		p.MergePolicyJSON = strings.TrimSpace(*patch.MergePolicyJSON)
 	}
 	if patch.ResearchCadenceSec != nil {
 		if *patch.ResearchCadenceSec < 0 {

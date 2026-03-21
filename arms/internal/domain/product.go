@@ -29,4 +29,6 @@ type Product struct {
 	LastAutoIdeationAt  time.Time
 	// PreferenceModelJSON stores a JSON array of swipe events for downstream learning (stub aggregator).
 	PreferenceModelJSON string
+	// MergePolicyJSON optional per-product merge_method / backend override (see [ParseMergePolicy]).
+	MergePolicyJSON string
 }

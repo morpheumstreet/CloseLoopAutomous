@@ -37,6 +37,10 @@ import (
 //   - ARMS_AGENT_STALE_SEC — heartbeats older than this are flagged stale in JSON (default 300); 0 uses default
 //   - ARMS_CORS_ALLOW_ORIGIN — optional; when non-empty, enables CORS for browser UIs on another origin (e.g. http://localhost:3000 for Fishtank). Use * only for quick local experiments.
 //   - ARMS_ACL — optional HTTP Basic ACL: semicolon-separated entries "user|password|role". Role is admin (default) or read (GET/HEAD only). Non-empty enables auth when MC_API_TOKEN is empty, or adds Basic as an alternative when both are set. User/password must not contain '|' or ';'.
+//   - ARMS_MERGE_BACKEND — merge queue completion: noop (default), github (REST merge PR), local (git merge in repo_clone_path)
+//   - ARMS_MERGE_METHOD — github merge method: merge | squash | rebase (default merge)
+//   - ARMS_MERGE_LEASE_SEC — lease TTL for merge-queue ship (default 90)
+//   - ARMS_MERGE_LEASE_OWNER — optional instance id for queue leases (default hostname)
 type Config struct {
 	ListenAddr                  string
 	MCAPIToken                  string
@@ -64,6 +68,10 @@ type Config struct {
 	AgentStaleSec               int
 	CORSAllowOrigin             string
 	ACLUsers                    []ACLUser
+	MergeBackend                string
+	MergeMethod                 string
+	MergeLeaseSec               int
+	MergeLeaseOwner             string
 }
 
 // ACLUser is one Basic-auth principal for coarse HTTP ACL (admin vs read-only).
@@ -135,6 +143,15 @@ func LoadFromEnv() Config {
 	}
 	corsOrigin := strings.TrimSpace(os.Getenv("ARMS_CORS_ALLOW_ORIGIN"))
 	acl := parseARMSACL(os.Getenv("ARMS_ACL"))
+	mergeBackend := strings.ToLower(strings.TrimSpace(os.Getenv("ARMS_MERGE_BACKEND")))
+	mergeMethod := strings.TrimSpace(os.Getenv("ARMS_MERGE_METHOD"))
+	mergeLease := 90
+	if s := strings.TrimSpace(os.Getenv("ARMS_MERGE_LEASE_SEC")); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			mergeLease = n
+		}
+	}
+	mergeOwner := strings.TrimSpace(os.Getenv("ARMS_MERGE_LEASE_OWNER"))
 	return Config{
 		ListenAddr:                  addr,
 		MCAPIToken:                  strings.TrimSpace(token),
@@ -162,6 +179,10 @@ func LoadFromEnv() Config {
 		AgentStaleSec:               agentStale,
 		CORSAllowOrigin:             corsOrigin,
 		ACLUsers:                    acl,
+		MergeBackend:                mergeBackend,
+		MergeMethod:                 mergeMethod,
+		MergeLeaseSec:               mergeLease,
+		MergeLeaseOwner:             mergeOwner,
 	}
 }
 

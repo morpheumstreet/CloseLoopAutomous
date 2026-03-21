@@ -1,6 +1,8 @@
 package domain
 
-import "errors"
+import (
+	"errors"
+)
 
 var (
 	ErrNotFound           = errors.New("not found")
@@ -11,4 +13,6 @@ var (
 	ErrBudgetExceeded     = errors.New("budget cap exceeded")
 	ErrGateway            = errors.New("gateway error")
 	ErrShipping           = errors.New("shipping error")
+	ErrMergeConflict      = errors.New("merge conflict")
+	ErrMergeShipBusy      = errors.New("merge queue lease held by another worker")
 )

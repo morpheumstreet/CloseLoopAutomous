@@ -17,4 +17,11 @@ type MergeQueueEntry struct {
 	TaskID    TaskID
 	Status    string // e.g. pending
 	CreatedAt time.Time
+
+	LeaseOwner        string
+	LeaseExpiresAt    time.Time
+	MergeShipState    MergeShipState
+	MergedSHA         string
+	MergeError        string
+	ConflictFilesJSON string // JSON array of paths
 }

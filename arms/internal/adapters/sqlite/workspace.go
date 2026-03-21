@@ -3,7 +3,9 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/closeloopautomous/arms/internal/domain"
@@ -145,7 +147,9 @@ func (s *WorkspaceStore) ListPendingByProduct(ctx context.Context, productID dom
 		limit = 500
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, product_id, task_id, status, created_at FROM workspace_merge_queue
+SELECT id, product_id, task_id, status, created_at,
+  lease_owner, lease_expires_at, merge_ship_state, merged_sha, merge_error, conflict_files_json
+FROM workspace_merge_queue
 WHERE product_id = ? AND status = 'pending' ORDER BY id ASC LIMIT ?`,
 		string(productID), limit,
 	)
@@ -155,22 +159,44 @@ WHERE product_id = ? AND status = 'pending' ORDER BY id ASC LIMIT ?`,
 	defer rows.Close()
 	var out []domain.MergeQueueEntry
 	for rows.Next() {
-		var e domain.MergeQueueEntry
-		var pid, tid, sts, created string
-		if err := rows.Scan(&e.ID, &pid, &tid, &sts, &created); err != nil {
+		e, err := scanMergeQueueEntry(rows)
+		if err != nil {
 			return nil, err
 		}
-		e.ProductID = domain.ProductID(pid)
-		e.TaskID = domain.TaskID(tid)
-		e.Status = sts
-		t, err := time.Parse(time.RFC3339Nano, created)
-		if err != nil {
-			t, _ = time.Parse(time.RFC3339, created)
-		}
-		e.CreatedAt = t.UTC()
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+func scanMergeQueueEntry(rows *sql.Rows) (domain.MergeQueueEntry, error) {
+	var e domain.MergeQueueEntry
+	var pid, tid, sts, created string
+	var leaseOwner, leaseExp, mss, msha, merr, cj sql.NullString
+	if err := rows.Scan(&e.ID, &pid, &tid, &sts, &created,
+		&leaseOwner, &leaseExp, &mss, &msha, &merr, &cj); err != nil {
+		return e, err
+	}
+	e.ProductID = domain.ProductID(pid)
+	e.TaskID = domain.TaskID(tid)
+	e.Status = sts
+	t, err := time.Parse(time.RFC3339Nano, created)
+	if err != nil {
+		t, _ = time.Parse(time.RFC3339, created)
+	}
+	e.CreatedAt = t.UTC()
+	e.LeaseOwner = leaseOwner.String
+	if leaseExp.Valid && strings.TrimSpace(leaseExp.String) != "" {
+		lt, err := time.Parse(time.RFC3339Nano, leaseExp.String)
+		if err != nil {
+			lt, _ = time.Parse(time.RFC3339, leaseExp.String)
+		}
+		e.LeaseExpiresAt = lt.UTC()
+	}
+	e.MergeShipState = domain.MergeShipState(mss.String)
+	e.MergedSHA = msha.String
+	e.MergeError = merr.String
+	e.ConflictFilesJSON = cj.String
+	return e, nil
 }
 
 func (s *WorkspaceStore) CompletePendingForTask(ctx context.Context, taskID domain.TaskID) error {
@@ -222,4 +248,150 @@ SELECT id FROM workspace_merge_queue WHERE task_id = ? AND status = 'pending'`,
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *WorkspaceStore) ReserveHeadForShip(ctx context.Context, taskID domain.TaskID, leaseOwner string, leaseExpires time.Time) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var productID string
+	err = tx.QueryRowContext(ctx, `SELECT product_id FROM tasks WHERE id = ?`, string(taskID)).Scan(&productID)
+	if err == sql.ErrNoRows {
+		return 0, domain.ErrNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	var headID int64
+	err = tx.QueryRowContext(ctx, `
+SELECT id FROM workspace_merge_queue
+WHERE product_id = ? AND status = 'pending' ORDER BY id ASC LIMIT 1`,
+		productID,
+	).Scan(&headID)
+	if err == sql.ErrNoRows {
+		return 0, domain.ErrNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	var myID int64
+	err = tx.QueryRowContext(ctx, `
+SELECT id FROM workspace_merge_queue WHERE task_id = ? AND status = 'pending'`,
+		string(taskID),
+	).Scan(&myID)
+	if err == sql.ErrNoRows {
+		return 0, domain.ErrNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	if myID != headID {
+		return 0, domain.ErrNotMergeQueueHead
+	}
+	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
+	expStr := leaseExpires.UTC().Format(time.RFC3339Nano)
+	res, err := tx.ExecContext(ctx, `
+UPDATE workspace_merge_queue
+SET lease_owner = ?, lease_expires_at = ?
+WHERE id = ? AND status = 'pending'
+  AND (IFNULL(lease_owner,'') = '' OR lease_expires_at IS NULL OR trim(lease_expires_at) = '' OR lease_expires_at < ?)`,
+		strings.TrimSpace(leaseOwner), expStr, myID, nowStr,
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if n == 0 {
+		return 0, domain.ErrMergeShipBusy
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return myID, nil
+}
+
+func (s *WorkspaceStore) FinishShip(ctx context.Context, rowID int64, leaseOwner string, result domain.MergeShipResult, shipOpErr error) error {
+	r := result
+	if errors.Is(shipOpErr, domain.ErrMergeConflict) && r.State == domain.MergeShipNone {
+		r.State = domain.MergeShipConflict
+		if strings.TrimSpace(r.ErrorMessage) == "" && shipOpErr != nil {
+			r.ErrorMessage = shipOpErr.Error()
+		}
+	}
+	if shipOpErr != nil && r.State == domain.MergeShipNone {
+		r.State = domain.MergeShipFailed
+		if strings.TrimSpace(r.ErrorMessage) == "" {
+			r.ErrorMessage = shipOpErr.Error()
+		}
+	}
+	cfj, _ := json.Marshal(r.ConflictFiles)
+	if len(cfj) == 0 {
+		cfj = []byte("[]")
+	}
+	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var cur string
+	err = tx.QueryRowContext(ctx, `SELECT lease_owner FROM workspace_merge_queue WHERE id = ?`, rowID).Scan(&cur)
+	if err == sql.ErrNoRows {
+		return domain.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(cur) != strings.TrimSpace(leaseOwner) {
+		return domain.ErrMergeShipBusy
+	}
+
+	switch r.State {
+	case domain.MergeShipMerged, domain.MergeShipSkipped:
+		_, err = tx.ExecContext(ctx, `
+UPDATE workspace_merge_queue SET
+  status = 'done',
+  completed_at = ?,
+  merge_ship_state = ?,
+  merged_sha = ?,
+  merge_error = ?,
+  conflict_files_json = ?,
+  lease_owner = '',
+  lease_expires_at = NULL
+WHERE id = ? AND lease_owner = ?`,
+			nowStr, string(r.State), strings.TrimSpace(r.MergedSHA), strings.TrimSpace(r.ErrorMessage), string(cfj),
+			rowID, strings.TrimSpace(leaseOwner),
+		)
+	default:
+		_, err = tx.ExecContext(ctx, `
+UPDATE workspace_merge_queue SET
+  merge_ship_state = ?,
+  merged_sha = '',
+  merge_error = ?,
+  conflict_files_json = ?,
+  lease_owner = '',
+  lease_expires_at = NULL
+WHERE id = ? AND lease_owner = ?`,
+			string(r.State), strings.TrimSpace(r.ErrorMessage), string(cfj),
+			rowID, strings.TrimSpace(leaseOwner),
+		)
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *WorkspaceStore) ReleaseShipLease(ctx context.Context, rowID int64, leaseOwner string) error {
+	_, err := s.db.ExecContext(ctx, `
+UPDATE workspace_merge_queue SET lease_owner = '', lease_expires_at = NULL
+WHERE id = ? AND lease_owner = ?`,
+		rowID, strings.TrimSpace(leaseOwner),
+	)
+	return err
 }

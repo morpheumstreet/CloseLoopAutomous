@@ -146,8 +146,8 @@ func upsertTaskTx(ctx context.Context, tx *sql.Tx, t *domain.Task) error {
 		pa = 1
 	}
 	_, err := tx.ExecContext(ctx, `
-INSERT INTO tasks (id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO tasks (id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, pull_request_url, pull_request_number, pull_request_head_branch, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   product_id = excluded.product_id,
   idea_id = excluded.idea_id,
@@ -160,10 +160,14 @@ ON CONFLICT(id) DO UPDATE SET
   external_ref = excluded.external_ref,
   sandbox_path = excluded.sandbox_path,
   worktree_path = excluded.worktree_path,
+  pull_request_url = excluded.pull_request_url,
+  pull_request_number = excluded.pull_request_number,
+  pull_request_head_branch = excluded.pull_request_head_branch,
   created_at = excluded.created_at,
   updated_at = excluded.updated_at
 `, string(t.ID), string(t.ProductID), string(t.IdeaID), t.Spec, string(t.Status), t.StatusReason, pa, t.ClarificationsJSON,
 		t.Checkpoint, t.ExternalRef, t.SandboxPath, t.WorktreePath,
+		t.PullRequestURL, t.PullRequestNumber, t.PullRequestHeadBranch,
 		t.CreatedAt.Format(time.RFC3339Nano), t.UpdatedAt.Format(time.RFC3339Nano))
 	return err
 }

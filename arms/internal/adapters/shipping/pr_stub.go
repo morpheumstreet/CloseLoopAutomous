@@ -11,7 +11,7 @@ type PullRequestNoop struct{}
 
 var _ ports.PullRequestPublisher = (*PullRequestNoop)(nil)
 
-func (PullRequestNoop) CreatePullRequest(_ context.Context, in ports.CreatePullRequestInput) (string, error) {
+func (PullRequestNoop) CreatePullRequest(_ context.Context, in ports.CreatePullRequestInput) (ports.CreatePullRequestResult, error) {
 	_ = in
-	return "", nil
+	return ports.CreatePullRequestResult{}, nil
 }

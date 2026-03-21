@@ -29,3 +29,10 @@ func TestParseGitHubRepoURL(t *testing.T) {
 		}
 	}
 }
+
+func TestParseGitHubLikeOwnerRepo_GHES(t *testing.T) {
+	o, r, err := ParseGitHubLikeOwnerRepo("https://github.example.com/myorg/myrepo")
+	if err != nil || o != "myorg" || r != "myrepo" {
+		t.Fatalf("got %q %q err %v", o, r, err)
+	}
+}

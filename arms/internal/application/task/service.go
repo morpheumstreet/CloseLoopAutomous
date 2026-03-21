@@ -261,24 +261,25 @@ func (s *Service) RestoreCheckpoint(ctx context.Context, taskID domain.TaskID, h
 	return s.RecordCheckpoint(ctx, taskID, e.Payload)
 }
 
-// OpenPullRequest opens a GitHub PR (requires product.repo_url to point at github.com and head branch to exist on the remote).
-func (s *Service) OpenPullRequest(ctx context.Context, taskID domain.TaskID, headBranch, title, body string) (prURL string, err error) {
+// OpenPullRequest opens a GitHub PR (requires product.repo_url; supports github.com and GitHub-like paths on GHES).
+// Persists pull_request_url, pull_request_number (when known), and pull_request_head_branch on the task.
+func (s *Service) OpenPullRequest(ctx context.Context, taskID domain.TaskID, headBranch, title, body string) (prURL string, prNumber int, err error) {
 	t, err := s.Tasks.ByID(ctx, taskID)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	switch t.Status {
 	case domain.StatusInProgress, domain.StatusTesting, domain.StatusReview, domain.StatusDone:
 	default:
-		return "", fmt.Errorf("%w: pull request not allowed in %s", domain.ErrInvalidTransition, t.Status)
+		return "", 0, fmt.Errorf("%w: pull request not allowed in %s", domain.ErrInvalidTransition, t.Status)
 	}
 	p, err := s.Products.ByID(ctx, t.ProductID)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
-	owner, repo, err := domain.ParseGitHubRepoURL(p.RepoURL)
+	owner, repo, err := domain.ParseGitHubLikeOwnerRepo(p.RepoURL)
 	if err != nil {
-		return "", fmt.Errorf("%w: product.repo_url: %v", domain.ErrInvalidInput, err)
+		return "", 0, fmt.Errorf("%w: product.repo_url: %v", domain.ErrInvalidInput, err)
 	}
 	base := strings.TrimSpace(p.RepoBranch)
 	if base == "" {
@@ -286,13 +287,13 @@ func (s *Service) OpenPullRequest(ctx context.Context, taskID domain.TaskID, hea
 	}
 	head := strings.TrimSpace(headBranch)
 	if head == "" {
-		return "", fmt.Errorf("%w: head_branch required", domain.ErrInvalidInput)
+		return "", 0, fmt.Errorf("%w: head_branch required", domain.ErrInvalidInput)
 	}
 	ti := strings.TrimSpace(title)
 	if ti == "" {
 		ti = fmt.Sprintf("[%s] %s", taskID, trimSpecOneLine(t.Spec))
 	}
-	prURL, err = s.Ship.CreatePullRequest(ctx, ports.CreatePullRequestInput{
+	cre, err := s.Ship.CreatePullRequest(ctx, ports.CreatePullRequestInput{
 		ProductID:  t.ProductID,
 		TaskID:     taskID,
 		Owner:      owner,
@@ -303,18 +304,31 @@ func (s *Service) OpenPullRequest(ctx context.Context, taskID domain.TaskID, hea
 		BaseBranch: base,
 	})
 	if err != nil {
-		return "", err
+		return "", 0, err
+	}
+	prURL = cre.HTMLURL
+	prNumber = cre.Number
+	t.PullRequestURL = prURL
+	t.PullRequestNumber = prNumber
+	t.PullRequestHeadBranch = head
+	t.UpdatedAt = s.Clock.Now()
+	if saveErr := s.Tasks.Save(ctx, t); saveErr != nil {
+		return prURL, prNumber, saveErr
 	}
 	if s.Events != nil && prURL != "" {
+		data := map[string]any{"html_url": prURL, "head": head}
+		if prNumber > 0 {
+			data["number"] = prNumber
+		}
 		_ = s.Events.Publish(ctx, ports.LiveActivityEvent{
 			Type:      "pull_request_opened",
 			Ts:        s.Clock.Now().UTC().Format(time.RFC3339Nano),
 			ProductID: string(t.ProductID),
 			TaskID:    string(taskID),
-			Data:      map[string]any{"html_url": prURL, "head": head},
+			Data:      data,
 		})
 	}
-	return prURL, nil
+	return prURL, prNumber, nil
 }
 
 func trimSpecOneLine(spec string) string {

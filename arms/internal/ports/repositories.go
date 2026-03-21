@@ -90,4 +90,11 @@ type WorkspaceMergeQueueRepository interface {
 	ListPendingByProduct(ctx context.Context, productID domain.ProductID, limit int) ([]domain.MergeQueueEntry, error)
 	// CompletePendingForTask marks the pending row for this task done (serialized lane advances).
 	CompletePendingForTask(ctx context.Context, taskID domain.TaskID) error
+
+	// ReserveHeadForShip verifies this task owns the FIFO head and sets a lease (multi-instance safety).
+	ReserveHeadForShip(ctx context.Context, taskID domain.TaskID, leaseOwner string, leaseExpires time.Time) (rowID int64, err error)
+	// FinishShip records merge outcome; on merged/skipped marks the row done. Always clears the lease.
+	FinishShip(ctx context.Context, rowID int64, leaseOwner string, result domain.MergeShipResult, shipOpErr error) error
+	// ReleaseShipLease clears lease without changing queue position (e.g. panic recovery).
+	ReleaseShipLease(ctx context.Context, rowID int64, leaseOwner string) error
 }

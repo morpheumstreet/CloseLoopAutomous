@@ -35,7 +35,7 @@ Failed requests typically return JSON:
 { "error": "message", "code": "optional_code" }
 ```
 
-Common `code` values from domain mapping include `not_found`, `invalid_transition`, `conflict`, `merge_queue_head`, `budget_exceeded`, `gateway`, `shipping`, `invalid_signature`, etc.
+Common `code` values from domain mapping include `not_found`, `invalid_transition`, `conflict`, `merge_queue_head`, `merge_conflict`, `merge_lease_busy`, `budget_exceeded`, `gateway`, `shipping`, `invalid_signature`, etc.
 
 ---
 
@@ -45,8 +45,8 @@ Common `code` values from domain mapping include `not_found`, `invalid_transitio
 |--------|------|-------------|--------|
 | POST | `/api/products` | `name`, `workspace_id`; optional profile fields; optional `research_cadence_sec`, `ideation_cadence_sec` (≥0, 0=off), `automation_tier` (`supervised` \| `semi_auto` \| `full_auto`), `auto_dispatch_enabled` | Create product (Mission Control–style profile + autopilot metadata). |
 | GET | `/api/products` | — | `{ "products": [ … ] }` — list products (dashboards / UIs). |
-| GET | `/api/products/{id}` | — | Response includes profile fields, cadence/tier, `preference_model_json` (JSON string), optional `last_auto_*` timestamps. |
-| PATCH | `/api/products/{id}` | Any subset of profile + autopilot fields above | At least one field required. Does not change pipeline `stage` (use research/ideation). |
+| GET | `/api/products/{id}` | — | Response includes profile fields, cadence/tier, `preference_model_json`, **`merge_policy_json`**, optional `last_auto_*` timestamps. |
+| PATCH | `/api/products/{id}` | Any subset of profile + autopilot fields above; optional **`merge_policy_json`** (string, JSON for `merge_method` / `merge_backend`) | At least one field required. Does not change pipeline `stage` (use research/ideation). |
 | PATCH | `/api/products/{id}/cost-caps` | At least one of: `daily_cap`, `monthly_cap`, `cumulative_cap` (numbers) | **Negative** value for an axis **clears** that limit (unlimited on that axis). Upserts `cost_caps` row. |
 | GET | `/api/products/{id}/costs/breakdown` | — | Query: optional `from`, `to` (RFC3339 / RFC3339Nano). JSON: `total`, `events[]`, `by_agent`, `by_model`. |
 | POST | `/api/products/{id}/research` | — | Run research phase. The full product record (including `program_document`, `description`, repo fields) is passed to the research port for prompt context. |
@@ -54,7 +54,7 @@ Common `code` values from domain mapping include `not_found`, `invalid_transitio
 | GET | `/api/products/{id}/ideas` | — | `{ "ideas": [ … ] }` |
 | GET | `/api/products/{id}/maybe-pool` | — | `{ "ideas": [ … ] }` for ideas swiped `maybe`. |
 | GET | `/api/products/{id}/swipe-history` | — | Query: optional `limit` (default 100, max 500). `{ "swipes": [ { id, idea_id, product_id, decision, created_at } ] }`, newest first (audit log; complements `preference_model_json`). |
-| GET | `/api/products/{id}/merge-queue` | — | Query: optional `limit` (default 50, max 500). `{ "merge_queue": [ { id, product_id, task_id, status, created_at } ] }` — **pending** rows only, FIFO by `id`. **503** if merge queue is not configured. |
+| GET | `/api/products/{id}/merge-queue` | — | Query: optional `limit` (default 50, max 500). Pending rows FIFO by `id`; entries may include **`lease_owner`**, **`lease_expires_at`**, **`merge_ship_state`**, **`merged_sha`**, **`merge_error`**, **`conflict_files`** after ship attempts. **503** if merge queue is not configured. |
 | POST | `/api/ideas/{id}/swipe` | `decision`: `pass` \| `maybe` \| `yes` \| `now` | Appends to `preference_model_json`; `maybe` enqueues pool. |
 | POST | `/api/ideas/{id}/promote-maybe` | — | Requires prior `maybe` swipe; sets decision to yes and removes from pool. |
 
@@ -62,7 +62,7 @@ Common `code` values from domain mapping include `not_found`, `invalid_transitio
 
 ## Tasks (Kanban)
 
-Task JSON includes at least: `id`, `product_id`, `idea_id`, `spec`, `status` (string: `planning`, `inbox`, `assigned`, `in_progress`, `testing`, `review`, `done`, `failed`, `convoy_active`), `status_reason`, `plan_approved`, `clarifications_json`, `checkpoint`, `external_ref`, `sandbox_path`, `worktree_path`, `created_at`, `updated_at`.
+Task JSON includes at least: `id`, `product_id`, `idea_id`, `spec`, `status` (string: `planning`, `inbox`, `assigned`, `in_progress`, `testing`, `review`, `done`, `failed`, `convoy_active`), `status_reason`, `plan_approved`, `clarifications_json`, `checkpoint`, `external_ref`, `sandbox_path`, `worktree_path`, optional **`pull_request_url`**, **`pull_request_number`**, **`pull_request_head_branch`** (after `POST …/pull-request`), `created_at`, `updated_at`.
 
 | Method | Path | Body | Notes |
 |--------|------|------|--------|
@@ -73,9 +73,9 @@ Task JSON includes at least: `id`, `product_id`, `idea_id`, `spec`, `status` (st
 | POST | `/api/tasks/{id}/plan/approve` | Optional `{ "spec" }` | `planning` → `inbox`, `plan_approved: true`. |
 | POST | `/api/tasks/{id}/plan/reject` | Optional `{ "status_reason" }` | Back to **`planning`** from **`inbox`** or **`assigned`** (blocked after dispatch / `external_ref` set). |
 | POST | `/api/tasks/{id}/dispatch` | `estimated_cost` (number) | Requires **`assigned`** + approved plan. Enforces **`budget.Composite`** (caps + default cumulative). **402** + **`budget_exceeded`** if `estimated_cost` would exceed allowed spend. |
-| POST | `/api/tasks/{id}/pull-request` | `head_branch` (required), optional `title`, `body` | Opens a PR using `product.repo_url` (`owner/repo`) and `product.repo_branch` as base (default `main`). **REST backend** (default, or `ARMS_GITHUB_PR_BACKEND=api`): **`ARMS_GITHUB_TOKEN`** or **`GITHUB_TOKEN`** with `repo` scope; optional **`ARMS_GITHUB_API_URL`** for GitHub Enterprise. **`ARMS_GITHUB_PR_BACKEND=gh`**: runs `gh pr create` (optional **`ARMS_GH_BIN`**, **`ARMS_GITHUB_HOST`**). Response `{ "pr_url": "..." }` (empty string if publisher is noop). Allowed while task is `in_progress`, `testing`, `review`, or `done`. |
+| POST | `/api/tasks/{id}/pull-request` | `head_branch` (required), optional `title`, `body` | Opens a PR using `product.repo_url` (GitHub.com or GitHub-like path on GHES) and `product.repo_branch` as base (default `main`). **REST** / **`gh`** backends as in config. Persists **`pull_request_*`** on the task when a URL is returned. Response `{ "pr_url": "...", "pr_number": <int> }` (`pr_number` omitted if unknown). Allowed while task is `in_progress`, `testing`, `review`, or `done`. |
 | POST | `/api/tasks/{id}/merge-queue` | — | Enqueues the task on the product’s **serialized merge queue** (FIFO by row `id`). **201** `{ "status": "queued" }`. **409** `conflict` if this task already has a **pending** row. **503** if merge queue is not configured. |
-| POST | `/api/tasks/{id}/merge-queue/complete` | — | Marks the **pending** row for this task **done** only when it is the **head** of the queue for that product; otherwise **409** with code **`merge_queue_head`**. **404** if the task has no pending row. **503** if merge queue is not configured. |
+| POST | `/api/tasks/{id}/merge-queue/complete` | Query: optional **`skip_ship=1`** or **`skip_real_merge=1`** to advance the queue without calling GitHub/git | **Head-only** (same as before). With **`ARMS_MERGE_BACKEND=github`**, merges **`pull_request_number`** via REST (needs token + PR opened first). With **`local`**, runs **`git merge`** in **`product.repo_clone_path`** (needs **`pull_request_head_branch`**). **409** **`merge_conflict`** on conflict; **503** **`merge_lease_busy`** if another instance holds the lease. Default backend **`noop`** keeps metadata-only completion. |
 | GET | `/api/tasks/{id}/checkpoints` | — | Query: optional `limit` (default 50, max 500). `{ "checkpoints": [ { id, task_id, payload, created_at } ] }` newest first. |
 | POST | `/api/tasks/{id}/checkpoint/restore` | `{ "history_id": <int> }` | Restores payload via same rules as recording a checkpoint. |
 | POST | `/api/tasks/{id}/checkpoint` | `payload` | Appends **`checkpoint_history`** and updates latest `checkpoints` row + task. |
@@ -84,7 +84,7 @@ Task JSON includes at least: `id`, `product_id`, `idea_id`, `spec`, `status` (st
 
 **Typical flow:** create task → (optional) PATCH `clarifications_json` → POST `plan/approve` → PATCH `status` to `assigned` → POST `dispatch` → checkpoint / complete / webhook.
 
-**Merge queue:** enqueue / complete via the task routes above; **`POST …/merge-queue/complete` succeeds only for the FIFO head** (see **`merge_queue_head`** in Errors). List pending rows under **Products and ideas**.
+**Merge queue:** enqueue / complete via the task routes above; **`POST …/merge-queue/complete` succeeds only for the FIFO head** (see **`merge_queue_head`** in Errors). Env: **`ARMS_MERGE_BACKEND`** (`noop` \| `github` \| `local`), **`ARMS_MERGE_METHOD`** (`merge` \| `squash` \| `rebase`), **`ARMS_MERGE_LEASE_SEC`**, **`ARMS_MERGE_LEASE_OWNER`**. List pending rows under **Products and ideas**.
 
 ---
 
@@ -135,7 +135,7 @@ Task JSON includes at least: `id`, `product_id`, `idea_id`, `spec`, `status` (st
 |--------|------|--------|
 | GET | `/api/live/events` | `text/event-stream`. When **`MC_API_TOKEN`** is set: **`Authorization: Bearer <token>`** or **`?token=<same value>`** (native **`EventSource`** only supports the query form). When only **`ARMS_ACL`** is configured: **`?basic=<base64(user:password)>`**. Optional **`product_id=`** — only forward `data:` lines whose JSON `product_id` matches (or lacks `product_id`). |
 
-After the initial `hello` object, each **`data:`** line is JSON with at least `type`, `ts` (RFC3339 nano), and optional `product_id`, `task_id`, `data` (object). Types include **`task_dispatched`**, **`cost_recorded`**, **`checkpoint_saved`**, **`task_completed`** (`data.source` e.g. `api_task_complete` / `agent_completion_webhook`), **`task_stall_nudged`**, **`pull_request_opened`** (includes `data.html_url`). With **`DATABASE_PATH`** set, events are persisted in **`event_outbox`** and relayed to subscribers (restart-safe delivery of pending rows). In-memory mode broadcasts directly from the hub.
+After the initial `hello` object, each **`data:`** line is JSON with at least `type`, `ts` (RFC3339 nano), and optional `product_id`, `task_id`, `data` (object). Types include **`task_dispatched`**, **`cost_recorded`**, **`checkpoint_saved`**, **`task_completed`** (`data.source` e.g. `api_task_complete` / `agent_completion_webhook`), **`task_stall_nudged`**, **`pull_request_opened`** (includes `data.html_url`, optional `data.number`), **`merge_ship_completed`** (`data.state`, `data.merged_sha`, `data.error`, `data.conflict_files`, `data.merge_queue_row_id`). With **`DATABASE_PATH`** set, events are persisted in **`event_outbox`** and relayed to subscribers (restart-safe delivery of pending rows). In-memory mode broadcasts directly from the hub.
 
 ---
 

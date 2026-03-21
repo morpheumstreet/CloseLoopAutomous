@@ -25,15 +25,19 @@ func (s *ProductStore) Save(ctx context.Context, p *domain.Product) error {
 	if tier == "" {
 		tier = string(domain.TierSupervised)
 	}
+	mpj := strings.TrimSpace(p.MergePolicyJSON)
+	if mpj == "" {
+		mpj = "{}"
+	}
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO products (
   id, name, stage, research_summary, workspace_id,
   repo_url, repo_clone_path, repo_branch, description, program_document, settings_json, icon_url,
   research_cadence_sec, ideation_cadence_sec, automation_tier, auto_dispatch_enabled,
   last_auto_research_at, last_auto_ideation_at, preference_model_json,
-  updated_at
+  merge_policy_json, updated_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   name = excluded.name,
   stage = excluded.stage,
@@ -53,11 +57,13 @@ ON CONFLICT(id) DO UPDATE SET
   last_auto_research_at = excluded.last_auto_research_at,
   last_auto_ideation_at = excluded.last_auto_ideation_at,
   preference_model_json = excluded.preference_model_json,
+  merge_policy_json = excluded.merge_policy_json,
   updated_at = excluded.updated_at
 `, string(p.ID), p.Name, int(p.Stage), p.ResearchSummary, p.WorkspaceID,
 		p.RepoURL, p.RepoClonePath, p.RepoBranch, p.Description, p.ProgramDocument, p.SettingsJSON, p.IconURL,
 		p.ResearchCadenceSec, p.IdeationCadenceSec, tier, boolInt(p.AutoDispatchEnabled),
 		formatOptionalTime(p.LastAutoResearchAt), formatOptionalTime(p.LastAutoIdeationAt), p.PreferenceModelJSON,
+		mpj,
 		p.UpdatedAt.Format(time.RFC3339Nano))
 	return err
 }
@@ -66,7 +72,7 @@ const productSelectCols = `id, name, stage, research_summary, workspace_id,
   repo_url, repo_clone_path, repo_branch, description, program_document, settings_json, icon_url,
   research_cadence_sec, ideation_cadence_sec, automation_tier, auto_dispatch_enabled,
   last_auto_research_at, last_auto_ideation_at, preference_model_json,
-  updated_at`
+  merge_policy_json, updated_at`
 
 func (s *ProductStore) ByID(ctx context.Context, id domain.ProductID) (*domain.Product, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT `+productSelectCols+` FROM products WHERE id = ?`, string(id))
@@ -101,14 +107,14 @@ func scanProductRow(row interface{ Scan(dest ...any) error }) (*domain.Product, 
 	var (
 		sid, name, summary, ws                                        string
 		repoURL, repoClone, branch, desc, program, settings, icon, updated string
-		tierStr, prefJSON                                             string
+		tierStr, prefJSON, mergePolJSON                               string
 		lastRes, lastIde                                              string
 		stage, resCad, ideCad, autoDisp                               int
 	)
 	if err := row.Scan(&sid, &name, &stage, &summary, &ws,
 		&repoURL, &repoClone, &branch, &desc, &program, &settings, &icon,
 		&resCad, &ideCad, &tierStr, &autoDisp, &lastRes, &lastIde, &prefJSON,
-		&updated); err != nil {
+		&mergePolJSON, &updated); err != nil {
 		return nil, err
 	}
 	tier, err := domain.ParseAutomationTier(tierStr)
@@ -141,6 +147,7 @@ func scanProductRow(row interface{ Scan(dest ...any) error }) (*domain.Product, 
 		LastAutoResearchAt:  lr,
 		LastAutoIdeationAt:  li,
 		PreferenceModelJSON: prefJSON,
+		MergePolicyJSON:     mergePolJSON,
 		UpdatedAt:           ut,
 	}, nil
 }
@@ -300,8 +307,8 @@ func (s *TaskStore) Save(ctx context.Context, t *domain.Task) error {
 		pa = 1
 	}
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO tasks (id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO tasks (id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, pull_request_url, pull_request_number, pull_request_head_branch, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   product_id = excluded.product_id,
   idea_id = excluded.idea_id,
@@ -314,17 +321,21 @@ ON CONFLICT(id) DO UPDATE SET
   external_ref = excluded.external_ref,
   sandbox_path = excluded.sandbox_path,
   worktree_path = excluded.worktree_path,
+  pull_request_url = excluded.pull_request_url,
+  pull_request_number = excluded.pull_request_number,
+  pull_request_head_branch = excluded.pull_request_head_branch,
   created_at = excluded.created_at,
   updated_at = excluded.updated_at
 `, string(t.ID), string(t.ProductID), string(t.IdeaID), t.Spec, string(t.Status), t.StatusReason, pa, t.ClarificationsJSON,
 		t.Checkpoint, t.ExternalRef, t.SandboxPath, t.WorktreePath,
+		t.PullRequestURL, t.PullRequestNumber, t.PullRequestHeadBranch,
 		t.CreatedAt.Format(time.RFC3339Nano), t.UpdatedAt.Format(time.RFC3339Nano))
 	return err
 }
 
 func (s *TaskStore) ByID(ctx context.Context, id domain.TaskID) (*domain.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, created_at, updated_at
+SELECT id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, pull_request_url, pull_request_number, pull_request_head_branch, created_at, updated_at
 FROM tasks WHERE id = ?`, string(id))
 	t, err := scanTaskRow(row)
 	if err != nil {
@@ -338,7 +349,7 @@ FROM tasks WHERE id = ?`, string(id))
 
 func (s *TaskStore) ListByProduct(ctx context.Context, productID domain.ProductID) ([]domain.Task, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, created_at, updated_at
+SELECT id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, pull_request_url, pull_request_number, pull_request_head_branch, created_at, updated_at
 FROM tasks WHERE product_id = ?
 ORDER BY updated_at DESC`, string(productID))
 	if err != nil {
@@ -358,27 +369,27 @@ ORDER BY updated_at DESC`, string(productID))
 
 func scanTaskRow(row *sql.Row) (*domain.Task, error) {
 	var (
-		sid, pid, iid, spec, st, sreason, clar, ck, ref, sand, wt, ca, ua string
-		pa                                                                int
+		sid, pid, iid, spec, st, sreason, clar, ck, ref, sand, wt, pru, prh, ca, ua string
+		pa, prn                                                                     int
 	)
-	if err := row.Scan(&sid, &pid, &iid, &spec, &st, &sreason, &pa, &clar, &ck, &ref, &sand, &wt, &ca, &ua); err != nil {
+	if err := row.Scan(&sid, &pid, &iid, &spec, &st, &sreason, &pa, &clar, &ck, &ref, &sand, &wt, &pru, &prn, &prh, &ca, &ua); err != nil {
 		return nil, err
 	}
-	return buildTaskFromScan(sid, pid, iid, spec, st, sreason, pa, clar, ck, ref, sand, wt, ca, ua)
+	return buildTaskFromScan(sid, pid, iid, spec, st, sreason, pa, clar, ck, ref, sand, wt, pru, prn, prh, ca, ua)
 }
 
 func scanTaskRows(rows *sql.Rows) (*domain.Task, error) {
 	var (
-		sid, pid, iid, spec, st, sreason, clar, ck, ref, sand, wt, ca, ua string
-		pa                                                                int
+		sid, pid, iid, spec, st, sreason, clar, ck, ref, sand, wt, pru, prh, ca, ua string
+		pa, prn                                                                     int
 	)
-	if err := rows.Scan(&sid, &pid, &iid, &spec, &st, &sreason, &pa, &clar, &ck, &ref, &sand, &wt, &ca, &ua); err != nil {
+	if err := rows.Scan(&sid, &pid, &iid, &spec, &st, &sreason, &pa, &clar, &ck, &ref, &sand, &wt, &pru, &prn, &prh, &ca, &ua); err != nil {
 		return nil, err
 	}
-	return buildTaskFromScan(sid, pid, iid, spec, st, sreason, pa, clar, ck, ref, sand, wt, ca, ua)
+	return buildTaskFromScan(sid, pid, iid, spec, st, sreason, pa, clar, ck, ref, sand, wt, pru, prn, prh, ca, ua)
 }
 
-func buildTaskFromScan(sid, pid, iid, spec, st, sreason string, pa int, clar, ck, ref, sand, wt, ca, ua string) (*domain.Task, error) {
+func buildTaskFromScan(sid, pid, iid, spec, st, sreason string, pa int, clar, ck, ref, sand, wt, pru string, prn int, prh, ca, ua string) (*domain.Task, error) {
 	cat, err := time.Parse(time.RFC3339Nano, ca)
 	if err != nil {
 		cat, _ = time.Parse(time.RFC3339, ca)
@@ -388,20 +399,23 @@ func buildTaskFromScan(sid, pid, iid, spec, st, sreason string, pa int, clar, ck
 		uat, _ = time.Parse(time.RFC3339, ua)
 	}
 	return &domain.Task{
-		ID:                 domain.TaskID(sid),
-		ProductID:          domain.ProductID(pid),
-		IdeaID:             domain.IdeaID(iid),
-		Spec:               spec,
-		Status:             domain.TaskStatus(st),
-		StatusReason:       sreason,
-		PlanApproved:       pa != 0,
-		ClarificationsJSON: clar,
-		Checkpoint:         ck,
-		ExternalRef:        ref,
-		SandboxPath:        sand,
-		WorktreePath:       wt,
-		CreatedAt:          cat,
-		UpdatedAt:          uat,
+		ID:                    domain.TaskID(sid),
+		ProductID:             domain.ProductID(pid),
+		IdeaID:                domain.IdeaID(iid),
+		Spec:                  spec,
+		Status:                domain.TaskStatus(st),
+		StatusReason:          sreason,
+		PlanApproved:          pa != 0,
+		ClarificationsJSON:    clar,
+		Checkpoint:            ck,
+		ExternalRef:           ref,
+		SandboxPath:           sand,
+		WorktreePath:          wt,
+		PullRequestURL:        pru,
+		PullRequestNumber:     prn,
+		PullRequestHeadBranch: prh,
+		CreatedAt:             cat,
+		UpdatedAt:             uat,
 	}, nil
 }
 

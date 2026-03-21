@@ -2,8 +2,11 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -441,12 +444,18 @@ var _ ports.CostCapRepository = (*CostCapStore)(nil)
 const memWorkspacePortMin, memWorkspacePortMax = 4200, 4299
 
 type mergeQueueRow struct {
-	id          int64
-	productID   domain.ProductID
-	taskID      domain.TaskID
-	status      string
-	createdAt   time.Time
-	completedAt time.Time
+	id                int64
+	productID         domain.ProductID
+	taskID            domain.TaskID
+	status            string
+	createdAt         time.Time
+	completedAt       time.Time
+	leaseOwner        string
+	leaseExpiresAt    time.Time
+	mergeShipState    string
+	mergedSHA         string
+	mergeError        string
+	conflictFilesJSON string
 }
 
 type WorkspaceStore struct {
@@ -558,11 +567,17 @@ func (s *WorkspaceStore) ListPendingByProduct(_ context.Context, productID domai
 		row := &s.mq[i]
 		if row.productID == productID && row.status == "pending" {
 			out = append(out, domain.MergeQueueEntry{
-				ID:        row.id,
-				ProductID: row.productID,
-				TaskID:    row.taskID,
-				Status:    row.status,
-				CreatedAt: row.createdAt,
+				ID:                row.id,
+				ProductID:         row.productID,
+				TaskID:            row.taskID,
+				Status:            row.status,
+				CreatedAt:         row.createdAt,
+				LeaseOwner:        row.leaseOwner,
+				LeaseExpiresAt:    row.leaseExpiresAt,
+				MergeShipState:    domain.MergeShipState(row.mergeShipState),
+				MergedSHA:         row.mergedSHA,
+				MergeError:        row.mergeError,
+				ConflictFilesJSON: row.conflictFilesJSON,
 			})
 		}
 	}
@@ -604,6 +619,109 @@ func (s *WorkspaceStore) CompletePendingForTask(_ context.Context, taskID domain
 	}
 	s.mq[myIdx].status = "done"
 	s.mq[myIdx].completedAt = time.Now().UTC()
+	s.mq[myIdx].leaseOwner = ""
+	s.mq[myIdx].leaseExpiresAt = time.Time{}
+	return nil
+}
+
+func (s *WorkspaceStore) ReserveHeadForShip(_ context.Context, taskID domain.TaskID, leaseOwner string, leaseExpires time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var productID domain.ProductID
+	var myIdx = -1
+	for i := range s.mq {
+		if s.mq[i].taskID == taskID && s.mq[i].status == "pending" {
+			myIdx = i
+			productID = s.mq[i].productID
+			break
+		}
+	}
+	if myIdx < 0 {
+		return 0, domain.ErrNotFound
+	}
+	var headID int64
+	var haveHead bool
+	for i := range s.mq {
+		row := &s.mq[i]
+		if row.productID == productID && row.status == "pending" {
+			if !haveHead || row.id < headID {
+				headID = row.id
+				haveHead = true
+			}
+		}
+	}
+	if !haveHead || s.mq[myIdx].id != headID {
+		return 0, domain.ErrNotMergeQueueHead
+	}
+	now := time.Now().UTC()
+	row := &s.mq[myIdx]
+	if strings.TrimSpace(row.leaseOwner) != "" && !row.leaseExpiresAt.IsZero() && row.leaseExpiresAt.After(now) {
+		return 0, domain.ErrMergeShipBusy
+	}
+	row.leaseOwner = strings.TrimSpace(leaseOwner)
+	row.leaseExpiresAt = leaseExpires.UTC()
+	return row.id, nil
+}
+
+func (s *WorkspaceStore) FinishShip(_ context.Context, rowID int64, leaseOwner string, result domain.MergeShipResult, shipOpErr error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx := -1
+	for i := range s.mq {
+		if s.mq[i].id == rowID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return domain.ErrNotFound
+	}
+	row := &s.mq[idx]
+	if strings.TrimSpace(row.leaseOwner) != strings.TrimSpace(leaseOwner) {
+		return domain.ErrMergeShipBusy
+	}
+	r := result
+	if errors.Is(shipOpErr, domain.ErrMergeConflict) && r.State == domain.MergeShipNone {
+		r.State = domain.MergeShipConflict
+		if strings.TrimSpace(r.ErrorMessage) == "" && shipOpErr != nil {
+			r.ErrorMessage = shipOpErr.Error()
+		}
+	}
+	if shipOpErr != nil && r.State == domain.MergeShipNone {
+		r.State = domain.MergeShipFailed
+		if strings.TrimSpace(r.ErrorMessage) == "" {
+			r.ErrorMessage = shipOpErr.Error()
+		}
+	}
+	cfj, _ := json.Marshal(r.ConflictFiles)
+	if len(cfj) == 0 {
+		cfj = []byte("[]")
+	}
+	row.mergeShipState = string(r.State)
+	row.mergedSHA = strings.TrimSpace(r.MergedSHA)
+	row.mergeError = strings.TrimSpace(r.ErrorMessage)
+	row.conflictFilesJSON = string(cfj)
+	row.leaseOwner = ""
+	row.leaseExpiresAt = time.Time{}
+	now := time.Now().UTC()
+	switch r.State {
+	case domain.MergeShipMerged, domain.MergeShipSkipped:
+		row.status = "done"
+		row.completedAt = now
+	}
+	return nil
+}
+
+func (s *WorkspaceStore) ReleaseShipLease(_ context.Context, rowID int64, leaseOwner string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.mq {
+		if s.mq[i].id == rowID && strings.TrimSpace(s.mq[i].leaseOwner) == strings.TrimSpace(leaseOwner) {
+			s.mq[i].leaseOwner = ""
+			s.mq[i].leaseExpiresAt = time.Time{}
+			break
+		}
+	}
 	return nil
 }
 

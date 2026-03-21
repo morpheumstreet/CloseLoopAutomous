@@ -50,6 +50,7 @@ type patchProductReq struct {
 	ProgramDocument *string `json:"program_document,omitempty"`
 	SettingsJSON    *string `json:"settings_json,omitempty"`
 	IconURL         *string `json:"icon_url,omitempty"`
+	MergePolicyJSON *string `json:"merge_policy_json,omitempty"`
 
 	ResearchCadenceSec  *int    `json:"research_cadence_sec,omitempty"`
 	IdeationCadenceSec  *int    `json:"ideation_cadence_sec,omitempty"`
@@ -59,7 +60,7 @@ type patchProductReq struct {
 
 func (r *patchProductReq) validate() error {
 	if r.Name == nil && r.RepoURL == nil && r.RepoClonePath == nil && r.RepoBranch == nil && r.Description == nil &&
-		r.ProgramDocument == nil && r.SettingsJSON == nil && r.IconURL == nil &&
+		r.ProgramDocument == nil && r.SettingsJSON == nil && r.IconURL == nil && r.MergePolicyJSON == nil &&
 		r.ResearchCadenceSec == nil && r.IdeationCadenceSec == nil && r.AutomationTier == nil && r.AutoDispatchEnabled == nil {
 		return fmt.Errorf("at least one field is required")
 	}

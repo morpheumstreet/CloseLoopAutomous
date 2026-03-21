@@ -22,6 +22,7 @@ import (
 	"github.com/closeloopautomous/arms/internal/application/autopilot"
 	"github.com/closeloopautomous/arms/internal/application/convoy"
 	"github.com/closeloopautomous/arms/internal/application/cost"
+	"github.com/closeloopautomous/arms/internal/application/mergequeue"
 	productapp "github.com/closeloopautomous/arms/internal/application/product"
 	"github.com/closeloopautomous/arms/internal/application/task"
 	"github.com/closeloopautomous/arms/internal/domain"
@@ -43,6 +44,7 @@ type Handlers struct {
 	Live           ports.ActivityStream // SSE subscribers; required for live routes
 	WorkspacePorts ports.WorkspacePortRepository
 	MergeQueue     ports.WorkspaceMergeQueueRepository
+	MergeShip      *mergequeue.Service // optional; real merge ship when ARMS_MERGE_* set
 	AgentHealth    ports.AgentHealthRepository // optional; nil keeps legacy agent listing stub
 }
 
@@ -119,6 +121,7 @@ func (h *Handlers) patchProduct(w http.ResponseWriter, r *http.Request) {
 		ProgramDocument:      req.ProgramDocument,
 		SettingsJSON:         req.SettingsJSON,
 		IconURL:              req.IconURL,
+		MergePolicyJSON:      req.MergePolicyJSON,
 		ResearchCadenceSec:   req.ResearchCadenceSec,
 		IdeationCadenceSec:   req.IdeationCadenceSec,
 		AutomationTier:       req.AutomationTier,
@@ -493,7 +496,7 @@ func (h *Handlers) openPullRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := domain.TaskID(r.PathValue("id"))
-	url, err := h.Task.OpenPullRequest(r.Context(), id, req.HeadBranch, req.Title, req.Body)
+	url, prNum, err := h.Task.OpenPullRequest(r.Context(), id, req.HeadBranch, req.Title, req.Body)
 	if err != nil {
 		if mapDomainErr(w, err) {
 			return
@@ -501,7 +504,11 @@ func (h *Handlers) openPullRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"pr_url": url})
+	out := map[string]any{"pr_url": url}
+	if prNum > 0 {
+		out["pr_number"] = prNum
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (h *Handlers) dispatchTask(w http.ResponseWriter, r *http.Request) {
@@ -1068,7 +1075,15 @@ func (h *Handlers) completeMergeQueue(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	if err := h.MergeQueue.CompletePendingForTask(r.Context(), id); err != nil {
+	skip := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("skip_ship")), "1") ||
+		strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("skip_real_merge")), "1")
+	var err error
+	if h.MergeShip != nil {
+		err = h.MergeShip.Complete(r.Context(), id, skip)
+	} else {
+		err = h.MergeQueue.CompletePendingForTask(r.Context(), id)
+	}
+	if err != nil {
 		if mapDomainErr(w, err) {
 			return
 		}
@@ -1108,13 +1123,35 @@ func (h *Handlers) listProductMergeQueue(w http.ResponseWriter, r *http.Request)
 	out := make([]any, 0, len(list))
 	for i := range list {
 		e := &list[i]
-		out = append(out, map[string]any{
+		row := map[string]any{
 			"id":         e.ID,
 			"product_id": string(e.ProductID),
 			"task_id":    string(e.TaskID),
 			"status":     e.Status,
 			"created_at": e.CreatedAt.UTC().Format(time.RFC3339Nano),
-		})
+		}
+		if e.LeaseOwner != "" {
+			row["lease_owner"] = e.LeaseOwner
+		}
+		if !e.LeaseExpiresAt.IsZero() {
+			row["lease_expires_at"] = e.LeaseExpiresAt.UTC().Format(time.RFC3339Nano)
+		}
+		if e.MergeShipState != "" {
+			row["merge_ship_state"] = string(e.MergeShipState)
+		}
+		if e.MergedSHA != "" {
+			row["merged_sha"] = e.MergedSHA
+		}
+		if e.MergeError != "" {
+			row["merge_error"] = e.MergeError
+		}
+		if strings.TrimSpace(e.ConflictFilesJSON) != "" {
+			var cf []string
+			if json.Unmarshal([]byte(e.ConflictFilesJSON), &cf) == nil {
+				row["conflict_files"] = cf
+			}
+		}
+		out = append(out, row)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"merge_queue": out})
 }
@@ -1405,6 +1442,7 @@ func productToJSON(p *domain.Product) map[string]any {
 		"automation_tier":       p.AutomationTier.String(),
 		"auto_dispatch_enabled": p.AutoDispatchEnabled,
 		"preference_model_json": p.PreferenceModelJSON,
+		"merge_policy_json":     p.MergePolicyJSON,
 		"updated_at":            p.UpdatedAt.Format(time.RFC3339Nano),
 	}
 	if !p.LastAutoResearchAt.IsZero() {
@@ -1447,7 +1485,7 @@ func swipeString(d domain.SwipeDecision) string {
 }
 
 func taskToJSON(t *domain.Task) map[string]any {
-	return map[string]any{
+	m := map[string]any{
 		"id":                  string(t.ID),
 		"product_id":          string(t.ProductID),
 		"idea_id":             string(t.IdeaID),
@@ -1463,6 +1501,16 @@ func taskToJSON(t *domain.Task) map[string]any {
 		"created_at":          t.CreatedAt.Format(time.RFC3339Nano),
 		"updated_at":          t.UpdatedAt.Format(time.RFC3339Nano),
 	}
+	if strings.TrimSpace(t.PullRequestURL) != "" {
+		m["pull_request_url"] = t.PullRequestURL
+	}
+	if t.PullRequestNumber > 0 {
+		m["pull_request_number"] = t.PullRequestNumber
+	}
+	if strings.TrimSpace(t.PullRequestHeadBranch) != "" {
+		m["pull_request_head_branch"] = t.PullRequestHeadBranch
+	}
+	return m
 }
 
 func convoyToJSON(c *domain.Convoy) map[string]any {

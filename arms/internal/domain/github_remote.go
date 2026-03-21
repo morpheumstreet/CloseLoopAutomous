@@ -41,3 +41,35 @@ func ParseGitHubRepoURL(raw string) (owner, repo string, err error) {
 	}
 	return parts[0], parts[1], nil
 }
+
+// ParseGitHubLikeOwnerRepo extracts owner/repo from https://host/o/r or git@host:o/r style URLs.
+// Use when GitHub Enterprise host is not github.com but the path is still owner/repo.
+func ParseGitHubLikeOwnerRepo(raw string) (owner, repo string, err error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", "", fmt.Errorf("empty repo url")
+	}
+	// Reuse strict parser when it applies.
+	if o, r, e := ParseGitHubRepoURL(s); e == nil {
+		return o, r, nil
+	}
+	u, err := url.Parse(s)
+	if err == nil && u.Host != "" {
+		path := strings.Trim(strings.TrimSuffix(u.Path, ".git"), "/")
+		parts := strings.Split(path, "/")
+		if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+			return parts[0], parts[1], nil
+		}
+	}
+	if strings.HasPrefix(s, "git@") {
+		idx := strings.Index(s, ":")
+		if idx > 0 {
+			path := strings.TrimSuffix(strings.TrimSpace(s[idx+1:]), ".git")
+			parts := strings.Split(path, "/")
+			if len(parts) == 2 {
+				return parts[0], parts[1], nil
+			}
+		}
+	}
+	return ParseGitHubRepoURL(s)
+}

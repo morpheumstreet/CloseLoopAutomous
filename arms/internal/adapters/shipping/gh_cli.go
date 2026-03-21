@@ -5,13 +5,17 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/closeloopautomous/arms/internal/domain"
 	"github.com/closeloopautomous/arms/internal/ports"
 )
+
+var ghPRNumberRE = regexp.MustCompile(`/pull/(\d+)`)
 
 // GhCLIPublisher opens pull requests by shelling out to the GitHub CLI (`gh pr create`).
 // Auth comes from `gh auth login` (or CI tokens gh understands), not from ARMS_GITHUB_TOKEN.
@@ -30,11 +34,11 @@ func NewGhCLIPublisher(ghPath, enterpriseHost string) *GhCLIPublisher {
 }
 
 // CreatePullRequest runs: gh pr create --repo owner/repo --base … --head … --title … --body-file …
-func (g *GhCLIPublisher) CreatePullRequest(ctx context.Context, in ports.CreatePullRequestInput) (string, error) {
+func (g *GhCLIPublisher) CreatePullRequest(ctx context.Context, in ports.CreatePullRequestInput) (ports.CreatePullRequestResult, error) {
 	owner := strings.TrimSpace(in.Owner)
 	repo := strings.TrimSpace(in.Repo)
 	if owner == "" || repo == "" {
-		return "", fmt.Errorf("%w: owner and repo required", domain.ErrInvalidInput)
+		return ports.CreatePullRequestResult{}, fmt.Errorf("%w: owner and repo required", domain.ErrInvalidInput)
 	}
 	base := strings.TrimSpace(in.BaseBranch)
 	if base == "" {
@@ -42,7 +46,7 @@ func (g *GhCLIPublisher) CreatePullRequest(ctx context.Context, in ports.CreateP
 	}
 	head := strings.TrimSpace(in.HeadBranch)
 	if head == "" {
-		return "", fmt.Errorf("%w: head_branch required", domain.ErrInvalidInput)
+		return ports.CreatePullRequestResult{}, fmt.Errorf("%w: head_branch required", domain.ErrInvalidInput)
 	}
 	title := strings.TrimSpace(in.Title)
 	if title == "" {
@@ -56,13 +60,13 @@ func (g *GhCLIPublisher) CreatePullRequest(ctx context.Context, in ports.CreateP
 
 	dir, err := os.MkdirTemp("", "arms-gh-pr-*")
 	if err != nil {
-		return "", fmt.Errorf("%w: temp dir: %v", domain.ErrShipping, err)
+		return ports.CreatePullRequestResult{}, fmt.Errorf("%w: temp dir: %v", domain.ErrShipping, err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
 	bodyPath := filepath.Join(dir, "body.md")
 	if err := os.WriteFile(bodyPath, []byte(in.Body), 0o600); err != nil {
-		return "", fmt.Errorf("%w: body file: %v", domain.ErrShipping, err)
+		return ports.CreatePullRequestResult{}, fmt.Errorf("%w: body file: %v", domain.ErrShipping, err)
 	}
 
 	args := []string{
@@ -88,7 +92,7 @@ func (g *GhCLIPublisher) CreatePullRequest(ctx context.Context, in ports.CreateP
 		if msg == "" {
 			msg = err.Error()
 		}
-		return "", fmt.Errorf("%w: gh: %s", domain.ErrShipping, msg)
+		return ports.CreatePullRequestResult{}, fmt.Errorf("%w: gh: %s", domain.ErrShipping, msg)
 	}
 
 	url := strings.TrimSpace(stdout.String())
@@ -96,11 +100,21 @@ func (g *GhCLIPublisher) CreatePullRequest(ctx context.Context, in ports.CreateP
 	for _, line := range strings.Split(url, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" && (strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://")) {
-			return line, nil
+			return ports.CreatePullRequestResult{HTMLURL: line, Number: parsePRNumberFromURL(line)}, nil
 		}
 	}
 	if url != "" {
-		return strings.TrimSpace(strings.Split(url, "\n")[0]), nil
+		line := strings.TrimSpace(strings.Split(url, "\n")[0])
+		return ports.CreatePullRequestResult{HTMLURL: line, Number: parsePRNumberFromURL(line)}, nil
 	}
-	return "", fmt.Errorf("%w: gh produced no PR URL in stdout", domain.ErrShipping)
+	return ports.CreatePullRequestResult{}, fmt.Errorf("%w: gh produced no PR URL in stdout", domain.ErrShipping)
+}
+
+func parsePRNumberFromURL(u string) int {
+	m := ghPRNumberRE.FindStringSubmatch(u)
+	if len(m) < 2 {
+		return 0
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n
 }
