@@ -144,6 +144,7 @@ func buildHandlers(
 	costSvc := &cost.Service{
 		Costs:  costs,
 		Caps:   costCaps,
+		Budget: budgetPolicy,
 		Clock:  clock,
 		IDs:    ids,
 		Events: taskEvents,

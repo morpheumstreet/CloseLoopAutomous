@@ -132,11 +132,11 @@ func localhostSSEBypass(cfg Config, r *http.Request) bool {
 }
 
 func sseAuthOK(r *http.Request, cfg Config) bool {
-	q := r.URL.Query()
-	if cfg.MCAPIToken != "" && q.Get("token") == cfg.MCAPIToken {
+	// Same credential shapes as REST: Bearer or ?token= when MC_API_TOKEN is set (EventSource cannot set headers; fetch/SSE clients can use Bearer).
+	if cfg.MCAPIToken != "" && bearerOrQueryTokenOK(r, cfg) {
 		return true
 	}
-	b64 := strings.TrimSpace(q.Get("basic"))
+	b64 := strings.TrimSpace(r.URL.Query().Get("basic"))
 	if b64 != "" && len(cfg.ACLUsers) > 0 {
 		raw, err := base64.StdEncoding.DecodeString(b64)
 		if err != nil {

@@ -58,6 +58,6 @@ func routeCatalog() []RouteEntry {
 		{"GET", "/api/workspaces", "Workspace snapshot: allocated ports + merge_queue_pending"},
 		{"GET", "/api/settings", "Settings (stub)"},
 		{"POST", "/api/webhooks/agent-completion", "Agent completion (HMAC, not Bearer)"},
-		{"GET", "/api/live/events", "SSE activity stream (?token= when auth; ?product_id= filters payloads)"},
+		{"GET", "/api/live/events", "SSE activity stream (Bearer or ?token= when MC_API_TOKEN; ?basic= for ARMS_ACL; ?product_id= filters)"},
 	}
 }

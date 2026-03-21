@@ -46,12 +46,13 @@ func main() {
 		Clock:      clock,
 		Identities: ids,
 	}
+	staticBudget := &budget.Static{Cap: 100, Costs: costs}
 	taskSvc := &task.Service{
 		Tasks:    tasks,
 		Products: products,
 		Ideas:    ideas,
 		Gateway:  gateway,
-		Budget:   &budget.Static{Cap: 100, Costs: costs},
+		Budget:   staticBudget,
 		Checkpt:  checkpoints,
 		Clock:    clock,
 		IDs:      ids,
@@ -65,7 +66,7 @@ func main() {
 		Clock:    clock,
 		IDs:      ids,
 	}
-	costSvc := &cost.Service{Costs: costs, Caps: costCaps, Clock: clock, IDs: ids}
+	costSvc := &cost.Service{Costs: costs, Caps: costCaps, Budget: staticBudget, Clock: clock, IDs: ids}
 
 	p, err := productSvc.Register(ctx, product.RegistrationInput{Name: "demo", WorkspaceID: "ws-default"})
 	if err != nil {

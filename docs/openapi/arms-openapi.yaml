@@ -601,6 +601,7 @@ paths:
     post:
       tags: [Tasks]
       summary: Dispatch to agent gateway
+      description: Enforces per-product cost caps and default cumulative budget before calling the gateway.
       parameters:
         - $ref: "#/components/parameters/taskId"
       requestBody:
@@ -613,6 +614,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Task" }
+        "402":
+          description: Estimated cost would exceed caps or default cumulative budget
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /api/tasks/{id}/checkpoint:
     post:
@@ -691,6 +697,9 @@ paths:
     post:
       tags: [Costs]
       summary: Record cost
+      description: |
+        Appends a `cost_events` row and emits live activity when configured.
+        Enforces the same per-product budget as task dispatch (`cost_caps` + optional default cumulative via `ARMS_BUDGET_DEFAULT_CAP`).
       requestBody:
         required: true
         content:
@@ -705,6 +714,11 @@ paths:
                 type: object
                 properties:
                   status: { type: string, example: recorded }
+        "402":
+          description: Would exceed cost caps or default cumulative budget
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /api/agents:
     get:
@@ -776,11 +790,26 @@ paths:
       summary: SSE stream
       security: []
       description: |
-        `text/event-stream`. When `MC_API_TOKEN` is set, pass `?token=` with the same value (EventSource cannot set Bearer).
+        `text/event-stream`. No auth when `MC_API_TOKEN` is unset and `ARMS_ACL` is empty.
+
+        When `MC_API_TOKEN` is set: send **`Authorization: Bearer`** with the same value, or **`?token=`** with the same value (native browser `EventSource` only supports the query form).
+        When only `ARMS_ACL` is configured: use **`?basic=`** with base64(`user:password`).
+
+        With `DATABASE_PATH`, events are relayed from `event_outbox` after commit; in-memory mode uses the hub directly.
+
         First payload is a `hello` object; then JSON activity events (e.g. `task_dispatched` after task dispatch) as SSE `data:` lines; comment lines for keep-alive ping.
       parameters:
         - name: token
           in: query
+          description: Same value as MC_API_TOKEN when Bearer cannot be sent (e.g. EventSource).
+          schema: { type: string }
+        - name: basic
+          in: query
+          description: Base64-encoded user:password when ARMS_ACL is used without MC_API_TOKEN.
+          schema: { type: string }
+        - name: product_id
+          in: query
+          description: If set, only stream events whose JSON payload matches this product_id (or omits product_id).
           schema: { type: string }
       responses:
         "200":

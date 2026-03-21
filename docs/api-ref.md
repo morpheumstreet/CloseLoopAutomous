@@ -13,10 +13,10 @@ REST surface for the `arms` service (`cmd/arms`). **JSON** request and response 
 | Mode | When |
 |------|------|
 | **None** | `MC_API_TOKEN` is unset — all protected routes are open (dev default). |
-| **Bearer** | Set `MC_API_TOKEN`. Send `Authorization: Bearer <token>` on API calls. |
+| **Bearer** | Set `MC_API_TOKEN`. Send `Authorization: Bearer <token>` on API calls. The same header is accepted on **`GET /api/live/events`** when auth is enabled (for fetch-based or custom SSE clients). |
 | **Same-origin** | If `ARMS_ALLOW_SAME_ORIGIN=1` or `true`, browser requests from the same origin may omit Bearer when a token is configured. |
 
-**Unauthenticated by design:** `GET /api/health`, `GET /api/docs/routes`, `POST /api/webhooks/agent-completion`, `GET /api/live/events` (see SSE below).
+**Unauthenticated by design:** `GET /api/health`, `GET /api/docs/routes`, `POST /api/webhooks/agent-completion`. **`GET /api/live/events`** is open only when **`MC_API_TOKEN` is unset** and **`ARMS_ACL`** is empty; otherwise see **SSE** below.
 
 ### Request correlation
 
@@ -72,7 +72,7 @@ Task JSON includes at least: `id`, `product_id`, `idea_id`, `spec`, `status` (st
 | PATCH | `/api/tasks/{id}` | Any of: `status`, `status_reason`, `clarifications_json` | At least one field required. Clarifications only while in `planning`. |
 | POST | `/api/tasks/{id}/plan/approve` | Optional `{ "spec" }` | `planning` → `inbox`, `plan_approved: true`. |
 | POST | `/api/tasks/{id}/plan/reject` | Optional `{ "status_reason" }` | Back to **`planning`** from **`inbox`** or **`assigned`** (blocked after dispatch / `external_ref` set). |
-| POST | `/api/tasks/{id}/dispatch` | `estimated_cost` (number) | Requires **`assigned`** + approved plan. Enforces **`budget.Composite`** (caps + default cumulative). |
+| POST | `/api/tasks/{id}/dispatch` | `estimated_cost` (number) | Requires **`assigned`** + approved plan. Enforces **`budget.Composite`** (caps + default cumulative). **402** + **`budget_exceeded`** if `estimated_cost` would exceed allowed spend. |
 | POST | `/api/tasks/{id}/pull-request` | `head_branch` (required), optional `title`, `body` | Opens a PR using `product.repo_url` (`owner/repo`) and `product.repo_branch` as base (default `main`). **REST backend** (default, or `ARMS_GITHUB_PR_BACKEND=api`): **`ARMS_GITHUB_TOKEN`** or **`GITHUB_TOKEN`** with `repo` scope; optional **`ARMS_GITHUB_API_URL`** for GitHub Enterprise. **`ARMS_GITHUB_PR_BACKEND=gh`**: runs `gh pr create` (optional **`ARMS_GH_BIN`**, **`ARMS_GITHUB_HOST`**). Response `{ "pr_url": "..." }` (empty string if publisher is noop). Allowed while task is `in_progress`, `testing`, `review`, or `done`. |
 | POST | `/api/tasks/{id}/merge-queue` | — | Enqueues the task on the product’s **serialized merge queue** (FIFO by row `id`). **201** `{ "status": "queued" }`. **409** `conflict` if this task already has a **pending** row. **503** if merge queue is not configured. |
 | POST | `/api/tasks/{id}/merge-queue/complete` | — | Marks the **pending** row for this task **done** only when it is the **head** of the queue for that product; otherwise **409** with code **`merge_queue_head`**. **404** if the task has no pending row. **503** if merge queue is not configured. |
@@ -101,9 +101,9 @@ Task JSON includes at least: `id`, `product_id`, `idea_id`, `spec`, `status` (st
 
 ## Costs
 
-| Method | Path | Body |
-|--------|------|------|
-| POST | `/api/costs` | `product_id`, `task_id`, `amount`, optional `note`, optional **`agent`**, **`model`** |
+| Method | Path | Body | Notes |
+|--------|------|------|--------|
+| POST | `/api/costs` | `product_id`, `task_id`, `amount`, optional `note`, optional **`agent`**, **`model`** | Same **`budget.Composite`** rules as task dispatch: **`cost_caps`** (daily / monthly / cumulative) plus default cumulative when no caps row (**`ARMS_BUDGET_DEFAULT_CAP`**). **402** + code **`budget_exceeded`** if the new amount would exceed the allowed spend. |
 
 ---
 
@@ -133,7 +133,7 @@ Task JSON includes at least: `id`, `product_id`, `idea_id`, `spec`, `status` (st
 
 | Method | Path | Notes |
 |--------|------|--------|
-| GET | `/api/live/events` | `text/event-stream`. If `MC_API_TOKEN` is set, use **`?token=<same value>`** (query) instead of Bearer. Optional **`product_id=`** — only forward `data:` lines whose JSON `product_id` matches (or lacks `product_id`). |
+| GET | `/api/live/events` | `text/event-stream`. When **`MC_API_TOKEN`** is set: **`Authorization: Bearer <token>`** or **`?token=<same value>`** (native **`EventSource`** only supports the query form). When only **`ARMS_ACL`** is configured: **`?basic=<base64(user:password)>`**. Optional **`product_id=`** — only forward `data:` lines whose JSON `product_id` matches (or lacks `product_id`). |
 
 After the initial `hello` object, each **`data:`** line is JSON with at least `type`, `ts` (RFC3339 nano), and optional `product_id`, `task_id`, `data` (object). Types include **`task_dispatched`**, **`cost_recorded`**, **`checkpoint_saved`**, **`task_completed`** (`data.source` e.g. `api_task_complete` / `agent_completion_webhook`), **`task_stall_nudged`**, **`pull_request_opened`** (includes `data.html_url`). With **`DATABASE_PATH`** set, events are persisted in **`event_outbox`** and relayed to subscribers (restart-safe delivery of pending rows). In-memory mode broadcasts directly from the hub.
 

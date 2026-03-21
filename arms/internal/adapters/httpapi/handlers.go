@@ -676,6 +676,9 @@ func (h *Handlers) recordCost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Cost.Record(r.Context(), domain.ProductID(req.ProductID), domain.TaskID(req.TaskID), req.Amount, req.Note, req.Agent, req.Model); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}

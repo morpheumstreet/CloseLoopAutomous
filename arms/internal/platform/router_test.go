@@ -186,3 +186,17 @@ func TestACLSSEBasicQuery(t *testing.T) {
 		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestSSEBearerAuth(t *testing.T) {
+	cfg := httpapi.Config{MCAPIToken: "sse-tok"}
+	app := platform.NewInMemoryApp(cfg)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/api/live/events", nil).WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer sse-tok")
+	rec := httptest.NewRecorder()
+	httpapi.NewRouter(cfg, app.Handlers).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+}

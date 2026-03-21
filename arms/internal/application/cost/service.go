@@ -12,6 +12,7 @@ import (
 type Service struct {
 	Costs  ports.CostRepository
 	Caps   ports.CostCapRepository
+	Budget ports.BudgetPolicy // optional; when set, Record rejects over cap (same rules as task dispatch)
 	Clock  ports.Clock
 	IDs    ports.IdentityGenerator
 	Events ports.LiveActivityPublisher // optional live activity
@@ -19,6 +20,11 @@ type Service struct {
 }
 
 func (s *Service) Record(ctx context.Context, productID domain.ProductID, taskID domain.TaskID, amount float64, note, agent, model string) error {
+	if s.Budget != nil {
+		if err := s.Budget.AssertWithinBudget(ctx, productID, amount); err != nil {
+			return err
+		}
+	}
 	e := domain.CostEvent{
 		ID:        s.IDs.NewCostEventID(),
 		ProductID: productID,

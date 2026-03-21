@@ -6,7 +6,7 @@ Operational checklist for running `arms` (`cmd/arms`) beyond local development. 
 
 ## Secrets and configuration
 
-- **`MC_API_TOKEN`** — Treat as a long-lived API secret. Generate with a CSPRNG (for example 32+ random bytes, hex or base64). Never commit it to git or bake it into image layers; inject at runtime (Kubernetes secret, Docker `--env-file`, hosted platform env).
+- **`MC_API_TOKEN`** — Treat as a long-lived API secret. Generate with a CSPRNG (for example 32+ random bytes, hex or base64). Never commit it to git or bake it into image layers; inject at runtime (Kubernetes secret, Docker `--env-file`, hosted platform env). For **`GET /api/live/events`**, browsers using native `EventSource` typically pass the same secret as **`?token=`** (visible in query logs and referrers); prefer **`Authorization: Bearer`** when using fetch/readable-stream SSE clients, or terminate the stream behind same-origin / internal-only URLs.
 - **`WEBHOOK_SECRET`** — HMAC key for `POST /api/webhooks/agent-completion`. Must match what the agent or bridge uses to sign the raw JSON body. Rotate by updating both sides; expect brief mismatch during rollout.
 - **`OPENCLAW_GATEWAY_TOKEN`** and **`ARMS_OPENCLAW_SESSION_KEY`** — Gateway credentials and session routing for dispatch. Scope tokens per environment; restrict who can read deployment manifests.
 
