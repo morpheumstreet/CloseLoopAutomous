@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/closeloopautomous/arms/internal/domain"
 	"github.com/closeloopautomous/arms/internal/ports"
@@ -19,6 +20,7 @@ type Service struct {
 	Checkpt  ports.CheckpointRepository
 	Clock    ports.Clock
 	IDs      ports.IdentityGenerator
+	Events   ports.LiveActivityPublisher // optional: live activity / outbox
 }
 
 // CreateFromApprovedIdea starts the Kanban in planning until ApprovePlan moves to inbox.
@@ -174,7 +176,21 @@ func (s *Service) Dispatch(ctx context.Context, taskID domain.TaskID, estimatedC
 	t.Status = domain.StatusInProgress
 	t.ExternalRef = ref
 	t.UpdatedAt = s.Clock.Now()
-	return s.Tasks.Save(ctx, t)
+	if err := s.Tasks.Save(ctx, t); err != nil {
+		return err
+	}
+	if s.Events != nil {
+		_ = s.Events.Publish(ctx, ports.LiveActivityEvent{
+			Type:      "task_dispatched",
+			Ts:        s.Clock.Now().UTC().Format(time.RFC3339Nano),
+			ProductID: string(t.ProductID),
+			TaskID:    string(t.ID),
+			Data: map[string]any{
+				"external_ref": ref,
+			},
+		})
+	}
+	return nil
 }
 
 // RecordCheckpoint persists crash-recovery state from the gateway stream.

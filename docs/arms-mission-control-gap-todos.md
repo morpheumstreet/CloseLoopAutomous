@@ -4,6 +4,51 @@ Use this as the master backlog for bringing `arms` toward Autensa/Mission Contro
 
 _Re-checked against the `arms/` tree: baseline vs “full MC” is called out so unchecked rows are not misread as “missing entirely” when a slim table or route already exists._
 
+_See also [recomendeddesign.md](recomendeddesign.md) (earlier “GoAutensa” outline); this file is the live parity checklist + locked target architecture._
+
+---
+
+## Target architecture (single Go binary)
+
+Direction for **100% MC-style behavior** while staying hexagonal (`ports` / `adapters` / `domain` / `application` / `platform`):
+
+```
+CloseLoopAutomous / arms (e.g. :8080)
+├── cmd/arms/                    # main, graceful shutdown, config; + Asynq worker process when added
+├── internal/adapters/httpapi    # REST (+ alias routes for MC clients)
+├── internal/application/        # autopilot, convoy, costs, workspace, learner, scheduler, events
+├── internal/domain/
+├── internal/ports/              # repos, openclaw, pr publisher, event bus, workspace, …
+├── internal/adapters/
+│   ├── sqlite/
+│   ├── gateway/openclaw/        # WS client (existing; path: internal/adapters/gateway/openclaw)
+│   ├── shipping/                # GitHub PR (replace noop)
+│   ├── workspace/               # worktrees, ports 4200–4299, merge queue (new)
+│   └── notifier/                # SSE wired from domain events (evolve from shell)
+└── migrations/
+```
+
+**Observability (later):** structured logs today (`slog`); optional **zap + OpenTelemetry + Prometheus** when ops requirements land.
+
+---
+
+## Locked design decisions
+
+These resolve open questions from the backlog; implement against this table.
+
+| Topic | Decision |
+|-------|-----------|
+| **REST naming** | Keep **plural** canonical: `/api/convoys`, `/api/tasks`, … (Go/REST convention + current code). Add **optional alias** routes (`/api/convoy/{id}` → same handler) for Next.js MC clients that expect singular paths. |
+| **Scheduling** | **Asynq (Redis) + cron** for `product_schedules` and delayed jobs; **restart-safe** vs in-process ticker. Deprecate `ARMS_AUTOPILOT_TICK_SEC` once scheduler is wired (keep env until cutover). |
+| **Device identity** | **Ed25519 `connect` block optional** via env (e.g. `ARMS_DEVICE_SIGNING=enabled`); token-only remains default. |
+| **Automation tiers** | **supervised** — PRs created; human approve/merge. **semi_auto** — auto-dispatch + **manual merge** (extend later if auto-merge desired). **full_auto** — end-to-end autopilot (dispatch + merge queue policy in autopilot + workspace). Cross-check [MC README — Automation tiers](https://github.com/crshdn/mission-control). |
+| **Convoy DAG** | Full graph in domain + SQLite; **github.com/dominikbraun/graph** (or equivalent) for algorithms; **`convoy_subtasks` + `agent_mailbox`** persistence. |
+| **Realtime** | **Domain events + transactional outbox** → SSE `/api/live/events` (and later operator chat); avoid polling DB from handlers. |
+| **Cost caps** | **`cost_caps` table** + daily/monthly/product scope; atomic enforcement in **application/costs** (extends today’s `budget.Static`). |
+| **Workspace** | Dedicated **workspace service**: git worktrees, sandbox paths, port allocator **4200–4299**, **serialized merge queue**, **product-scoped locks**. |
+| **Preference learning** | Migrate from **`preference_model_json` append-only** → **`swipe_history` + `preference_models`**; optional embeddings later. |
+| **PR shipping** | Real **`PullRequestPublisher`** via **google/go-github** (version pin in `go.mod`). |
+
 ---
 
 ## API stubs, docs, and gateway session
@@ -20,24 +65,24 @@ There is no REST “session” resource. OpenClaw dispatch uses env (e.g. `ARMS_
 
 ---
 
-## Suggested roadmap (continue toward MC parity)
+## Implementation roadmap (vertical slices)
 
-Rough ordering; adjust sprint length to taste.
+Rough calendar: **~4 weeks core (A–C)** + **polish (D)**; optional future below.
 
-| Phase | Focus | Notes |
-|-------|--------|--------|
-| **A** | SSE + costs | Domain events or outbox → `GET /api/live/events` with real payloads; filters by product/agent/type. Add `cost_caps`, extend `cost_events` dimensions; cost breakdown queries. |
-| **B** | Ship pipeline | Real `PullRequestPublisher` + test → review → PR orchestration; wire `auto_dispatch_enabled` + **tier behavior** (supervised / semi-auto / full-auto). |
-| **C** | Workspace + safety | Worktree/sandbox port, `workspace_ports`, `workspace_merges`, product-scoped locks; checkpoint **history** + restore API. |
-| **D** | Convoy + agents | Full DAG metadata, convoy mail, health/retries; agent aggregate, discovery, replace stub `GET /api/agents`. Decide **`/api/convoys` vs `/api/convoy`** for MC client parity. |
-| **E** | Autopilot depth | `research_cycles`, `swipe_history`, real `preference_models`, maybe-pool **resurface** / batch re-eval; `product_schedules` with **cron/outbox vs in-process ticker** (today: ticker only). |
-| **Ongoing** | Optional | Ed25519 device block on `connect`; env-gated live OpenClaw contract tests. |
+| Phase | Time (guide) | Deliverables |
+|-------|----------------|--------------|
+| **A — Production safety** | 1–2 wk | Workspace isolation (`internal/adapters/workspace`): worktrees, port allocator **4200–4299**, merge queue, product locks. **`cost_caps`** + richer **`cost_events`** + breakdown queries. **Checkpoint history** + restore API. **Domain events + outbox** → **full SSE** live feed (typed payloads, filters). |
+| **B — Full autonomy** | ~2 wk | Convoy: full DAG + **mailbox** + **agent health** integration. **GitHub PR publisher** + post-execution chain (test → review → ship). Deeper **ideas** + **`swipe_history`** + baseline **`preference_models`**. |
+| **C — Polish** | ~1 wk | **Agent** domain + listing/health APIs (replace stub). **`product_schedules`** on **Asynq** (Redis). Optional **Ed25519** on OpenClaw `connect`. **Maybe pool** resurface / batch re-eval. **HTTP aliases** `/api/convoy/*` if not done in A. |
+| **D — Optional future** | — | Embedded UI (e.g. HTMX/templ), Postgres adapter, pure-Go agent runtime (replace OpenClaw). |
+
+**Immediate implementation order (first commits):** (1) Redis in Compose + `REDIS_ADDR` env doc, (2) **`internal/application/events`** outbox + publisher interface, (3) wire **one** domain event end-to-end to SSE, (4) **`internal/adapters/workspace`** skeleton + port, (5) GitHub **shipping** adapter behind existing `PullRequestPublisher` port.
 
 ---
 
-## Mission Control references (open decisions)
+## Mission Control references (behavior parity)
 
-Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for precedent when designing behavior, not only table names.
+Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for behavioral detail; **routing/scheduling decisions are locked above**.
 
 | Topic | Where to look in MC |
 |-------|---------------------|
@@ -46,12 +91,13 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for prec
 | Workspace isolation, ports, merge queue | README — *Workspace isolation*; `src/lib/workspace-isolation.ts` (and related) |
 | OpenClaw client / handshake | [`src/lib/openclaw/client.ts`](https://github.com/crshdn/mission-control/blob/main/src/lib/openclaw/client.ts) |
 | Device identity / signing | `device-identity` patterns vs token-only `connect` |
-| Convoy + API shape | `src/app/api/convoy/` (and related routes) vs arms `/api/convoys` |
+| Convoy + API shape | `src/app/api/convoy/` — arms uses plural + **alias** routes (see **Locked design decisions**) |
 
 ---
 
 ## 1. API surface and transport
 
+- [ ] Optional **MC-compat alias routes** — e.g. `GET|POST /api/convoy/...` → same handlers as `/api/convoys/...` (singular paths)
 - [x] Add HTTP server driving adapter (REST or minimal RPC) for orchestration — `cmd/arms`, `internal/adapters/httpapi`
 - [x] Map route groups analogous to MC: `tasks`, `products`, `agents`, `costs`, `convoy`, `openclaw`, `webhooks`, `events`/`live`, `workspaces`, `settings` — implemented or stubbed under `/api/...`
 - [x] Bearer auth middleware (`MC_API_TOKEN`-style) — env `MC_API_TOKEN`; omitted = dev open access
@@ -107,7 +153,7 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for prec
 - [x] Map gateway errors — task layer wraps adapter errors with `domain.ErrGateway` (existing `task.Service`)
 - [x] Device identity hint — `ARMS_DEVICE_ID` header on WS handshake (full MC device file parity still TBD)
 - [x] Native OpenClaw WebSocket framing (aligned with [mission-control `client.ts`](https://github.com/crshdn/mission-control/blob/main/src/lib/openclaw/client.ts)): `token` query param + optional Bearer, `connect.challenge` → `connect` RPC (protocol 3), dispatch via **`chat.send`** with `sessionKey`, `message`, `idempotencyKey`
-- [ ] Ed25519 **device** block on `connect` (MC `device-identity.ts` signing) — optional; token-only `connect` works for many gateways
+- [ ] Ed25519 **device** block on `connect` (MC `device-identity.ts` signing) — **optional** behind env (e.g. `ARMS_DEVICE_SIGNING=enabled`); token-only default
 - [ ] Optional HTTP proxy routes (`/api/openclaw/*` equivalent) if UI or ops need them
 
 ---
@@ -126,8 +172,9 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for prec
 ## 5. Autopilot pipeline (extended)
 
 - [x] Product program / profile injection into research/ideation — stored on `Product` + HTTP; `ResearchPort` / `IdeationPort` godoc + `ai.ProductContextSnippet` + stub behavior (full MC “Product Program CRUD” UX still evolves with UI)
-- [x] Scheduling: `research_cadence_sec`, `ideation_cadence_sec`, `last_auto_*` on product; `autopilot.Service.TickScheduled`; `ARMS_AUTOPILOT_TICK_SEC` in-process ticker in `cmd/arms` (not cron/outbox). `auto_dispatch_enabled` + tier stored; **task auto-dispatch from tier not wired** (manual dispatch unchanged).
-- [x] Background job — **minimal**: same in-process ticker as above; no separate worker port yet.
+- [x] Scheduling (interim): `research_cadence_sec`, `ideation_cadence_sec`, `last_auto_*` on product; `autopilot.Service.TickScheduled`; `ARMS_AUTOPILOT_TICK_SEC` in-process ticker in `cmd/arms`. `auto_dispatch_enabled` + tier stored; **task auto-dispatch from tier not wired** (manual dispatch unchanged).
+- [ ] **Asynq + Redis** worker — `product_schedules` + cron/delayed jobs; replaces in-process ticker for production (**Locked design decisions**)
+- [x] Background job — **minimal** today: in-process ticker; separate **worker process** TBD with Asynq
 - [x] Preference stub: each swipe appends an event to `preference_model_json` (JSON array); not full MC preference_models / ML.
 - [x] Maybe pool (baseline): `maybe_pool` table + `MaybePoolRepository`; swipe `maybe` adds; `GET /api/products/{id}/maybe-pool`; `POST /api/ideas/{id}/promote-maybe` → yes + pool remove + stage advance when in swipe. Resurface / batch re-eval: still open (§2).
 - [x] Automation tiers: `automation_tier` enum `supervised` | `semi_auto` | `full_auto` on product + create/patch/JSON (behavioral differences beyond storage/TBD for dispatch).
@@ -143,7 +190,7 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for prec
 - [ ] Convoy mail / inter-subtask messaging (port + persistence)
 - [ ] Integrate convoy dispatch with agent health and retries
 - [x] Minimal HTTP — `POST /api/convoys`, `GET /api/convoys/{id}`, `GET /api/products/{id}/convoys`, `POST /api/convoys/{id}/dispatch-ready`; `convoy.Service.Get`, `ListByProduct`; `ports.ConvoyRepository.ListByProduct`
-- [ ] API parity with MC `/api/convoy/*` — mail, graph, richer status, naming (`/api/convoy` vs `/api/convoys`), etc.
+- [ ] API parity with MC convoy — mail, graph, richer status; **naming**: plural canonical + **alias** singular routes (§1)
 - [ ] Richer subtask model (agent config, retries, nudges) if required for parity
 
 ---
@@ -188,6 +235,7 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for prec
 - [x] Dedicated `internal/config` — `LoadFromEnv()`, env vars documented on `Config`; `httpapi.Config` is a type alias + `LoadConfig()` wrapper for the HTTP adapter
 - [x] Dockerfile for `arms` service — `arms/Dockerfile` (Alpine runtime, static `CGO_ENABLED=0` build)
 - [x] docker-compose — `arms/docker-compose.yml` (port 8080, `DATABASE_PATH=/data/arms.db`, named volume; OpenClaw/token env commented)
+- [x] **Redis** service in Compose — for **Asynq** when scheduler lands (`REDIS_ADDR` / `ARMS_REDIS_ADDR` TBD in `internal/config`)
 - [x] Production hardening doc — `docs/arms-production-hardening.md` (secrets, TLS termination, `wss://`, `NO_PROXY` / webhooks, persistence, containers, logging)
 - [x] Structured logging + request IDs — `log/slog` in `cmd/arms`, `X-Request-ID` + optional access log (`internal/adapters/httpapi/logging.go`); `ARMS_LOG_JSON`, `ARMS_ACCESS_LOG`
 - [x] Automated tests touching persistence + HTTP wiring — SQLite `repos_test` / `migrate_test`, `sqlite_app_test`, `platform/router_test`, application tests with memory/SQLite + gateway stub (`openclaw` tests use real WS to test client)
@@ -207,4 +255,4 @@ Use [crshdn/mission-control](https://github.com/crshdn/mission-control) for prec
 | Webhooks           | Completes the async completion loop                       |
 | SSE + costs + workspace | Match MC ops and safety story                          |
 | Stub routes → real domains | Agents, workspaces, settings, openclaw proxy (if needed) |
-| Roadmap phases A→E | See **Suggested roadmap** above                           |
+| Roadmap phases A→D | See **Implementation roadmap** above                      |

@@ -19,6 +19,7 @@ import (
 	productapp "github.com/closeloopautomous/arms/internal/application/product"
 	"github.com/closeloopautomous/arms/internal/application/task"
 	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/closeloopautomous/arms/internal/ports"
 )
 
 const webhookSigHeader = "X-Arms-Signature"
@@ -31,6 +32,7 @@ type Handlers struct {
 	Task      *task.Service
 	Convoy    *convoy.Service
 	Cost      *cost.Service
+	Live      ports.ActivityStream // SSE subscribers; required for live routes
 }
 
 func (h *Handlers) health(w http.ResponseWriter, _ *http.Request) {
@@ -615,6 +617,10 @@ func hmacSHA256Equal(secret string, body []byte, sigHex string) bool {
 }
 
 func (h *Handlers) liveSSE(w http.ResponseWriter, r *http.Request) {
+	if h.Live == nil {
+		writeError(w, http.StatusInternalServerError, "streaming", "live activity stream not configured")
+		return
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -629,6 +635,8 @@ func (h *Handlers) liveSSE(w http.ResponseWriter, r *http.Request) {
 		fl.Flush()
 	}
 	enc(map[string]any{"event": "hello", "ts": time.Now().UTC().Format(time.RFC3339Nano)})
+	ch, unsub := h.Live.Subscribe()
+	defer unsub()
 	tick := time.NewTicker(25 * time.Second)
 	defer tick.Stop()
 	ctx := r.Context()
@@ -636,6 +644,9 @@ func (h *Handlers) liveSSE(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
+		case payload := <-ch:
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
+			fl.Flush()
 		case <-tick.C:
 			_, _ = fmt.Fprintf(w, ": ping\n\n")
 			fl.Flush()

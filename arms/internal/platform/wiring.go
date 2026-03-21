@@ -1,6 +1,9 @@
 package platform
 
 import (
+	"context"
+	"time"
+
 	"github.com/closeloopautomous/arms/internal/adapters/ai"
 	"github.com/closeloopautomous/arms/internal/adapters/budget"
 	gw "github.com/closeloopautomous/arms/internal/adapters/gateway"
@@ -11,6 +14,7 @@ import (
 	"github.com/closeloopautomous/arms/internal/application/autopilot"
 	"github.com/closeloopautomous/arms/internal/application/convoy"
 	"github.com/closeloopautomous/arms/internal/application/cost"
+	"github.com/closeloopautomous/arms/internal/application/livefeed"
 	"github.com/closeloopautomous/arms/internal/application/product"
 	"github.com/closeloopautomous/arms/internal/application/task"
 	"github.com/closeloopautomous/arms/internal/config"
@@ -54,7 +58,8 @@ func NewInMemoryApp(cfg config.Config) *App {
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
 	maybePool := memory.NewMaybePoolStore()
-	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, checkpoints, maybePool)
+	hub := livefeed.NewHub()
+	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, checkpoints, maybePool, hub, hub)
 	return &App{Handlers: h, Products: products, Ideas: ideas, Tasks: tasks, db: nil, cleanup: cleanup}
 }
 
@@ -67,6 +72,8 @@ func buildHandlers(
 	costs ports.CostRepository,
 	checkpoints ports.CheckpointRepository,
 	maybePool ports.MaybePoolRepository,
+	hub *livefeed.Hub,
+	taskEvents ports.LiveActivityPublisher,
 ) (*httpapi.Handlers, func()) {
 	clock := timeadapter.System{}
 	ids := &identity.Sequential{}
@@ -97,6 +104,7 @@ func buildHandlers(
 		Checkpt:  checkpoints,
 		Clock:    clock,
 		IDs:      ids,
+		Events:   taskEvents,
 	}
 	convoySvc := &convoy.Service{
 		Convoys:  convoys,
@@ -115,5 +123,6 @@ func buildHandlers(
 		Task:      taskSvc,
 		Convoy:    convoySvc,
 		Cost:      costSvc,
+		Live:      hub,
 	}, gwCleanup
 }

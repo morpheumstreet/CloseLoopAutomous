@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"strings"
+	"time"
 
 	"github.com/closeloopautomous/arms/internal/adapters/sqlite"
+	"github.com/closeloopautomous/arms/internal/application/livefeed"
 	"github.com/closeloopautomous/arms/internal/config"
 )
 
@@ -36,7 +38,16 @@ func OpenApp(ctx context.Context, cfg config.Config) (*App, error) {
 	costs := sqlite.NewCostStore(db)
 	checkpoints := sqlite.NewCheckpointStore(db)
 	maybePool := sqlite.NewMaybePoolStore(db)
-	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, checkpoints, maybePool)
+	hub := livefeed.NewHub()
+	outbox := sqlite.NewOutboxStore(db)
+	relayCtx, relayCancel := context.WithCancel(ctx)
+	go livefeed.RunOutboxRelay(relayCtx, outbox, hub, 200*time.Millisecond)
+	taskPub := &livefeed.OutboxPublisher{Outbox: outbox}
+	h, gwCleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, checkpoints, maybePool, hub, taskPub)
+	cleanup := func() {
+		relayCancel()
+		gwCleanup()
+	}
 	return &App{
 		Handlers: h,
 		Products: products,

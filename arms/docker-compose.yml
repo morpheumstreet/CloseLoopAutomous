@@ -1,6 +1,17 @@
 # Run from repo root: docker compose -f arms/docker-compose.yml up --build
 # Or from arms/: docker compose up --build
+#
+# Redis: optional today; required when Asynq scheduler lands (see docs/arms-mission-control-gap-todos.md).
+# Start arms only: docker compose up arms
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - arms_redis:/data
+    command: redis-server --appendonly yes
+
   arms:
     build:
       context: .
@@ -11,6 +22,8 @@ services:
       ARMS_LISTEN: ":8080"
       # Persist SQLite on a named volume (empty DATABASE_PATH = in-memory only)
       DATABASE_PATH: /data/arms.db
+      # Asynq / scheduler (uncomment when application uses it):
+      # ARMS_REDIS_ADDR: redis:6379
       # MC_API_TOKEN: "set-me"
       # WEBHOOK_SECRET: "set-me"
       # OPENCLAW_GATEWAY_URL: "wss://..."
@@ -21,3 +34,4 @@ services:
 
 volumes:
   arms_data:
+  arms_redis:
