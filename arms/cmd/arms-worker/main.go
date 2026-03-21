@@ -38,8 +38,11 @@ func main() {
 	srv := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
 		asynq.Config{
-			Concurrency: 2,
-			Queues:      map[string]int{jobs.QueueDefault: 1},
+			Concurrency: 4,
+			Queues:      map[string]int{jobs.QueueName: 1},
+			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, t *asynq.Task, err error) {
+				slog.Error("asynq task failed", "type", t.Type(), "err", err)
+			}),
 		},
 	)
 	mux := asynq.NewServeMux()
@@ -47,35 +50,9 @@ func main() {
 		slog.Debug("asynq task", "type", t.Type())
 		return nil
 	})
-	mux.HandleFunc(jobs.TypeAutopilotTick, func(ctx context.Context, _ *asynq.Task) error {
-		tickCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		defer cancel()
-		err := app.Handlers.Autopilot.TickScheduled(tickCtx, time.Now().UTC())
-		if err != nil {
-			slog.Debug("autopilot tick", "err", err)
-		}
-		return err
-	})
-	mux.HandleFunc(jobs.TypeProductAutopilotTick, func(ctx context.Context, t *asynq.Task) error {
-		pid, err := jobs.ParseProductAutopilotPayload(t.Payload())
-		if err != nil {
-			slog.Debug("product autopilot task", "err", err)
-			return nil
-		}
-		tickCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		defer cancel()
-		now := time.Now().UTC()
-		err = jobs.RunProductAutopilotTask(tickCtx, enqueueClient, app.Handlers.Autopilot, pid, now)
-		if err != nil {
-			slog.Debug("product autopilot tick", "product_id", string(pid), "err", err)
-		}
-		return err
-	})
-	sched := jobs.NewScheduler(enqueueClient, app.ProductSchedules)
-	if sched != nil {
-		ph := jobs.NewProductScheduleHandler(app.Handlers.Autopilot, app.ProductSchedules, sched)
-		mux.HandleFunc(jobs.TypeProductScheduleTick, ph.ProcessTask)
-	}
+	reg := jobs.NewHandlerRegistry(app.Handlers.Autopilot, enqueueClient, app.ProductSchedules)
+	reg.Register(mux)
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {

@@ -36,6 +36,19 @@ func TestLoadFromEnvOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnvUseAsynqScheduler(t *testing.T) {
+	t.Setenv("ARMS_USE_ASYNQ_SCHEDULER", "true")
+	c := LoadFromEnv()
+	if !c.UseAsynqScheduler {
+		t.Fatalf("UseAsynqScheduler want true got %+v", c)
+	}
+	t.Setenv("ARMS_USE_ASYNQ_SCHEDULER", "0")
+	c = LoadFromEnv()
+	if c.UseAsynqScheduler {
+		t.Fatalf("UseAsynqScheduler want false got %+v", c)
+	}
+}
+
 func TestLoadFromEnvARMSACL(t *testing.T) {
 	t.Setenv("ARMS_ACL", "alice|s1|admin;bob|s2|read")
 	c := LoadFromEnv()

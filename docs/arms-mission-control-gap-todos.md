@@ -6,6 +6,8 @@ Use this as the master backlog for bringing `arms` toward Autensa/Mission Contro
 
 **Next priority:** **Deprecate `ARMS_AUTOPILOT_TICK_SEC` / in-process autopilot ticker** once you are satisfied **`product_schedules`** Asynq + **`product:schedule:tick`** covers your ops story alongside existing **`arms:product_autopilot_tick`** reconcile (§5, **Locked design decisions → Scheduling**). Other high-value slices: **#60** post-execution chain, ML on **`preference_models`**, convoy graph/mail.
 
+**Asynq cutover (env):** Set **`ARMS_REDIS_ADDR`** and run **`cmd/arms-worker`** alongside **`cmd/arms`**. Enable authoritative mode with **`ARMS_USE_ASYNQ_SCHEDULER=true`**: `arms` stops the periodic **`ARMS_AUTOPILOT_TICK_SEC`** reconcile loop (startup reconcile + HTTP hooks + per-product worker chain remain). Rollout: run Redis + worker + API together; validate **`product:schedule:tick`** and **`arms:product_autopilot_tick`** in logs; then flip the flag in staging/prod; finally remove reliance on **`ARMS_AUTOPILOT_TICK_SEC`** and delete legacy paths when comfortable.
+
 **What this is:** a single checklist + design locks for **backend parity** with [mission-control](https://github.com/crshdn/mission-control): API routes, SQLite schema, OpenClaw wiring, safety/cost/workspace, realtime, and convoy/autopilot gaps. It is **not** a fishtank/UI spec; pair with [api-ref.md](api-ref.md) for HTTP details and [recomendeddesign.md](recomendeddesign.md) for the broader architecture sketch.
 
 _Re-checked against the `arms/` tree (2026-03-23): SQLite schema **v17** (`ExpectedSchemaVersion` in `internal/adapters/sqlite/migrate.go`); baseline vs “full MC” is called out so unchecked rows are not misread as “missing entirely” when a slim table or route already exists._

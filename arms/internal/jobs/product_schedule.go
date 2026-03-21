@@ -16,7 +16,7 @@ import (
 	"github.com/closeloopautomous/arms/internal/ports"
 )
 
-// ProductSchedulePayload is the Asynq payload for TypeProductScheduleTick.
+// ProductSchedulePayload is the Asynq payload for TaskProductScheduleTick.
 type ProductSchedulePayload struct {
 	ProductID string `json:"product_id"`
 }
@@ -63,13 +63,13 @@ func (s *Scheduler) EnqueueNextRun(ctx context.Context, sched *domain.ProductSch
 	if err != nil {
 		return err
 	}
-	task := asynq.NewTask(TypeProductScheduleTick, payload)
+	task := asynq.NewTask(TaskProductScheduleTick, payload)
 	wait := next.Sub(now)
 	if wait < 0 {
 		wait = 0
 	}
 	opts := []asynq.Option{
-		asynq.Queue(QueueDefault),
+		asynq.Queue(QueueName),
 		asynq.ProcessIn(wait),
 		asynq.MaxRetry(2),
 		asynq.Timeout(10 * time.Minute),

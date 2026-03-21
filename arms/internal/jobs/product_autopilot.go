@@ -49,9 +49,9 @@ func EnqueueProductAutopilotTick(client *asynq.Client, productID domain.ProductI
 	if err != nil {
 		return err
 	}
-	task := asynq.NewTask(TypeProductAutopilotTick, payload)
+	task := asynq.NewTask(TaskAutopilotProductTick, payload)
 	opts := []asynq.Option{
-		asynq.Queue(QueueDefault),
+		asynq.Queue(QueueName),
 		asynq.TaskID(ProductAutopilotTaskID(productID)),
 		asynq.Unique(productAutopilotUniqueTTL),
 	}

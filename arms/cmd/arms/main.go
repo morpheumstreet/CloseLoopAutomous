@@ -81,7 +81,7 @@ func main() {
 		reconcile(context.Background())
 		app.Handlers.AutopilotScheduleReconcile = reconcile
 
-		if cfg.AutopilotTickSec > 0 {
+		if cfg.AutopilotTickSec > 0 && !cfg.UseAsynqScheduler {
 			go func() {
 				t := time.NewTicker(time.Duration(cfg.AutopilotTickSec) * time.Second)
 				defer t.Stop()
@@ -94,8 +94,13 @@ func main() {
 					}
 				}
 			}()
+		} else if cfg.AutopilotTickSec > 0 && cfg.UseAsynqScheduler {
+			slog.Warn("arms autopilot", "msg", "ARMS_AUTOPILOT_TICK_SEC ignored when ARMS_USE_ASYNQ_SCHEDULER=true; periodic reconcile disabled (startup + HTTP hooks + per-product Asynq chain)")
 		}
 	} else if cfg.AutopilotTickSec > 0 {
+		if cfg.UseAsynqScheduler {
+			slog.Warn("arms autopilot", "msg", "ARMS_USE_ASYNQ_SCHEDULER set but ARMS_REDIS_ADDR empty — using in-process TickScheduled; set Redis and run arms-worker for Asynq mode")
+		}
 		go func() {
 			t := time.NewTicker(time.Duration(cfg.AutopilotTickSec) * time.Second)
 			defer t.Stop()
@@ -140,10 +145,12 @@ func main() {
 		authMode = "HTTP Basic (ARMS_ACL)"
 	}
 	switch {
+	case cfg.RedisAddr != "" && cfg.UseAsynqScheduler:
+		slog.Info("arms autopilot", "mode", "asynq_authoritative", "redis", cfg.RedisAddr, "use_asynq_scheduler", true)
 	case cfg.RedisAddr != "" && cfg.AutopilotTickSec > 0:
 		slog.Info("arms autopilot", "mode", "asynq_per_product", "redis", cfg.RedisAddr, "reconcile_sec", cfg.AutopilotTickSec)
 	case cfg.RedisAddr != "":
-		slog.Info("arms autopilot", "mode", "asynq_per_product", "redis", cfg.RedisAddr, "reconcile_sec", 0, "hint", "set ARMS_AUTOPILOT_TICK_SEC>0 for periodic reconcile; startup + HTTP hooks still run")
+		slog.Info("arms autopilot", "mode", "asynq_per_product", "redis", cfg.RedisAddr, "reconcile_sec", 0, "hint", "set ARMS_AUTOPILOT_TICK_SEC>0 for periodic reconcile, or ARMS_USE_ASYNQ_SCHEDULER=true to rely on worker chain only")
 	case cfg.AutopilotTickSec > 0:
 		slog.Info("arms autopilot", "mode", "in_process", "tick_sec", cfg.AutopilotTickSec)
 	}

@@ -24,7 +24,8 @@ import (
 //   - ARMS_OPENCLAW_SESSION_KEY — sessionKey for chat.send dispatch
 //   - ARMS_LOG_JSON — "1" or "true" for JSON logs to stdout (default text)
 //   - ARMS_ACCESS_LOG — "0", "false", "off", "no" disables per-request access logging (default on)
-//   - ARMS_AUTOPILOT_TICK_SEC — without Redis: interval for in-process global TickScheduled. With Redis: interval for re-scanning products and ensuring Asynq arms:product_autopilot_tick tasks exist (per-product chain + self-reschedule in arms-worker); 0 = reconcile only on API startup and after product/schedule mutations (default 0)
+//   - ARMS_USE_ASYNQ_SCHEDULER — "1" or "true" when Redis is set: treat Asynq + arms-worker as authoritative; disables periodic ARMS_AUTOPILOT_TICK_SEC reconcile in cmd/arms (startup reconcile + HTTP hooks + per-product task chain remain). Without Redis, ignored with a warning if also set.
+//   - ARMS_AUTOPILOT_TICK_SEC — without Redis: interval for in-process global TickScheduled. With Redis: interval for re-scanning products and ensuring Asynq arms:product_autopilot_tick tasks exist (per-product chain + self-reschedule in arms-worker), unless ARMS_USE_ASYNQ_SCHEDULER=true; 0 = reconcile only on API startup and after product/schedule mutations (default 0). Deprecated for steady-state once Asynq cutover is complete.
 //   - ARMS_BUDGET_DEFAULT_CAP — cumulative spend ceiling per product when no cost_caps row exists (default 100); set 0 to disable
 //   - ARMS_GITHUB_TOKEN — PAT with repo scope for POST /api/tasks/{id}/pull-request when using API backend (falls back to GITHUB_TOKEN if empty)
 //   - ARMS_GITHUB_API_URL — optional GitHub Enterprise API root for REST backend, e.g. https://github.example.com/api/v3/
@@ -74,6 +75,7 @@ type Config struct {
 	MergeLeaseSec               int
 	MergeLeaseOwner             string
 	RedisAddr                   string
+	UseAsynqScheduler           bool
 }
 
 // ACLUser is one Basic-auth principal for coarse HTTP ACL (admin vs read-only).
@@ -155,6 +157,8 @@ func LoadFromEnv() Config {
 	}
 	mergeOwner := strings.TrimSpace(os.Getenv("ARMS_MERGE_LEASE_OWNER"))
 	redisAddr := strings.TrimSpace(os.Getenv("ARMS_REDIS_ADDR"))
+	useAsynqSched := strings.EqualFold(os.Getenv("ARMS_USE_ASYNQ_SCHEDULER"), "1") ||
+		strings.EqualFold(os.Getenv("ARMS_USE_ASYNQ_SCHEDULER"), "true")
 	return Config{
 		ListenAddr:                  addr,
 		MCAPIToken:                  strings.TrimSpace(token),
@@ -187,6 +191,7 @@ func LoadFromEnv() Config {
 		MergeLeaseSec:               mergeLease,
 		MergeLeaseOwner:             mergeOwner,
 		RedisAddr:                   redisAddr,
+		UseAsynqScheduler:           useAsynqSched,
 	}
 }
 
