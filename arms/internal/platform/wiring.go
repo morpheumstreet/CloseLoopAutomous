@@ -2,6 +2,7 @@ package platform
 
 import (
 	"strings"
+	"time"
 
 	"github.com/closeloopautomous/arms/internal/adapters/ai"
 	"github.com/closeloopautomous/arms/internal/adapters/budget"
@@ -154,6 +155,10 @@ func buildHandlers(
 		GhPath:     cfg.GhPath,
 		GitHubHost: cfg.GitHubHost,
 	})
+	staleThresh := time.Duration(cfg.AgentStaleSec) * time.Second
+	if cfg.AgentStaleSec <= 0 {
+		staleThresh = 300 * time.Second
+	}
 	taskSvc := &task.Service{
 		Tasks:       tasks,
 		Products:    products,
@@ -168,6 +173,12 @@ func buildHandlers(
 		Gate:        task.NewProductGate(),
 		Ship:        ship,
 		AgentHealth: agentHealth,
+		AutoStallNudge: task.AutoStallNudgeSettings{
+			Enabled:        cfg.AutoStallNudgeEnabled,
+			StaleThreshold: staleThresh,
+			Cooldown:       time.Duration(cfg.AutoStallNudgeCooldownSec) * time.Second,
+			MaxPerDay:      cfg.AutoStallNudgeMaxPerDay,
+		},
 	}
 	convoySvc := &convoy.Service{
 		Convoys:  convoys,

@@ -96,7 +96,37 @@ func main() {
 				}
 			}
 		}()
+
+		if cfg.AutoStallNudgeEnabled {
+			interval := time.Duration(cfg.AutoStallNudgeIntervalSec) * time.Second
+			if interval < time.Minute {
+				interval = time.Minute
+			}
+			go func(client *asynq.Client, iv time.Duration) {
+				enqueue := func() {
+					_, err := client.Enqueue(asynq.NewTask(jobs.TaskStallAutoNudgeTick, nil), asynq.Queue(jobs.QueueName))
+					if err != nil {
+						slog.Debug("stall autonudge enqueue", "err", err)
+					}
+				}
+				enqueue()
+				ticker := time.NewTicker(iv)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						enqueue()
+					}
+				}
+			}(asynqClient, interval)
+			slog.Info("arms stall autonudge", "interval", interval.String(), "queue", jobs.QueueName, "task", jobs.TaskStallAutoNudgeTick)
+		}
 	} else {
+		if cfg.AutoStallNudgeEnabled {
+			slog.Warn("arms stall autonudge", "msg", "ARMS_AUTO_STALL_NUDGE_ENABLED set but ARMS_REDIS_ADDR empty — enqueue disabled; set Redis and run cmd/arms-worker for arms:stall_autonudge_tick")
+		}
 		if cfg.AutopilotTickSec > 0 {
 			slog.Warn("arms autopilot", "msg", "ARMS_AUTOPILOT_TICK_SEC is deprecated and ignored without ARMS_REDIS_ADDR; periodic autopilot requires Redis and cmd/arms-worker (product_schedules + arms:product_autopilot_tick)")
 		}

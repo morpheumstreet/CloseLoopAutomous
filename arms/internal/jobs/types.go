@@ -8,4 +8,5 @@ const (
 	TaskAutopilotGlobalTick  = "arms:autopilot_tick"
 	TaskAutopilotProductTick = "arms:product_autopilot_tick"
 	TaskProductScheduleTick  = "product:schedule:tick"
+	TaskStallAutoNudgeTick   = "arms:stall_autonudge_tick"
 )

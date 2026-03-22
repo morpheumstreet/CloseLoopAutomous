@@ -36,6 +36,10 @@ import (
 //   - ARMS_GIT_BIN — git executable (default: look up "git" on PATH)
 //   - ARMS_WORKSPACE_ROOT — absolute base directory for per-task worktree directories
 //   - ARMS_AGENT_STALE_SEC — heartbeats older than this are flagged stale in JSON (default 300); 0 uses default
+//   - ARMS_AUTO_STALL_NUDGE_ENABLED — "1" or "true" to enqueue periodic Asynq arms:stall_autonudge_tick (requires Redis + arms-worker)
+//   - ARMS_AUTO_STALL_NUDGE_INTERVAL_SEC — enqueue interval for that tick (default 300); minimum 60 when enforced in cmd/arms
+//   - ARMS_AUTO_STALL_NUDGE_COOLDOWN_SEC — min seconds between auto-nudges per task (default 3600)
+//   - ARMS_AUTO_STALL_NUDGE_MAX_PER_DAY — max auto-nudges per task per rolling 24h (default 6); 0 disables the cap
 //   - ARMS_CORS_ALLOW_ORIGIN — optional; when non-empty, enables CORS for browser UIs on another origin (e.g. http://localhost:3000 for Fishtank). Use * only for quick local experiments.
 //   - ARMS_ACL — optional HTTP Basic ACL: semicolon-separated entries "user|password|role". Role is admin (default) or read (GET/HEAD only). Non-empty enables auth when MC_API_TOKEN is empty, or adds Basic as an alternative when both are set. User/password must not contain '|' or ';'.
 //   - ARMS_MERGE_BACKEND — merge queue completion: noop (default), github (REST merge PR), local (git merge in repo_clone_path)
@@ -76,6 +80,10 @@ type Config struct {
 	MergeLeaseOwner             string
 	RedisAddr                   string
 	UseAsynqScheduler           bool
+	AutoStallNudgeEnabled       bool
+	AutoStallNudgeIntervalSec   int
+	AutoStallNudgeCooldownSec   int
+	AutoStallNudgeMaxPerDay     int
 }
 
 // ACLUser is one Basic-auth principal for coarse HTTP ACL (admin vs read-only).
@@ -159,6 +167,26 @@ func LoadFromEnv() Config {
 	redisAddr := strings.TrimSpace(os.Getenv("ARMS_REDIS_ADDR"))
 	useAsynqSched := strings.EqualFold(os.Getenv("ARMS_USE_ASYNQ_SCHEDULER"), "1") ||
 		strings.EqualFold(os.Getenv("ARMS_USE_ASYNQ_SCHEDULER"), "true")
+	autoStallNudge := strings.EqualFold(os.Getenv("ARMS_AUTO_STALL_NUDGE_ENABLED"), "1") ||
+		strings.EqualFold(os.Getenv("ARMS_AUTO_STALL_NUDGE_ENABLED"), "true")
+	autoStallInterval := 300
+	if s := strings.TrimSpace(os.Getenv("ARMS_AUTO_STALL_NUDGE_INTERVAL_SEC")); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			autoStallInterval = n
+		}
+	}
+	autoStallCooldown := 3600
+	if s, ok := os.LookupEnv("ARMS_AUTO_STALL_NUDGE_COOLDOWN_SEC"); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && n >= 0 {
+			autoStallCooldown = n
+		}
+	}
+	autoStallMaxDay := 6
+	if s, ok := os.LookupEnv("ARMS_AUTO_STALL_NUDGE_MAX_PER_DAY"); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && n >= 0 {
+			autoStallMaxDay = n
+		}
+	}
 	return Config{
 		ListenAddr:                  addr,
 		MCAPIToken:                  strings.TrimSpace(token),
@@ -192,6 +220,10 @@ func LoadFromEnv() Config {
 		MergeLeaseOwner:             mergeOwner,
 		RedisAddr:                   redisAddr,
 		UseAsynqScheduler:           useAsynqSched,
+		AutoStallNudgeEnabled:       autoStallNudge,
+		AutoStallNudgeIntervalSec:   autoStallInterval,
+		AutoStallNudgeCooldownSec:   autoStallCooldown,
+		AutoStallNudgeMaxPerDay:     autoStallMaxDay,
 	}
 }
 

@@ -1350,7 +1350,7 @@ func (h *Handlers) listStalledTasks(w http.ResponseWriter, r *http.Request) {
 	stalled := make([]map[string]any, 0)
 	for i := range tasks {
 		t := &tasks[i]
-		if !taskExpectsAgentHeartbeat(t.Status) {
+		if !domain.TaskExpectsAgentHeartbeat(t.Status) {
 			continue
 		}
 		row, err := h.AgentHealth.ByTask(ctx, t.ID)
@@ -1381,15 +1381,6 @@ func (h *Handlers) listStalledTasks(w http.ResponseWriter, r *http.Request) {
 		"stale_sec":  staleSec,
 		"stalled":    stalled,
 	})
-}
-
-func taskExpectsAgentHeartbeat(st domain.TaskStatus) bool {
-	switch st {
-	case domain.StatusInProgress, domain.StatusTesting, domain.StatusReview, domain.StatusConvoyActive:
-		return true
-	default:
-		return false
-	}
 }
 
 func (h *Handlers) prepareGitWorktree(w http.ResponseWriter, r *http.Request) {

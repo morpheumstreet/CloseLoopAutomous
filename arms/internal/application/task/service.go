@@ -27,6 +27,7 @@ type Service struct {
 	Ship         ports.PullRequestPublisher // GitHub / noop
 	AgentHealth  ports.AgentHealthRepository // optional: stall nudge heartbeats
 	MergeShip    ports.MergeQueueShipper     // optional: auto merge-queue completion on task done (full_auto always; semi_auto when GitHub gates pass)
+	AutoStallNudge AutoStallNudgeSettings    // optional: periodic auto stall nudge (#83); zero value disables
 }
 
 // CreateFromApprovedIdea starts the Kanban in planning until ApprovePlan moves to inbox.
@@ -504,6 +505,12 @@ func (s *Service) CompleteWithLiveActivity(ctx context.Context, taskID domain.Ta
 // NudgeStall records an operator nudge for tasks in active execution statuses (Phase A manual policy).
 // Updates task_agent_health detail (when wired), prepends a short line to status_reason, and emits task_stall_nudged.
 func (s *Service) NudgeStall(ctx context.Context, taskID domain.TaskID, note string) error {
+	return s.nudgeStall(ctx, taskID, note, false)
+}
+
+// nudgeStall implements stall nudge. When preserveHeartbeatAt is true (auto-nudge path), last_heartbeat_at is not
+// advanced to now so the task stays eligible for stalled detection and cooldown logic until a real agent heartbeat.
+func (s *Service) nudgeStall(ctx context.Context, taskID domain.TaskID, note string, preserveHeartbeatAt bool) error {
 	t, err := s.Tasks.ByID(ctx, taskID)
 	if err != nil {
 		return err
@@ -535,25 +542,41 @@ func (s *Service) NudgeStall(ctx context.Context, taskID domain.TaskID, note str
 	}
 	pid := t.ProductID
 	if s.AgentHealth != nil {
+		var prev *domain.TaskAgentHealth
+		if h, herr := s.AgentHealth.ByTask(ctx, taskID); herr == nil && h != nil {
+			prev = h
+		}
 		detail := mergeStallNudgeDetail("", note, now)
 		st := string(t.Status)
-		if h, herr := s.AgentHealth.ByTask(ctx, taskID); herr == nil && h != nil {
-			if strings.TrimSpace(h.DetailJSON) != "" {
-				detail = mergeStallNudgeDetail(h.DetailJSON, note, now)
+		if prev != nil {
+			if strings.TrimSpace(prev.DetailJSON) != "" {
+				detail = mergeStallNudgeDetail(prev.DetailJSON, note, now)
 			}
-			if strings.TrimSpace(h.Status) != "" && h.Status != "unknown" {
-				st = h.Status
+			if strings.TrimSpace(prev.Status) != "" && prev.Status != "unknown" {
+				st = prev.Status
 			}
 		}
-		_ = s.AgentHealth.UpsertHeartbeat(ctx, taskID, pid, st, detail, now)
+		heartbeatAt := now
+		if preserveHeartbeatAt {
+			if prev != nil {
+				heartbeatAt = prev.LastHeartbeatAt
+			} else {
+				heartbeatAt = time.Unix(0, 0).UTC()
+			}
+		}
+		_ = s.AgentHealth.UpsertHeartbeat(ctx, taskID, pid, st, detail, heartbeatAt)
 	}
 	if s.Events != nil {
+		evData := map[string]any{"note": note}
+		if strings.HasPrefix(strings.TrimSpace(note), "auto:") {
+			evData["source"] = "auto"
+		}
 		_ = s.Events.Publish(ctx, ports.LiveActivityEvent{
 			Type:      "task_stall_nudged",
 			Ts:        now.UTC().Format(time.RFC3339Nano),
 			ProductID: string(pid),
 			TaskID:    string(taskID),
-			Data:      map[string]any{"note": note},
+			Data:      evData,
 		})
 	}
 	return nil

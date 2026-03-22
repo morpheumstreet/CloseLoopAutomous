@@ -17,12 +17,13 @@ type HandlerRegistry struct {
 	enqueue *asynq.Client
 	sched   *Scheduler
 	schedH  *ProductScheduleHandler
+	stall   *StallAutoNudgeHandler
 }
 
 // NewHandlerRegistry builds a registry. Nil auto or enqueue yields a no-op Register.
 // Product schedule tasks are registered only when repo is non-nil.
-func NewHandlerRegistry(auto *autopilot.Service, enqueue *asynq.Client, repo ports.ProductScheduleRepository) *HandlerRegistry {
-	h := &HandlerRegistry{auto: auto, enqueue: enqueue}
+func NewHandlerRegistry(auto *autopilot.Service, enqueue *asynq.Client, repo ports.ProductScheduleRepository, stall *StallAutoNudgeHandler) *HandlerRegistry {
+	h := &HandlerRegistry{auto: auto, enqueue: enqueue, stall: stall}
 	if auto == nil || enqueue == nil {
 		return h
 	}
@@ -42,6 +43,9 @@ func (h *HandlerRegistry) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TaskAutopilotProductTick, h.handleProductAutopilotTick)
 	if h.schedH != nil {
 		mux.HandleFunc(TaskProductScheduleTick, h.schedH.ProcessTask)
+	}
+	if h.stall != nil {
+		mux.HandleFunc(TaskStallAutoNudgeTick, h.stall.Handle)
 	}
 }
 

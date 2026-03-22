@@ -62,6 +62,16 @@ func AllowedKanbanTransition(from, to TaskStatus) bool {
 	}
 }
 
+// TaskExpectsAgentHeartbeat is true when the task status should receive agent heartbeats (stall detection).
+func TaskExpectsAgentHeartbeat(st TaskStatus) bool {
+	switch st {
+	case StatusInProgress, StatusTesting, StatusReview, StatusConvoyActive:
+		return true
+	default:
+		return false
+	}
+}
+
 // Task is orchestration state; execution happens in the external agent runtime (OpenClaw).
 type Task struct {
 	ID                 TaskID

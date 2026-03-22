@@ -2,11 +2,11 @@
 
 Use this as the master backlog for bringing `arms` toward Autensa/Mission Control backend parity. Check items off as you implement them.
 
-**Backlog checklist (§1–§10):** `92` done · `14` open · **~87%** complete — see **[Master backlog (all checklist items)](#master-backlog-all-checklist-items)** for the full table; _grep_ `- [x]` / `- [ ]` in this file to refresh counts after edits._
+**Backlog checklist (§1–§10):** `93` done · `14` open · **~87%** complete — see **[Master backlog (all checklist items)](#master-backlog-all-checklist-items)** for the full table; _grep_ `- [x]` / `- [ ]` in this file to refresh counts after edits._
 
-**Next priority:** **Auto-nudge / reassign** for stalled tasks (**`§7`**). Then **convoy** — **`dominikbraun/graph`** (or equivalent) + **MC-exact DAG** on top of migration **`022`**. **§8 learner / knowledge injection** into dispatches still **TBD**. **Preference:** **embeddings / trained model** on **`preference_models`** still **TBD**. Optional polish: stable PR correlation keys for extreme dedupe.
+**Next priority:** **Convoy** — **`dominikbraun/graph`** (or equivalent) + **MC-exact DAG** on top of migration **`022`**. **§8 learner / knowledge injection** into dispatches still **TBD**. **Stalled-task reassign** policy (beyond auto-nudge) still **TBD** when task↔agent binding exists (**#93**/**#94**). **Preference:** **embeddings / trained model** on **`preference_models`** still **TBD**. Optional polish: stable PR correlation keys for extreme dedupe.
 
-**Asynq scheduling (steady state):** Set **`ARMS_REDIS_ADDR`** and run **`cmd/arms-worker`** alongside **`cmd/arms`**. **`ARMS_AUTOPILOT_TICK_SEC`** and **`ARMS_USE_ASYNQ_SCHEDULER`** are **deprecated** (ignored; warnings if set). **`cmd/arms`** runs startup + **5m** resync (**`product_schedules`** + per-product reconcile) plus HTTP hooks; worker runs **`product:schedule:tick`**, **`arms:product_autopilot_tick`**, and optional **`arms:autopilot_tick`**.
+**Asynq scheduling (steady state):** Set **`ARMS_REDIS_ADDR`** and run **`cmd/arms-worker`** alongside **`cmd/arms`**. **`ARMS_AUTOPILOT_TICK_SEC`** and **`ARMS_USE_ASYNQ_SCHEDULER`** are **deprecated** (ignored; warnings if set). **`cmd/arms`** runs startup + **5m** resync (**`product_schedules`** + per-product reconcile) plus HTTP hooks; worker runs **`product:schedule:tick`**, **`arms:product_autopilot_tick`**, optional **`arms:autopilot_tick`**, and (when **`ARMS_AUTO_STALL_NUDGE_ENABLED`**) **`arms:stall_autonudge_tick`**.
 
 **What this is:** a single checklist + design locks for **backend parity** with [mission-control](https://github.com/crshdn/mission-control): API routes, SQLite schema, OpenClaw wiring, safety/cost/workspace, realtime, and convoy/autopilot gaps. It is **not** a fishtank/UI spec; pair with [api-ref.md](api-ref.md) for HTTP details and [recomendeddesign.md](recomendeddesign.md) for the broader architecture sketch.
 
@@ -27,7 +27,7 @@ The backlog previously called out **“autopilot-driven merge policy”** and **
 | **Resolve after conflict** | **`POST /api/tasks/{id}/merge-queue/resolve`** and **`POST /api/merge-queue/{rowId}/resolve`** with optional body **`{"action":"retry_merge"\|"skip_ship"}`** (default retry). | `internal/adapters/httpapi/handlers.go`, `server.go`; OpenAPI + `routes_catalog` |
 | **Same-Tx outbox on ship finish** | When live events use **`OutboxPublisher`** and the store supports it, **`FinishShipWithOutbox`** commits **merge_queue row update + `event_outbox` insert** in one SQLite transaction (no race vs relay). In-memory / hub-only paths still **finish then Publish**. | `internal/adapters/sqlite/workspace.go`; `ports.MergeShipOutboxFinisher`; `mergequeue` + `livefeed` |
 
-**Still not done** (unchanged from Phase A bullets): auto-nudge/reassign for stalls; **DB leases** for task completion / product gates beyond merge-queue lease. ~~**same-Tx outbox for PR opened**~~ — after GitHub returns, task row + **`pull_request_opened`** commit together when **`LiveTX`** is wired (forge HTTP remains out-of-band).
+**Still not done** (unchanged from Phase A bullets): **reassign** policy for stalls (auto-nudge shipped); **DB leases** for task completion / product gates beyond merge-queue lease. ~~**same-Tx outbox for PR opened**~~ — after GitHub returns, task row + **`pull_request_opened`** commit together when **`LiveTX`** is wired (forge HTTP remains out-of-band).
 
 ---
 
@@ -106,7 +106,7 @@ Rough calendar: **~4 weeks core (A–C)** + **polish (D)**; optional future belo
 
 **Done in-tree (former “first commits”):** Compose **redis** service (optional); **`ARMS_REDIS_ADDR`** + **`cmd/arms-worker`** → **`product:schedule:tick`** + **`arms:product_autopilot_tick`** (+ optional **`arms:autopilot_tick`**), **`cmd/arms`** startup + **5m** resync, transactional **outbox** + **`livefeed`** SSE hub, **workspace** ports + merge queue + optional git worktrees, **GitHub** / **`gh`** behind `PullRequestPublisher`, **swipe_history**, **cost_caps** + composite budget, **task agent health** APIs, **`preference_models`** + **`operations_log`** (migrations 014–015).
 
-**Next vertical slices (suggested):** **(1)** **Auto-nudge / reassign** for stalls (**§7**). **(2)** Convoy **`dominikbraun/graph`** + MC-exact DAG/mail parity (build on **`022`**). **(3)** **Learner / knowledge** port + storage + dispatch injection (**§8**). **(4)** **ML / embeddings** on **`preference_models`**. **(5)** Optional **`/api/openclaw/*`** HTTP proxy, **operations_log** breadth, PR idempotency keys (#60 polish).
+**Next vertical slices (suggested):** **(1)** Convoy **`dominikbraun/graph`** + MC-exact DAG/mail parity (build on **`022`**). **(2)** **Learner / knowledge** port + storage + dispatch injection (**§8**). **(3)** **Stalled-task reassign** when execution-agent binding exists (**§7**). **(4)** **ML / embeddings** on **`preference_models`**. **(5)** Optional **`/api/openclaw/*`** HTTP proxy, **operations_log** breadth, PR idempotency keys (#60 polish).
 
 ---
 
@@ -213,7 +213,7 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 | 80 | 7 | Done | Agent health — **task-scoped** heartbeats + SQLite/memory + HTTP (not full MC **agent** aggregate yet) |
 | 81 | 7 | Done | Stalled detection — **`GET /api/products/{id}/stalled-tasks`** (`no_heartbeat` / `heartbeat_stale` for in_progress, testing, review, convoy_active) |
 | 82 | 7 | Done | **Manual** stall nudge — **`POST /api/tasks/{id}/stall-nudge`** (execution statuses); **`task_stall_nudged`** SSE + agent-health detail `stall_nudges[]` |
-| 83 | 7 | Open | **Auto**-nudge / reassign policy for stalled tasks |
+| 83 | 7 | Done | **Auto**-nudge for stalled tasks — **`ARMS_AUTO_STALL_NUDGE_ENABLED`** + **`ARMS_AUTO_STALL_NUDGE_INTERVAL_SEC`** (enqueue from **`cmd/arms`**) + **`ARMS_AUTO_STALL_NUDGE_COOLDOWN_SEC`** / **`ARMS_AUTO_STALL_NUDGE_MAX_PER_DAY`**; Asynq **`arms:stall_autonudge_tick`**; reuses **`task_stall_nudged`** with **`source":"auto"`**; auto path preserves **`last_heartbeat_at`**. **Reassign** policy still **TBD** |
 | 84 | 8 | Done | Domain outbox baseline — table `event_outbox` (`005_event_outbox.sql`); `internal/application/livefeed` (**Hub**, **OutboxPublisher**, **RunOutboxRelay**); SQLite path relays to SSE; in-memory path publishes directly to hub |
 | 85 | 8 | Done | Same-transaction outbox for **SQLite** dispatch, checkpoint, cost, and **task completion** + agent-health **`completed`** (`LiveActivityTX`); other paths (e.g. PR opened) still best-effort after external I/O |
 | 86 | 8 | Done | SSE transport — `GET /api/live/events` (hello + ping + activity `data:` lines; `SSEQueryToken` when auth on) |
@@ -358,7 +358,8 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 - [x] Agent health — **task-scoped** heartbeats + SQLite/memory + HTTP (not full MC **agent** aggregate yet)
 - [x] Stalled detection — **`GET /api/products/{id}/stalled-tasks`** (`no_heartbeat` / `heartbeat_stale` for in_progress, testing, review, convoy_active)
 - [x] **Manual** stall nudge — **`POST /api/tasks/{id}/stall-nudge`** (execution statuses); **`task_stall_nudged`** SSE + agent-health detail `stall_nudges[]`
-- [ ] **Auto**-nudge / reassign policy for stalled tasks
+- [x] **Auto**-nudge for stalled tasks — **`ARMS_AUTO_STALL_NUDGE_*`** (default **off**); **`arms:stall_autonudge_tick`** via Redis + **`cmd/arms-worker`**; **`StalledTaskState`** + per-task cooldown and optional rolling 24h cap from **`stall_nudges`** entries with **`auto:`** note prefix; **`task_stall_nudged`** includes **`source":"auto"`** when applicable; auto nudge does **not** advance **`last_heartbeat_at`** so tasks stay stalled until a real heartbeat
+- [ ] **Reassign** policy for stalled tasks (deferred — needs task↔execution-agent model / **#93**/**#94**)
 
 ---
 
@@ -367,7 +368,7 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 - [x] Domain outbox baseline — table `event_outbox` (`005_event_outbox.sql`); `internal/application/livefeed` (**Hub**, **OutboxPublisher**, **RunOutboxRelay**); SQLite path relays to SSE; in-memory path publishes directly to hub
 - [x] Same-transaction outbox for **SQLite** dispatch, checkpoint, cost, **task completion** + agent-health **`completed`** (`LiveActivityTX`), and **merge-queue ship finish** (`FinishShipWithOutbox` when events go through **`OutboxPublisher`**); other paths (e.g. **PR opened** after forge round-trip) still best-effort after external I/O
 - [x] SSE transport — `GET /api/live/events` (hello + ping + activity `data:` lines; `SSEQueryToken` when auth on)
-- [x] SSE activity (partial) — **`task_dispatched`**, **`cost_recorded`**, **`checkpoint_saved`**, **`task_completed`** (SQLite same-tx + relay; in-memory hub on complete), **`task_stall_nudged`** (operator **`POST .../stall-nudge`**), **`pull_request_opened`**, **`merge_ship_completed`**, **`convoy_subtask_dispatched`**, **`convoy_subtask_completed`**; **`?product_id=`** filter; broader catalog + agent/type filters still TBD
+- [x] SSE activity (partial) — **`task_dispatched`**, **`cost_recorded`**, **`checkpoint_saved`**, **`task_completed`** (SQLite same-tx + relay; in-memory hub on complete), **`task_stall_nudged`** (manual **`POST .../stall-nudge`** or auto **`arms:stall_autonudge_tick`** with optional **`source":"auto"`**), **`pull_request_opened`**, **`merge_ship_completed`**, **`convoy_subtask_dispatched`**, **`convoy_subtask_completed`**; **`?product_id=`** filter; broader catalog + agent/type filters still TBD
 - [x] Operator chat: product-scoped **queue** of pending operator notes — migration **`023`**; **`GET /api/products/{id}/chat-queue`**; **`POST /api/products/{id}/chat-queue/{messageId}/ack`**; append via **`POST /api/tasks/{id}/chat`** with **`queue: true`**
 - [x] Per-task chat history — **`GET` / `POST /api/tasks/{id}/chat`** (`?limit=`); authors **`operator`** \| **`agent`** \| **`system`**; realtime **`task_chat_message`** / **`task_chat_queue_ack`** on same publisher path as other live events (outbox when **`OutboxPublisher`** wired)
 - [ ] Learner / knowledge base port + storage + injection into future dispatches

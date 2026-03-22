@@ -50,7 +50,8 @@ func main() {
 		slog.Debug("asynq task", "type", t.Type())
 		return nil
 	})
-	reg := jobs.NewHandlerRegistry(app.Handlers.Autopilot, enqueueClient, app.ProductSchedules)
+	stallH := jobs.NewStallAutoNudgeHandler(app.Handlers.Task, app.Products)
+	reg := jobs.NewHandlerRegistry(app.Handlers.Autopilot, enqueueClient, app.ProductSchedules, stallH)
 	reg.Register(mux)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
