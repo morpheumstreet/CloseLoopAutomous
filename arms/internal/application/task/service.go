@@ -137,8 +137,10 @@ func splitSpecTitleBody(spec string) (title, description string) {
 
 // CreateFromSpecWithNewIdea inserts an auto-approved manual idea (title/description from spec), then creates the planning task linked to it.
 // preferredIdeaID, when non-empty, is used as the new row's id (must not already exist). Typical source: POST …/nlp/suggest-idea-id.
-func (s *Service) CreateFromSpecWithNewIdea(ctx context.Context, productID domain.ProductID, spec string, preferredIdeaID string) (*domain.Task, error) {
+// ideaCategory is normalized via domain.NormalizeIdeaCategory (empty → feature).
+func (s *Service) CreateFromSpecWithNewIdea(ctx context.Context, productID domain.ProductID, spec string, preferredIdeaID string, ideaCategory string) (*domain.Task, error) {
 	spec = strings.TrimSpace(spec)
+	ideaCategory = strings.TrimSpace(ideaCategory)
 	if spec == "" {
 		return nil, fmt.Errorf("%w: spec is required", domain.ErrInvalidInput)
 	}
@@ -173,7 +175,7 @@ func (s *Service) CreateFromSpecWithNewIdea(ctx context.Context, productID domai
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		Source:      "manual",
-		Category:    "feature",
+		Category:    ideaCategory,
 	}
 	domain.SyncIdeaStatusFromSwipe(&idea, domain.DecisionYes, now)
 	domain.NormalizeIdeaForSave(&idea, now)

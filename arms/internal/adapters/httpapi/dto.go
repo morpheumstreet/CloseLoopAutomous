@@ -186,6 +186,8 @@ type createTaskReq struct {
 	ProductID string `json:"product_id,omitempty"`
 	NewIdeaID string `json:"new_idea_id,omitempty"`
 	Spec      string `json:"spec"`
+	// Category optional when creating a new idea via product_id (MC-aligned enum).
+	Category string `json:"category,omitempty"`
 }
 
 func (r *createTaskReq) validate() error {
@@ -206,6 +208,9 @@ func (r *createTaskReq) validate() error {
 	}
 	if nid != "" && pid == "" {
 		return fmt.Errorf("new_idea_id requires product_id")
+	}
+	if strings.TrimSpace(r.Category) != "" && iid != "" {
+		return fmt.Errorf("category is only allowed when creating a new idea (use product_id, not idea_id)")
 	}
 	return nil
 }

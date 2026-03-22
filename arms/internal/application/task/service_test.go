@@ -775,7 +775,7 @@ func TestCreateFromSpecWithNewIdea(t *testing.T) {
 		Ship:    shipping.PullRequestNoop{},
 	}
 	spec := "Dark mode toggle\n\nImplement system preference sync."
-	tt, err := svc.CreateFromSpecWithNewIdea(ctx, p.ID, spec, "")
+	tt, err := svc.CreateFromSpecWithNewIdea(ctx, p.ID, spec, "", "research_discovery")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -788,6 +788,9 @@ func TestCreateFromSpecWithNewIdea(t *testing.T) {
 	}
 	if gotIdea.Title != "Dark mode toggle" || !strings.Contains(gotIdea.Description, "Implement system") {
 		t.Fatalf("idea title/desc: %+v", gotIdea)
+	}
+	if gotIdea.Category != "research_discovery" {
+		t.Fatalf("idea category: got %q want research_discovery", gotIdea.Category)
 	}
 	if !gotIdea.Decided || gotIdea.Decision != domain.DecisionYes || gotIdea.Status != domain.IdeaStatusBuilding {
 		t.Fatalf("idea workflow: %+v", gotIdea)
@@ -820,7 +823,7 @@ func TestCreateFromSpecWithNewIdea_preferredID(t *testing.T) {
 		Ship:    shipping.PullRequestNoop{},
 	}
 	const wantID = "bot-com-github-https-1"
-	tt, err := svc.CreateFromSpecWithNewIdea(ctx, p.ID, "Title\n\nBody", wantID)
+	tt, err := svc.CreateFromSpecWithNewIdea(ctx, p.ID, "Title\n\nBody", wantID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -861,7 +864,7 @@ func TestCreateFromSpecWithNewIdea_preferredIDConflict(t *testing.T) {
 		IDs:     ids,
 		Ship:    shipping.PullRequestNoop{},
 	}
-	_, err = svc.CreateFromSpecWithNewIdea(ctx, p.ID, "Spec", "taken")
+	_, err = svc.CreateFromSpecWithNewIdea(ctx, p.ID, "Spec", "taken", "")
 	if err == nil || !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("want ErrConflict, got %v", err)
 	}

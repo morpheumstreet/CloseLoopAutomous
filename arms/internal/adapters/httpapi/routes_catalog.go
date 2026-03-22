@@ -50,7 +50,7 @@ func routeCatalog() []RouteEntry {
 		{"PATCH", "/api/ideas/{id}", "Update idea MC metadata (category, scores, tags, notes, …); at least one field"},
 		{"POST", "/api/ideas/{id}/swipe", "Submit swipe decision"},
 		{"POST", "/api/ideas/{id}/promote-maybe", "Promote a maybe idea to yes (and advance product from swipe when applicable)"},
-		{"POST", "/api/tasks", "Create Kanban task: {idea_id, spec} from approved idea, or {product_id, spec} to auto-create an approved manual idea from spec then link task"},
+		{"POST", "/api/tasks", "Create Kanban task: {idea_id, spec} from approved idea, or {product_id, spec, new_idea_id?, category?} to auto-create an approved manual idea from spec then link task (category: ideation bucket slug or legacy MC bucket)"},
 		{"GET", "/api/tasks/{id}", "Get task"},
 		{"PATCH", "/api/tasks/{id}", "Update Kanban status / status_reason / planning clarifications JSON"},
 		{"POST", "/api/tasks/{id}/plan/approve", "Approve plan → inbox (optional body {spec})"},

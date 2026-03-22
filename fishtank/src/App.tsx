@@ -9,6 +9,7 @@ import { MissionAgentsPage } from './routes/MissionAgentsPage';
 import { MissionDocsPage } from './routes/MissionDocsPage';
 import { MissionFactoryPage } from './routes/MissionFactoryPage';
 import { MissionFeedPage } from './routes/MissionFeedPage';
+import { MissionIdeationPage } from './routes/MissionIdeationPage';
 import { MissionFeedbackPage } from './routes/MissionFeedbackPage';
 import { MissionCalendarPage } from './routes/MissionCalendarPage';
 import { MissionCouncilPage } from './routes/MissionCouncilPage';
@@ -35,6 +36,7 @@ export default function App() {
               <Route path="agents" element={<MissionAgentsPage />} />
               <Route path="feed" element={<MissionFeedPage />} />
               <Route path="content" element={<WorkspaceModulePlaceholder segment="content" />} />
+              <Route path="ideation" element={<MissionIdeationPage />} />
               <Route path="approvals" element={<MissionApprovalsPage />} />
               <Route path="council" element={<MissionCouncilPage />} />
               <Route path="calendar" element={<MissionCalendarPage />} />

@@ -16,10 +16,20 @@ const (
 	IdeaStatusShipped  = "shipped"
 )
 
-// AllowedIdeaCategory values align with Mission Control CHECK constraint.
+// AllowedIdeaCategory: legacy MC product buckets plus ideation SOP buckets (Fishtank single-select).
 var AllowedIdeaCategory = map[string]struct{}{
+	// Legacy MC (existing rows / API)
 	"feature": {}, "improvement": {}, "ux": {}, "performance": {}, "integration": {},
 	"infrastructure": {}, "content": {}, "growth": {}, "monetization": {}, "operations": {}, "security": {},
+	// Ideation buckets (slug → stored in ideas.category)
+	"twitter_x_line": {}, "tiktok_reels_shorts": {}, "youtube_video": {}, "short_film": {},
+	"documentation_video": {}, "interview_video": {}, "podcast_episode": {}, "newsletter_series": {},
+	"research_discovery": {}, "investment_idea": {}, "prediction_forecasting": {}, "gamble_betting_systems": {},
+	"gamble": {}, "casino": {},
+	"engineered_software": {}, "nocode_lowcode_product": {},
+	"blockchain_protocol": {}, "meme_coin": {}, "blockchain_smart_contract": {}, "crosschain": {},
+	"iot_device": {}, "electronic_hardware": {},
+	"robot_product": {}, "medical_device": {}, "drugs_pharma": {}, "biotech_gene_aerospace_regulated": {},
 }
 
 // AllowedIdeaComplexity: T-shirt sizes.

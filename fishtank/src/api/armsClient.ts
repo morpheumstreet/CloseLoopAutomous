@@ -107,6 +107,22 @@ export class ArmsClient {
     return body.ideas ?? [];
   }
 
+  /** On-demand research; product must be in `research` stage. Returns updated product (stage → `ideation`). */
+  async runProductResearch(productId: string): Promise<ApiProductDetail> {
+    return this.postJson<ApiProductDetail>(
+      `/api/products/${encodeURIComponent(productId)}/research`,
+      {},
+    );
+  }
+
+  /** Generate and persist idea drafts from research summary; product must be in `ideation` stage. Returns product (stage → `swipe`). */
+  async runProductIdeation(productId: string): Promise<ApiProductDetail> {
+    return this.postJson<ApiProductDetail>(
+      `/api/products/${encodeURIComponent(productId)}/ideation`,
+      {},
+    );
+  }
+
   /** TF-IDF slug + numeric suffix; does not create an idea row. */
   async suggestProductIdeaId(
     productId: string,
@@ -180,7 +196,7 @@ export class ArmsClient {
   async createTask(
     body:
       | { idea_id: string; spec: string }
-      | { product_id: string; spec: string; new_idea_id?: string },
+      | { product_id: string; spec: string; new_idea_id?: string; category?: string },
   ): Promise<ApiTask> {
     return this.postJson<ApiTask>('/api/tasks', body);
   }

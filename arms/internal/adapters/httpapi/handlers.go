@@ -627,7 +627,7 @@ func (h *Handlers) createTask(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(req.IdeaID) != "" {
 		t, err = h.Task.CreateFromApprovedIdea(ctx, domain.IdeaID(strings.TrimSpace(req.IdeaID)), req.Spec)
 	} else {
-		t, err = h.Task.CreateFromSpecWithNewIdea(ctx, domain.ProductID(strings.TrimSpace(req.ProductID)), req.Spec, strings.TrimSpace(req.NewIdeaID))
+		t, err = h.Task.CreateFromSpecWithNewIdea(ctx, domain.ProductID(strings.TrimSpace(req.ProductID)), req.Spec, strings.TrimSpace(req.NewIdeaID), strings.TrimSpace(req.Category))
 	}
 	if err != nil {
 		if mapDomainErr(w, err) {
