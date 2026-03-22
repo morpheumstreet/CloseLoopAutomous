@@ -22,11 +22,11 @@ CREATE TRIGGER IF NOT EXISTS knowledge_entries_ai AFTER INSERT ON knowledge_entr
 END;
 
 CREATE TRIGGER IF NOT EXISTS knowledge_entries_ad AFTER DELETE ON knowledge_entries BEGIN
-  INSERT INTO knowledge_fts(knowledge_fts, rowid) VALUES('delete', old.id);
+  DELETE FROM knowledge_fts WHERE rowid = old.id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS knowledge_entries_au AFTER UPDATE OF content ON knowledge_entries BEGIN
-  INSERT INTO knowledge_fts(knowledge_fts, rowid) VALUES('delete', old.id);
+  DELETE FROM knowledge_fts WHERE rowid = old.id;
   INSERT INTO knowledge_fts(rowid, content) VALUES (new.id, new.content);
 END;
 

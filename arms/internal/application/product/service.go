@@ -19,15 +19,17 @@ type Service struct {
 
 // RegistrationInput creates a product; optional strings extend the MC-style profile.
 type RegistrationInput struct {
-	Name            string
-	WorkspaceID     string
-	RepoURL         string
-	RepoClonePath   string
-	RepoBranch      string
-	Description     string
-	ProgramDocument string
-	SettingsJSON    string
-	IconURL         string
+	Name             string
+	WorkspaceID      string
+	RepoURL          string
+	RepoClonePath    string
+	RepoBranch       string
+	Description      string
+	ProgramDocument  string
+	MissionStatement string
+	VisionStatement  string
+	SettingsJSON     string
+	IconURL          string
 
 	ResearchCadenceSec  *int
 	IdeationCadenceSec  *int
@@ -53,19 +55,21 @@ func (s *Service) Register(ctx context.Context, in RegistrationInput) (*domain.P
 	}
 	now := s.Clock.Now()
 	p := &domain.Product{
-		ID:                  s.IDs.NewProductID(),
-		Name:                in.Name,
-		Stage:               domain.StageResearch,
-		WorkspaceID:         in.WorkspaceID,
-		RepoURL:             strings.TrimSpace(in.RepoURL),
-		RepoClonePath:       strings.TrimSpace(in.RepoClonePath),
-		RepoBranch:          strings.TrimSpace(in.RepoBranch),
-		Description:         strings.TrimSpace(in.Description),
-		ProgramDocument:     strings.TrimSpace(in.ProgramDocument),
-		SettingsJSON:        in.SettingsJSON,
-		IconURL:             strings.TrimSpace(in.IconURL),
-		AutomationTier:      tier,
-		UpdatedAt:           now,
+		ID:               s.IDs.NewProductID(),
+		Name:             in.Name,
+		Stage:            domain.StageResearch,
+		WorkspaceID:      in.WorkspaceID,
+		RepoURL:          strings.TrimSpace(in.RepoURL),
+		RepoClonePath:    strings.TrimSpace(in.RepoClonePath),
+		RepoBranch:       strings.TrimSpace(in.RepoBranch),
+		Description:      strings.TrimSpace(in.Description),
+		ProgramDocument:  strings.TrimSpace(in.ProgramDocument),
+		MissionStatement: strings.TrimSpace(in.MissionStatement),
+		VisionStatement:  strings.TrimSpace(in.VisionStatement),
+		SettingsJSON:     in.SettingsJSON,
+		IconURL:          strings.TrimSpace(in.IconURL),
+		AutomationTier:   tier,
+		UpdatedAt:        now,
 	}
 	if in.ResearchCadenceSec != nil {
 		p.ResearchCadenceSec = *in.ResearchCadenceSec
@@ -87,15 +91,17 @@ func (s *Service) Register(ctx context.Context, in RegistrationInput) (*domain.P
 
 // MetadataPatch updates product profile fields; only non-nil pointers are applied.
 type MetadataPatch struct {
-	Name            *string
-	RepoURL         *string
-	RepoClonePath   *string
-	RepoBranch      *string
-	Description     *string
-	ProgramDocument *string
-	SettingsJSON    *string
-	IconURL         *string
-	MergePolicyJSON *string
+	Name             *string
+	RepoURL          *string
+	RepoClonePath    *string
+	RepoBranch       *string
+	Description      *string
+	ProgramDocument  *string
+	MissionStatement *string
+	VisionStatement  *string
+	SettingsJSON     *string
+	IconURL          *string
+	MergePolicyJSON  *string
 
 	ResearchCadenceSec  *int
 	IdeationCadenceSec  *int
@@ -130,6 +136,12 @@ func (s *Service) PatchMetadata(ctx context.Context, id domain.ProductID, patch 
 	}
 	if patch.ProgramDocument != nil {
 		p.ProgramDocument = strings.TrimSpace(*patch.ProgramDocument)
+	}
+	if patch.MissionStatement != nil {
+		p.MissionStatement = strings.TrimSpace(*patch.MissionStatement)
+	}
+	if patch.VisionStatement != nil {
+		p.VisionStatement = strings.TrimSpace(*patch.VisionStatement)
 	}
 	if patch.SettingsJSON != nil {
 		p.SettingsJSON = *patch.SettingsJSON

@@ -1,13 +1,27 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 import { LayoutGrid, Radio, Users } from 'lucide-react';
 import { useMissionUi } from '../../context/MissionUiContext';
 import type { WorkspaceMainOutletContext } from '../../routes/workspaceMainOutletContext';
+import { AboutModal } from '../shell/AboutModal';
 import { WorkspaceHeaderBar } from '../shell/WorkspaceHeaderBar';
 import { LiveFeedPanel } from './LiveFeedPanel';
 import { MissionControlSidebar } from './MissionControlSidebar';
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+const LIVE_ACTIVITY_PANEL_STORAGE_KEY = 'ft-live-activity-panel-open';
+
+function readLiveActivityPanelOpen(): boolean {
+  try {
+    const v = localStorage.getItem(LIVE_ACTIVITY_PANEL_STORAGE_KEY);
+    if (v === '0') return false;
+    if (v === '1') return true;
+  } catch {
+    /* ignore */
+  }
+  return true;
+}
 
 /**
  * Nested layout under `/p/:productId/*`.
@@ -17,12 +31,21 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 export function WorkspaceShellLayout() {
   const { productId } = useParams<{ productId: string }>();
   const location = useLocation();
-  const { apiError, dismissError, activeWorkspace, tasks } = useMissionUi();
+  const { apiError, dismissError, activeWorkspace, tasks, fetchVersion, armsEnv } = useMissionUi();
   const [boardSearch, setBoardSearch] = useState('');
   const [assigneeAgentId, setAssigneeAgentId] = useState<string | null>(null);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [agentsPaused, setAgentsPaused] = useState(false);
-  const [liveActivityPanelOpen, setLiveActivityPanelOpen] = useState(true);
+  const [liveActivityPanelOpen, setLiveActivityPanelOpen] = useState(readLiveActivityPanelOpen);
+  const [aboutOpen, setAboutOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LIVE_ACTIVITY_PANEL_STORAGE_KEY, liveActivityPanelOpen ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  }, [liveActivityPanelOpen]);
 
   const stats = useMemo(() => {
     if (!activeWorkspace) {
@@ -58,6 +81,7 @@ export function WorkspaceShellLayout() {
   return (
     <div className="ft-screen-fixed">
       <WorkspaceHeaderBar
+        onOpenAbout={() => setAboutOpen(true)}
         missionControl={{
           boardSearch,
           onBoardSearchChange: setBoardSearch,
@@ -85,7 +109,7 @@ export function WorkspaceShellLayout() {
 
       <div className="ft-mc-workspace-body">
         <div className="ft-desktop-only ft-mc-sidebar-slot">
-          <MissionControlSidebar stats={stats} productId={pid} />
+          <MissionControlSidebar stats={stats} productId={pid} onOpenAbout={() => setAboutOpen(true)} />
         </div>
 
         <div className="ft-mc-workspace-main">
@@ -148,6 +172,14 @@ export function WorkspaceShellLayout() {
           {hideDesktopFeedColumn || !liveActivityPanelOpen ? null : <LiveFeedPanel variant="activity" />}
         </div>
       </div>
+
+      <AboutModal
+        open={aboutOpen}
+        onClose={() => setAboutOpen(false)}
+        fetchVersion={fetchVersion}
+        armsEnv={armsEnv}
+        productIdForSse={activeWorkspace?.id ?? null}
+      />
     </div>
   );
 }

@@ -39,9 +39,9 @@ INSERT INTO products (
   repo_url, repo_clone_path, repo_branch, description, program_document, settings_json, icon_url,
   research_cadence_sec, ideation_cadence_sec, automation_tier, auto_dispatch_enabled,
   last_auto_research_at, last_auto_ideation_at, preference_model_json,
-  merge_policy_json, deleted_at, updated_at
+  merge_policy_json, mission_statement, vision_statement, deleted_at, updated_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   name = excluded.name,
   stage = excluded.stage,
@@ -62,13 +62,15 @@ ON CONFLICT(id) DO UPDATE SET
   last_auto_ideation_at = excluded.last_auto_ideation_at,
   preference_model_json = excluded.preference_model_json,
   merge_policy_json = excluded.merge_policy_json,
+  mission_statement = excluded.mission_statement,
+  vision_statement = excluded.vision_statement,
   deleted_at = excluded.deleted_at,
   updated_at = excluded.updated_at
 `, string(p.ID), p.Name, int(p.Stage), p.ResearchSummary, p.WorkspaceID,
 		p.RepoURL, p.RepoClonePath, p.RepoBranch, p.Description, p.ProgramDocument, p.SettingsJSON, p.IconURL,
 		p.ResearchCadenceSec, p.IdeationCadenceSec, tier, boolInt(p.AutoDispatchEnabled),
 		formatOptionalTime(p.LastAutoResearchAt), formatOptionalTime(p.LastAutoIdeationAt), p.PreferenceModelJSON,
-		mpj,
+		mpj, p.MissionStatement, p.VisionStatement,
 		deletedArg,
 		p.UpdatedAt.Format(time.RFC3339Nano))
 	return err
@@ -78,7 +80,7 @@ const productSelectCols = `id, name, stage, research_summary, workspace_id,
   repo_url, repo_clone_path, repo_branch, description, program_document, settings_json, icon_url,
   research_cadence_sec, ideation_cadence_sec, automation_tier, auto_dispatch_enabled,
   last_auto_research_at, last_auto_ideation_at, preference_model_json,
-  merge_policy_json, deleted_at, updated_at`
+  merge_policy_json, mission_statement, vision_statement, deleted_at, updated_at`
 
 func (s *ProductStore) ByID(ctx context.Context, id domain.ProductID) (*domain.Product, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT `+productSelectCols+` FROM products WHERE id = ? AND deleted_at IS NULL`, string(id))
@@ -203,13 +205,13 @@ UPDATE products SET
   repo_url = ?, repo_clone_path = ?, repo_branch = ?, description = ?, program_document = ?, settings_json = ?, icon_url = ?,
   research_cadence_sec = ?, ideation_cadence_sec = ?, automation_tier = ?, auto_dispatch_enabled = ?,
   last_auto_research_at = ?, last_auto_ideation_at = ?, preference_model_json = ?,
-  merge_policy_json = ?, deleted_at = ?, updated_at = ?
+  merge_policy_json = ?, mission_statement = ?, vision_statement = ?, deleted_at = ?, updated_at = ?
 WHERE id = ? AND updated_at = ? AND deleted_at IS NULL`,
 		p.Name, int(p.Stage), p.ResearchSummary, p.WorkspaceID,
 		p.RepoURL, p.RepoClonePath, p.RepoBranch, p.Description, p.ProgramDocument, p.SettingsJSON, p.IconURL,
 		p.ResearchCadenceSec, p.IdeationCadenceSec, tier, boolInt(p.AutoDispatchEnabled),
 		formatOptionalTime(p.LastAutoResearchAt), formatOptionalTime(p.LastAutoIdeationAt), p.PreferenceModelJSON,
-		mpj, deletedArg, newUpdated,
+		mpj, p.MissionStatement, p.VisionStatement, deletedArg, newUpdated,
 		string(p.ID), sinceStr)
 	if err != nil {
 		return err
@@ -253,17 +255,17 @@ func (s *ProductStore) CountLifecycle(ctx context.Context) (active int, deleted 
 
 func scanProductRow(row interface{ Scan(dest ...any) error }) (*domain.Product, error) {
 	var (
-		sid, name, summary, ws                                        string
+		sid, name, summary, ws string
 		repoURL, repoClone, branch, desc, program, settings, icon, updated string
-		tierStr, prefJSON, mergePolJSON                               string
-		lastRes, lastIde                                              string
-		deletedNS                                                     sql.NullString
-		stage, resCad, ideCad, autoDisp                               int
+		tierStr, prefJSON, mergePolJSON, missionStmt, visionStmt string
+		lastRes, lastIde                                         string
+		deletedNS                                                sql.NullString
+		stage, resCad, ideCad, autoDisp                          int
 	)
 	if err := row.Scan(&sid, &name, &stage, &summary, &ws,
 		&repoURL, &repoClone, &branch, &desc, &program, &settings, &icon,
 		&resCad, &ideCad, &tierStr, &autoDisp, &lastRes, &lastIde, &prefJSON,
-		&mergePolJSON, &deletedNS, &updated); err != nil {
+		&mergePolJSON, &missionStmt, &visionStmt, &deletedNS, &updated); err != nil {
 		return nil, err
 	}
 	tier, err := domain.ParseAutomationTier(tierStr)
@@ -291,6 +293,8 @@ func scanProductRow(row interface{ Scan(dest ...any) error }) (*domain.Product, 
 		RepoBranch:          branch,
 		Description:         desc,
 		ProgramDocument:     program,
+		MissionStatement:    missionStmt,
+		VisionStatement:     visionStmt,
 		SettingsJSON:        settings,
 		IconURL:             icon,
 		ResearchCadenceSec:  resCad,

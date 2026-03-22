@@ -1848,8 +1848,16 @@ button.ft-mc-brand:hover {
 }
 
 .ft-mc-nav-item:hover:not(:disabled) {
-  background: var(--mc-bg-tertiary);
+  background: color-mix(in srgb, black 14%, var(--mc-bg-secondary));
   color: var(--mc-text);
+}
+
+.ft-mc-nav-item.ft-mc-nav-item--active:hover:not(:disabled) {
+  background: color-mix(
+    in srgb,
+    var(--mc-accent-purple) 12%,
+    color-mix(in srgb, black 14%, var(--mc-bg-secondary))
+  );
 }
 
 .ft-mc-nav-item:disabled {
@@ -2273,7 +2281,15 @@ button.ft-mc-brand:hover {
 }
 
 .ft-docs-row:hover {
-  background: color-mix(in srgb, var(--mc-bg-tertiary) 55%, transparent);
+  background: color-mix(in srgb, black 14%, var(--mc-bg-secondary));
+}
+
+.ft-docs-row.ft-docs-row--active:hover {
+  background: color-mix(
+    in srgb,
+    var(--mc-accent) 11%,
+    color-mix(in srgb, black 14%, var(--mc-bg-secondary))
+  );
 }
 
 .ft-docs-row--active {

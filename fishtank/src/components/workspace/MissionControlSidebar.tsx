@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Network,
   Radar,
+  Info,
   Rocket,
   Settings,
   Users,
@@ -20,7 +21,8 @@ import {
 
 type NavEntry =
   | { id: string; label: string; icon: LucideIcon; kind: 'workspace'; segment: string }
-  | { id: string; label: string; icon: LucideIcon; kind: 'global'; to: string };
+  | { id: string; label: string; icon: LucideIcon; kind: 'global'; to: string }
+  | { id: string; label: string; icon: LucideIcon; kind: 'about' };
 
 const NAV_ENTRIES: NavEntry[] = [
   { id: 'tasks', label: 'Tasks', icon: CheckSquare, kind: 'workspace', segment: 'tasks' },
@@ -42,6 +44,7 @@ const NAV_ENTRIES: NavEntry[] = [
   { id: 'factory', label: 'Factory', icon: Factory, kind: 'workspace', segment: 'factory' },
   { id: 'pipeline', label: 'Pipeline', icon: Network, kind: 'workspace', segment: 'pipeline' },
   { id: 'feedback', label: 'Feedback', icon: MessageSquare, kind: 'workspace', segment: 'feedback' },
+  { id: 'about', label: 'About', icon: Info, kind: 'about' },
 ];
 
 type Stats = {
@@ -54,6 +57,7 @@ type Stats = {
 type Props = {
   stats: Stats;
   productId: string;
+  onOpenAbout: () => void;
 };
 
 function workspacePath(productId: string, segment: string): string {
@@ -64,7 +68,7 @@ function isWorkspaceNavActive(pathname: string, segment: string): boolean {
   return !!matchPath({ path: `/p/:productId/${segment}`, end: true }, pathname);
 }
 
-export function MissionControlSidebar({ stats, productId }: Props) {
+export function MissionControlSidebar({ stats, productId, onOpenAbout }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
@@ -98,11 +102,17 @@ export function MissionControlSidebar({ stats, productId }: Props) {
           {NAV_ENTRIES.map((entry) => {
             const Icon = entry.icon;
             const isActive =
-              entry.kind === 'workspace'
-                ? isWorkspaceNavActive(pathname, entry.segment)
-                : pathname === entry.to || pathname.startsWith(`${entry.to}/`);
+              entry.kind === 'about'
+                ? false
+                : entry.kind === 'workspace'
+                  ? isWorkspaceNavActive(pathname, entry.segment)
+                  : pathname === entry.to || pathname.startsWith(`${entry.to}/`);
 
             function handleClick() {
+              if (entry.kind === 'about') {
+                onOpenAbout();
+                return;
+              }
               if (!productId) return;
               if (entry.kind === 'workspace') navigate(workspacePath(productId, entry.segment));
               else navigate(entry.to);

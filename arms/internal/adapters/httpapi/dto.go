@@ -14,10 +14,12 @@ type createProductReq struct {
 	RepoURL         string `json:"repo_url,omitempty"`
 	RepoClonePath   string `json:"repo_clone_path,omitempty"`
 	RepoBranch      string `json:"repo_branch,omitempty"`
-	Description     string `json:"description,omitempty"`
-	ProgramDocument string `json:"program_document,omitempty"`
-	SettingsJSON    string `json:"settings_json,omitempty"`
-	IconURL         string `json:"icon_url,omitempty"`
+	Description      string `json:"description,omitempty"`
+	ProgramDocument  string `json:"program_document,omitempty"`
+	MissionStatement string `json:"mission_statement,omitempty"`
+	VisionStatement  string `json:"vision_statement,omitempty"`
+	SettingsJSON     string `json:"settings_json,omitempty"`
+	IconURL          string `json:"icon_url,omitempty"`
 
 	ResearchCadenceSec  *int   `json:"research_cadence_sec,omitempty"`
 	IdeationCadenceSec  *int   `json:"ideation_cadence_sec,omitempty"`
@@ -47,11 +49,13 @@ type patchProductReq struct {
 	RepoURL         *string `json:"repo_url,omitempty"`
 	RepoClonePath   *string `json:"repo_clone_path,omitempty"`
 	RepoBranch      *string `json:"repo_branch,omitempty"`
-	Description     *string `json:"description,omitempty"`
-	ProgramDocument *string `json:"program_document,omitempty"`
-	SettingsJSON    *string `json:"settings_json,omitempty"`
-	IconURL         *string `json:"icon_url,omitempty"`
-	MergePolicyJSON *string `json:"merge_policy_json,omitempty"`
+	Description       *string `json:"description,omitempty"`
+	ProgramDocument   *string `json:"program_document,omitempty"`
+	MissionStatement  *string `json:"mission_statement,omitempty"`
+	VisionStatement   *string `json:"vision_statement,omitempty"`
+	SettingsJSON      *string `json:"settings_json,omitempty"`
+	IconURL           *string `json:"icon_url,omitempty"`
+	MergePolicyJSON   *string `json:"merge_policy_json,omitempty"`
 
 	ResearchCadenceSec  *int    `json:"research_cadence_sec,omitempty"`
 	IdeationCadenceSec  *int    `json:"ideation_cadence_sec,omitempty"`
@@ -80,6 +84,12 @@ func patchProductAuditDetail(r *patchProductReq) map[string]bool {
 	if r.ProgramDocument != nil {
 		m["program_document"] = true
 	}
+	if r.MissionStatement != nil {
+		m["mission_statement"] = true
+	}
+	if r.VisionStatement != nil {
+		m["vision_statement"] = true
+	}
 	if r.SettingsJSON != nil {
 		m["settings_json"] = true
 	}
@@ -106,7 +116,7 @@ func patchProductAuditDetail(r *patchProductReq) map[string]bool {
 
 func (r *patchProductReq) validate() error {
 	if r.Name == nil && r.RepoURL == nil && r.RepoClonePath == nil && r.RepoBranch == nil && r.Description == nil &&
-		r.ProgramDocument == nil && r.SettingsJSON == nil && r.IconURL == nil && r.MergePolicyJSON == nil &&
+		r.ProgramDocument == nil && r.MissionStatement == nil && r.VisionStatement == nil && r.SettingsJSON == nil && r.IconURL == nil && r.MergePolicyJSON == nil &&
 		r.ResearchCadenceSec == nil && r.IdeationCadenceSec == nil && r.AutomationTier == nil && r.AutoDispatchEnabled == nil {
 		return fmt.Errorf("at least one field is required")
 	}

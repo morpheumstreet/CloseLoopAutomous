@@ -152,12 +152,7 @@ function knowledgeKindFromNameAndType(fileName: string, mime: string): SourceFor
     return 'markdown';
   }
   if (name.endsWith('.pdf') || m === 'application/pdf') return 'pdf';
-  if (
-    name.endsWith('.docx') ||
-    name.endsWith('.doc') ||
-    m.includes('wordprocessingml') ||
-    m === 'application/msword'
-  ) {
+  if (name.endsWith('.docx') || m.includes('wordprocessingml')) {
     return 'word';
   }
   return null;
@@ -494,7 +489,7 @@ export function MissionDocsPage() {
 
   const importKnowledgeFile = useCallback(async (file: File) => {
     if (!isAcceptedKnowledgeFile(file)) {
-      setFormError('Use .md, .markdown, .txt, .pdf, .doc, or .docx only.');
+      setFormError('Use .md, .markdown, .txt, .pdf, or .docx only.');
       return;
     }
     const fmt = fileSourceFormat(file)!;
@@ -548,7 +543,7 @@ export function MissionDocsPage() {
     setDropVisual('idle');
     const files = Array.from(e.dataTransfer.files ?? []).filter(isAcceptedKnowledgeFile);
     if (files.length === 0) {
-      setFormError('Drop a .md, .txt, .pdf, .doc, or .docx file.');
+      setFormError('Drop a .md, .txt, .pdf, or .docx file.');
       return;
     }
     if (files.length > 1) {
@@ -848,7 +843,7 @@ export function MissionDocsPage() {
                             ref={fileInputRef}
                             type="file"
                             className="ft-docs-file-input-hidden"
-                            accept=".md,.markdown,.txt,.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain"
+                            accept=".md,.markdown,.txt,.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain"
                             aria-hidden
                             tabIndex={-1}
                             onChange={(ev) => {
@@ -869,8 +864,8 @@ export function MissionDocsPage() {
                             <Upload size={28} className="ft-docs-dropzone__icon" aria-hidden />
                             <p className="ft-docs-dropzone__title">Drop files here</p>
                             <p className="ft-docs-dropzone__hint ft-muted">
-                              Accepted: <strong>.md</strong>, <strong>.txt</strong>, <strong>.pdf</strong>, <strong>.doc</strong>,{' '}
-                              <strong>.docx</strong>. Highlight turns{' '}
+                              Accepted: <strong>.md</strong>, <strong>.txt</strong>, <strong>.pdf</strong>, <strong>.docx</strong>.
+                              Highlight turns{' '}
                               <span className="ft-docs-dropzone__legend ft-docs-dropzone__legend--ok">green</span> when all
                               dragged files match,{' '}
                               <span className="ft-docs-dropzone__legend ft-docs-dropzone__legend--bad">red</span> when any

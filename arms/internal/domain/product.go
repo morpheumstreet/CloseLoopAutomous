@@ -12,18 +12,20 @@ type Product struct {
 	WorkspaceID     string // logical isolation key (e.g. repo / worktree scope)
 
 	// Extended fields (Mission Control–style product profile).
-	RepoURL         string
-	RepoClonePath   string // optional absolute path to local git clone on the arms host (worktree / CI)
-	RepoBranch      string
-	Description     string // short blurb
-	ProgramDocument string // product program / charter (injected into research/ideation later)
-	SettingsJSON    string // opaque JSON for product-scoped settings
-	IconURL         string
+	RepoURL          string
+	RepoClonePath    string // optional absolute path to local git clone on the arms host (worktree / CI)
+	RepoBranch       string
+	Description      string // short blurb
+	ProgramDocument  string // product program / charter (injected into research/ideation later)
+	MissionStatement string // optional team mission (UI / prompts)
+	VisionStatement  string // optional team vision (UI / prompts)
+	SettingsJSON     string // opaque JSON for product-scoped settings
+	IconURL          string
 
 	// Autopilot scheduling (§5): 0 = disabled for that phase.
 	ResearchCadenceSec  int
 	IdeationCadenceSec  int
-	AutomationTier    AutomationTier
+	AutomationTier      AutomationTier
 	AutoDispatchEnabled bool
 	LastAutoResearchAt  time.Time
 	LastAutoIdeationAt  time.Time

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { useState } from 'react';
-import { Bot, Info, Users } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Bot, Compass, Info, Target, Users } from 'lucide-react';
+import { ArmsHttpError } from '../api/armsClient';
 import { useMissionUi } from '../context/MissionUiContext';
 import type { Agent } from '../domain/types';
 
@@ -120,10 +121,43 @@ function DemoOrgBranch({ node, depth }: { node: DemoOrgNode; depth: number }) {
 }
 
 export function MissionTeamPage() {
-  const { activeWorkspace, agents } = useMissionUi();
+  const { activeWorkspace, agents, productDetail, client, refreshActiveBoard } = useMissionUi();
   const [orgLayout, setOrgLayout] = useState<TeamOrgLayout>('outline');
   const productId = activeWorkspace?.id ?? '';
   const liveAgents = productId ? agents.filter((a) => a.workspaceId === productId) : [];
+
+  const [missionDraft, setMissionDraft] = useState('');
+  const [visionDraft, setVisionDraft] = useState('');
+  const [statementsBusy, setStatementsBusy] = useState(false);
+  const [statementsError, setStatementsError] = useState<string | null>(null);
+  const [statementsSaved, setStatementsSaved] = useState(false);
+
+  useEffect(() => {
+    setMissionDraft(productDetail?.mission_statement?.trim() ?? '');
+    setVisionDraft(productDetail?.vision_statement?.trim() ?? '');
+    setStatementsSaved(false);
+  }, [productDetail?.id, productDetail?.mission_statement, productDetail?.vision_statement]);
+
+  const saveStatements = useCallback(async () => {
+    if (!productId) return;
+    setStatementsError(null);
+    setStatementsSaved(false);
+    setStatementsBusy(true);
+    try {
+      const updated = await client.patchProduct(productId, {
+        mission_statement: missionDraft.trim(),
+        vision_statement: visionDraft.trim(),
+      });
+      setMissionDraft(updated.mission_statement?.trim() ?? '');
+      setVisionDraft(updated.vision_statement?.trim() ?? '');
+      setStatementsSaved(true);
+      await refreshActiveBoard({ silent: true });
+    } catch (e) {
+      setStatementsError(e instanceof ArmsHttpError ? e.message : e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setStatementsBusy(false);
+    }
+  }, [client, missionDraft, productId, refreshActiveBoard, visionDraft]);
 
   return (
     <div className="ft-queue-flex" style={{ flex: 1, minWidth: 0, minHeight: 0, padding: '0.75rem', overflow: 'auto' }}>
@@ -137,6 +171,81 @@ export function MissionTeamPage() {
           <strong style={{ color: 'var(--mc-fg, inherit)' }}>{activeWorkspace?.name ?? 'this workspace'}</strong>.
           Live roster comes from agent health; this page always shows a reference layout when the registry is empty.
         </p>
+
+        {productId ? (
+          <section
+            style={{
+              marginBottom: '1.25rem',
+              padding: '1rem',
+              borderRadius: 'var(--ft-radius-sm)',
+              border: '1px solid var(--mc-border)',
+              background: 'var(--mc-bg-secondary)',
+            }}
+          >
+            <div className="ft-upper-label" style={{ marginBottom: '0.65rem' }}>
+              Mission &amp; vision
+            </div>
+            <p className="ft-muted" style={{ fontSize: '0.72rem', margin: '0 0 0.85rem', lineHeight: 1.45 }}>
+              Optional statements stored on the product via <code className="ft-mono">{'PATCH /api/products/{id}'}</code>. Save with empty fields to
+              clear. Shown here for the team; use them in reviews and onboarding as you like.
+            </p>
+            <div style={{ display: 'grid', gap: '0.85rem' }}>
+              <label style={{ display: 'block' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                  <Target size={14} className="ft-muted" aria-hidden />
+                  Mission statement
+                </span>
+                <textarea
+                  className="ft-input"
+                  rows={3}
+                  value={missionDraft}
+                  onChange={(e) => {
+                    setMissionDraft(e.target.value);
+                    setStatementsSaved(false);
+                  }}
+                  placeholder="Why this mission exists — outcomes, scope, or north star (optional)"
+                  style={{ width: '100%', resize: 'vertical', minHeight: '4.5rem', fontSize: '0.8rem' }}
+                />
+              </label>
+              <label style={{ display: 'block' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                  <Compass size={14} className="ft-muted" aria-hidden />
+                  Vision statement
+                </span>
+                <textarea
+                  className="ft-input"
+                  rows={3}
+                  value={visionDraft}
+                  onChange={(e) => {
+                    setVisionDraft(e.target.value);
+                    setStatementsSaved(false);
+                  }}
+                  placeholder="Where we are headed longer term — optional"
+                  style={{ width: '100%', resize: 'vertical', minHeight: '4.5rem', fontSize: '0.8rem' }}
+                />
+              </label>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem' }}>
+              <button type="button" className="ft-btn-primary" disabled={statementsBusy} onClick={() => void saveStatements()}>
+                {statementsBusy ? 'Saving…' : 'Save statements'}
+              </button>
+              {statementsSaved ? (
+                <span className="ft-muted" style={{ fontSize: '0.72rem' }}>
+                  Saved.
+                </span>
+              ) : null}
+            </div>
+            {statementsError ? (
+              <p className="ft-banner ft-banner--error" role="alert" style={{ margin: '0.65rem 0 0', fontSize: '0.75rem' }}>
+                {statementsError}
+              </p>
+            ) : null}
+          </section>
+        ) : (
+          <p className="ft-muted" style={{ fontSize: '0.72rem', margin: '0 0 1rem' }}>
+            Open a workspace to edit mission and vision statements.
+          </p>
+        )}
 
         {liveAgents.length > 0 ? (
           <section style={{ marginBottom: '1.25rem' }}>

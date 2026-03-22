@@ -15,7 +15,6 @@ import {
 import { useMissionUi } from '../../context/MissionUiContext';
 import { BackendConnectionPill } from './BackendConnectionPill';
 import { ThemeCycleButton } from './ThemeCycleButton';
-import { AboutModal } from './AboutModal';
 import { MissionControlOverviewModal, type MissionControlWorkspaceStats } from './MissionControlOverviewModal';
 import { formatClock } from '../../lib/time';
 
@@ -33,9 +32,10 @@ export type MissionControlHeaderExtras = {
 
 type Props = {
   missionControl?: MissionControlHeaderExtras | null;
+  onOpenAbout: () => void;
 };
 
-export function WorkspaceHeaderBar({ missionControl = null }: Props) {
+export function WorkspaceHeaderBar({ missionControl = null, onOpenAbout }: Props) {
   const navigate = useNavigate();
   const {
     activeWorkspace,
@@ -45,11 +45,9 @@ export function WorkspaceHeaderBar({ missionControl = null }: Props) {
     tasks,
     agents,
     fetchVersion,
-    armsEnv,
     refreshActiveBoard,
   } = useMissionUi();
   const [now, setNow] = useState(() => new Date());
-  const [aboutOpen, setAboutOpen] = useState(false);
   const [mcOverviewOpen, setMcOverviewOpen] = useState(false);
 
   useEffect(() => {
@@ -158,7 +156,7 @@ export function WorkspaceHeaderBar({ missionControl = null }: Props) {
             <RefreshCw size={18} />
           </button>
           <ThemeCycleButton />
-          <button type="button" className="ft-btn-icon" title="About / settings" onClick={() => setAboutOpen(true)}>
+          <button type="button" className="ft-btn-icon" title="About / settings" onClick={onOpenAbout}>
             <Settings size={18} />
           </button>
          
@@ -177,14 +175,6 @@ export function WorkspaceHeaderBar({ missionControl = null }: Props) {
             workspaceStats={missionControl.workspaceStats}
           />
         ) : null}
-
-        <AboutModal
-          open={aboutOpen}
-          onClose={() => setAboutOpen(false)}
-          fetchVersion={fetchVersion}
-          armsEnv={armsEnv}
-          productIdForSse={activeWorkspace?.id ?? null}
-        />
       </header>
     );
   }
@@ -252,18 +242,10 @@ export function WorkspaceHeaderBar({ missionControl = null }: Props) {
         <button type="button" className="ft-btn-icon" title="Activity / operations log" onClick={() => navigate('/activity')}>
           <Activity size={20} />
         </button>
-        <button type="button" className="ft-btn-icon" title="About Fishtank / arms version" onClick={() => setAboutOpen(true)}>
+        <button type="button" className="ft-btn-icon" title="About Fishtank / arms version" onClick={onOpenAbout}>
           <Settings size={20} />
         </button>
       </div>
-
-      <AboutModal
-        open={aboutOpen}
-        onClose={() => setAboutOpen(false)}
-        fetchVersion={fetchVersion}
-        armsEnv={armsEnv}
-        productIdForSse={activeWorkspace?.id ?? null}
-      />
     </header>
   );
 }

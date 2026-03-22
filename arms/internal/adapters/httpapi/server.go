@@ -11,6 +11,7 @@ func NewRouter(cfg Config, h *Handlers) http.Handler {
 	mux.Handle("GET /api/health", http.HandlerFunc(h.health))
 	mux.Handle("GET /api/version", http.HandlerFunc(h.version))
 	mux.Handle("GET /api/ops/summary", http.HandlerFunc(h.opsSummary))
+	mux.Handle("GET /api/ops/host-metrics", http.HandlerFunc(h.opsHostMetrics))
 	mux.Handle("GET /api/docs/routes", http.HandlerFunc(h.routesDoc))
 	mux.Handle("POST /api/webhooks/agent-completion", http.HandlerFunc(h.agentCompletionWebhook))
 	mux.Handle("POST /api/webhooks/ci-completion", http.HandlerFunc(h.ciCompletionWebhook))

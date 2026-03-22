@@ -210,6 +210,8 @@ components:
         repo_branch: { type: string }
         description: { type: string }
         program_document: { type: string }
+        mission_statement: { type: string, description: Optional team mission (Team page) }
+        vision_statement: { type: string, description: Optional team vision (Team page) }
         settings_json: { type: string }
         icon_url: { type: string }
         research_cadence_sec: { type: integer, description: "0 disables scheduled research ticks" }
@@ -518,6 +520,8 @@ components:
         repo_branch: { type: string }
         description: { type: string }
         program_document: { type: string }
+        mission_statement: { type: string }
+        vision_statement: { type: string }
         settings_json: { type: string }
         icon_url: { type: string }
         research_cadence_sec: { type: integer }
@@ -536,6 +540,8 @@ components:
         repo_branch: { type: string }
         description: { type: string }
         program_document: { type: string }
+        mission_statement: { type: string }
+        vision_statement: { type: string }
         settings_json: { type: string }
         icon_url: { type: string }
         research_cadence_sec: { type: integer }

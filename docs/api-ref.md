@@ -16,7 +16,7 @@ REST surface for the `arms` service (`cmd/arms`). **JSON** request and response 
 | **Bearer** | Set `MC_API_TOKEN`. Send `Authorization: Bearer <token>` on API calls. The same header is accepted on **`GET /api/live/events`** when auth is enabled (for fetch-based or custom SSE clients). |
 | **Same-origin** | If `ARMS_ALLOW_SAME_ORIGIN=1` or `true`, browser requests from the same origin may omit Bearer when a token is configured. |
 
-**Unauthenticated by design:** `GET /api/health`, `GET /api/docs/routes`, `POST /api/webhooks/agent-completion`, `POST /api/webhooks/ci-completion`. **`GET /api/live/events`** is open only when **`MC_API_TOKEN` is unset** and **`ARMS_ACL`** is empty; otherwise see **SSE** below.
+**Unauthenticated by design:** `GET /api/health`, `GET /api/version`, `GET /api/ops/summary`, `GET /api/ops/host-metrics`, `GET /api/docs/routes`, `POST /api/webhooks/agent-completion`, `POST /api/webhooks/ci-completion`. **`GET /api/live/events`** is open only when **`MC_API_TOKEN` is unset** and **`ARMS_ACL`** is empty; otherwise see **SSE** below.
 
 ### Request correlation
 
@@ -39,14 +39,62 @@ Common `code` values from domain mapping include `not_found`, `invalid_transitio
 
 ---
 
+## Health, version, and operator metrics
+
+These routes are registered on the outer mux (no Bearer requirement), same as **`GET /api/docs/routes`.** Use **`MC_API_TOKEN`** in production so the rest of the API is protected; these endpoints remain useful for probes and dashboards without a token.
+
+| Method | Path | Body | Notes |
+|--------|------|------|--------|
+| GET | `/api/health` | — | **`200`** `{ "status": "ok" }` — liveness. |
+| GET | `/api/version` | — | Build metadata from linker-injected **`BuildVersion`** / **`BuildCommit`**: `version`, `tag`, `number` (semver core when derivable), `commits_after_tag`, `commit`, `dirty`. |
+| GET | `/api/ops/summary` | — | Operator snapshot: `schema_version_expected`, `build_version`, `build_commit`, `products.active`, `products.deleted` (lifecycle counts). |
+| GET | `/api/ops/host-metrics` | — | **Host running this `arms` process** — CPU, RAM, and root (or Windows system drive) disk usage via [gopsutil v4](https://github.com/shirou/gopsutil). **200** JSON shape below. Adds **~200ms** latency for one CPU utilization sample. **`load_avg`** is omitted on platforms where load averages are unavailable (e.g. Windows). **500** if memory or disk stats cannot be read. |
+
+### `GET /api/ops/host-metrics` response
+
+```json
+{
+  "cpu": {
+    "logical_cores": 8,
+    "physical_cores": 4,
+    "percent_total": 12.34,
+    "sample_interval": "200ms",
+    "load_avg": { "load1": 1.2, "load5": 1.1, "load15": 0.9 }
+  },
+  "memory": {
+    "total_bytes": 17179869184,
+    "available_bytes": 4294967296,
+    "used_bytes": 12884901888,
+    "used_percent": 75.0
+  },
+  "disk": {
+    "path": "/",
+    "total_bytes": 994662584320,
+    "free_bytes": 198932516864,
+    "used_bytes": 795730067456,
+    "used_percent": 80.0,
+    "inodes_total": 0,
+    "inodes_used": 0,
+    "inodes_free": 0,
+    "inodes_percent": 0.0
+  }
+}
+```
+
+- **`cpu.load_avg`**: present only when the OS exposes load averages (e.g. Linux, macOS).
+- **`disk.path`**: **`/`** on Unix; on Windows, typically **`C:\`** (from **`SystemDrive`** when set).
+- **Inode** fields are populated when the platform provides them; otherwise they may be zero.
+
+---
+
 ## Products and ideas
 
 | Method | Path | Body (JSON) | Notes |
 |--------|------|-------------|--------|
-| POST | `/api/products` | `name`, `workspace_id`; optional profile fields; optional **`merge_policy_json`** (must parse as JSON); optional `research_cadence_sec`, `ideation_cadence_sec` (≥0, 0=off), `automation_tier` (`supervised` \| `semi_auto` \| `full_auto`), `auto_dispatch_enabled` | Create product (Mission Control–style profile + autopilot metadata). Invalid **`merge_policy_json`** → **400** `invalid_input`. |
+| POST | `/api/products` | `name`, `workspace_id`; optional profile fields (including **`mission_statement`**, **`vision_statement`**); optional **`merge_policy_json`** (must parse as JSON); optional `research_cadence_sec`, `ideation_cadence_sec` (≥0, 0=off), `automation_tier` (`supervised` \| `semi_auto` \| `full_auto`), `auto_dispatch_enabled` | Create product (Mission Control–style profile + autopilot metadata). Invalid **`merge_policy_json`** → **400** `invalid_input`. |
 | GET | `/api/products` | — | `{ "products": [ … ] }` — list products (dashboards / UIs). |
-| GET | `/api/products/{id}` | — | Response includes profile fields, cadence/tier, `preference_model_json`, **`merge_policy_json`**, parsed **`merge_policy`** (`merge_method`, optional `merge_backend_override`), **`merge_queue_pending`** (when merge queue is wired), optional `last_auto_*` timestamps. |
-| PATCH | `/api/products/{id}` | Any subset of profile + autopilot fields above; optional **`merge_policy_json`** (string, JSON for `merge_method` / `merge_backend`) | At least one field required. Does not change pipeline `stage` (use research/ideation). Appends **`operations_log`** row **`product.patch`** (fields touched). |
+| GET | `/api/products/{id}` | — | Response includes profile fields (including **`mission_statement`**, **`vision_statement`**), cadence/tier, `preference_model_json`, **`merge_policy_json`**, parsed **`merge_policy`** (`merge_method`, optional `merge_backend_override`), **`merge_queue_pending`** (when merge queue is wired), optional `last_auto_*` timestamps. |
+| PATCH | `/api/products/{id}` | Any subset of profile + autopilot fields above; optional **`mission_statement`** / **`vision_statement`** (empty string clears); optional **`merge_policy_json`** (string, JSON for `merge_method` / `merge_backend`) | At least one field required. Does not change pipeline `stage` (use research/ideation). Appends **`operations_log`** row **`product.patch`** (fields touched). |
 | PATCH | `/api/products/{id}/cost-caps` | At least one of: `daily_cap`, `monthly_cap`, `cumulative_cap` (numbers) | **Negative** value for an axis **clears** that limit (unlimited on that axis). Upserts `cost_caps` row. |
 | GET | `/api/products/{id}/costs/breakdown` | — | Query: optional `from`, `to` (RFC3339 / RFC3339Nano). JSON: `total`, `events[]`, `by_agent`, `by_model`. |
 | POST | `/api/products/{id}/research` | — | Run research phase. The full product record (including `program_document`, `description`, repo fields) is passed to the research port for prompt context. |

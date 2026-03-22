@@ -1,13 +1,22 @@
 import type { ArmsEnv } from '../config/armsEnv';
 import type {
   ApiAgentHealthItem,
+  ApiConvoy,
+  ApiConvoyDispatchWaveResponse,
   ApiKnowledgeEntry,
+  ApiMaybePoolIdea,
   ApiOperationLogEntry,
   ApiProduct,
   ApiProductDetail,
+  ApiProductFeedback,
+  ApiProductSchedule,
+  ApiResearchCycle,
   ApiTask,
   ApiTfidfSuggestTagsResponse,
   ApiVersion,
+  ApiHostMetrics,
+  PatchProductBody,
+  PatchProductScheduleBody,
 } from './armsTypes';
 
 /** Body for `POST /api/products/{id}/nlp/tfidf-suggest-tags`. */
@@ -64,6 +73,11 @@ export class ArmsClient {
     return this.getJson<ApiVersion>('/api/version');
   }
 
+  /** CPU, RAM, and root disk for the host process (short CPU sample on server). */
+  async hostMetrics(): Promise<ApiHostMetrics> {
+    return this.getJson<ApiHostMetrics>('/api/ops/host-metrics');
+  }
+
   async listProducts(): Promise<ApiProduct[]> {
     const body = await this.getJson<{ products: ApiProduct[] }>('/api/products');
     return body.products ?? [];
@@ -73,11 +87,62 @@ export class ArmsClient {
     return this.getJson<ApiProductDetail>(`/api/products/${encodeURIComponent(id)}`);
   }
 
+  async patchProduct(id: string, body: PatchProductBody): Promise<ApiProductDetail> {
+    return this.patchJson<ApiProductDetail>(`/api/products/${encodeURIComponent(id)}`, body);
+  }
+
   async listProductTasks(productId: string): Promise<ApiTask[]> {
     const body = await this.getJson<{ tasks: ApiTask[] }>(
       `/api/products/${encodeURIComponent(productId)}/tasks`,
     );
     return body.tasks ?? [];
+  }
+
+  async listProductConvoys(productId: string): Promise<ApiConvoy[]> {
+    const body = await this.getJson<{ convoys?: ApiConvoy[] }>(
+      `/api/products/${encodeURIComponent(productId)}/convoys`,
+    );
+    return body.convoys ?? [];
+  }
+
+  async dispatchTaskConvoyWave(
+    taskId: string,
+    estimatedCost = 0,
+  ): Promise<ApiConvoyDispatchWaveResponse> {
+    return this.postJson<ApiConvoyDispatchWaveResponse>(
+      `/api/tasks/${encodeURIComponent(taskId)}/convoy/dispatch`,
+      { estimated_cost: estimatedCost },
+    );
+  }
+
+  /** 503 → configured: false when maybe pool store is not wired. */
+  async listProductMaybePool(
+    productId: string,
+  ): Promise<{ ideas: ApiMaybePoolIdea[]; configured: boolean }> {
+    const res = await this.raw(
+      'GET',
+      `/api/products/${encodeURIComponent(productId)}/maybe-pool`,
+    );
+    if (res.status === 503) {
+      return { ideas: [], configured: false };
+    }
+    if (!res.ok) {
+      const err = await readErrorBody(res);
+      throw new ArmsHttpError(err.message, res.status, err.code);
+    }
+    const body = (await res.json()) as { ideas?: ApiMaybePoolIdea[] };
+    return { ideas: body.ideas ?? [], configured: true };
+  }
+
+  async batchReevalProductMaybePool(
+    productId: string,
+    body: { note?: string; next_evaluate_delay_sec?: number } = {},
+  ): Promise<ApiMaybePoolIdea[]> {
+    const res = await this.postJson<{ ideas?: ApiMaybePoolIdea[] }>(
+      `/api/products/${encodeURIComponent(productId)}/maybe-pool/batch-reeval`,
+      body,
+    );
+    return res.ideas ?? [];
   }
 
   async getTask(taskId: string): Promise<ApiTask> {
@@ -154,6 +219,19 @@ export class ArmsClient {
     const path = qs ? `/api/operations-log?${qs}` : '/api/operations-log';
     const body = await this.getJson<{ entries?: ApiOperationLogEntry[] }>(path);
     return body.entries ?? [];
+  }
+
+  async listProductResearchCycles(
+    productId: string,
+    opts?: { limit?: number },
+  ): Promise<ApiResearchCycle[]> {
+    const sp = new URLSearchParams();
+    if (opts?.limit != null) sp.set('limit', String(opts.limit));
+    const qs = sp.toString();
+    const base = `/api/products/${encodeURIComponent(productId)}/research-cycles`;
+    const path = qs ? `${base}?${qs}` : base;
+    const body = await this.getJson<{ research_cycles?: ApiResearchCycle[] }>(path);
+    return body.research_cycles ?? [];
   }
 
   /** Empty when agent health is not configured (503) or on other errors we treat as unavailable. */
@@ -234,6 +312,62 @@ export class ArmsClient {
   ): Promise<ApiTfidfSuggestTagsResponse> {
     return this.postJson<ApiTfidfSuggestTagsResponse>(
       `/api/products/${encodeURIComponent(productId)}/nlp/tfidf-suggest-tags`,
+      body,
+    );
+  }
+
+  async listProductFeedback(
+    productId: string,
+    opts?: { limit?: number },
+  ): Promise<ApiProductFeedback[]> {
+    const sp = new URLSearchParams();
+    if (opts?.limit != null) sp.set('limit', String(opts.limit));
+    const qs = sp.toString();
+    const base = `/api/products/${encodeURIComponent(productId)}/feedback`;
+    const path = qs ? `${base}?${qs}` : base;
+    const body = await this.getJson<{ feedback?: ApiProductFeedback[] }>(path);
+    return body.feedback ?? [];
+  }
+
+  async appendProductFeedback(
+    productId: string,
+    body: {
+      source: string;
+      content: string;
+      customer_id?: string;
+      category?: string;
+      sentiment?: string;
+      idea_id?: string;
+    },
+  ): Promise<ApiProductFeedback> {
+    return this.postJson<ApiProductFeedback>(
+      `/api/products/${encodeURIComponent(productId)}/feedback`,
+      body,
+    );
+  }
+
+  async patchProductFeedback(
+    feedbackId: string,
+    body: { processed: boolean },
+  ): Promise<ApiProductFeedback> {
+    return this.patchJson<ApiProductFeedback>(
+      `/api/product-feedback/${encodeURIComponent(feedbackId)}`,
+      body,
+    );
+  }
+
+  async getProductSchedule(productId: string): Promise<ApiProductSchedule> {
+    return this.getJson<ApiProductSchedule>(
+      `/api/products/${encodeURIComponent(productId)}/product-schedule`,
+    );
+  }
+
+  async patchProductSchedule(
+    productId: string,
+    body: PatchProductScheduleBody,
+  ): Promise<ApiProductSchedule> {
+    return this.patchJson<ApiProductSchedule>(
+      `/api/products/${encodeURIComponent(productId)}/product-schedule`,
       body,
     );
   }
