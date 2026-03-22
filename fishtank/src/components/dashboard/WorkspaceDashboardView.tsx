@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Activity, Folder, Info, Plus, RefreshCw, Rocket, Unplug } from 'lucide-react';
 import { useMissionUi } from '../../context/MissionUiContext';
 import { BackendConnectionPill } from '../shell/BackendConnectionPill';
@@ -8,9 +9,9 @@ import type { WorkspaceStats } from '../../domain/types';
 import { CreateProductModal } from './CreateProductModal';
 
 export function WorkspaceDashboardView() {
+  const navigate = useNavigate();
   const {
     workspaces,
-    openWorkspace,
     refreshWorkspaces,
     registerProduct,
     listLoading,
@@ -18,9 +19,15 @@ export function WorkspaceDashboardView() {
     dismissError,
     isOnline,
     fetchVersion,
+    goHome,
+    armsEnv,
   } = useMissionUi();
   const [modalOpen, setModalOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+
+  useEffect(() => {
+    goHome();
+  }, [goHome]);
 
   return (
     <div className="ft-screen">
@@ -46,11 +53,11 @@ export function WorkspaceDashboardView() {
                 <RefreshCw size={16} className={listLoading ? 'ft-spin' : ''} />
                 Refresh
               </button>
-              <button type="button" className="ft-btn-ghost" disabled title="Autopilot UI (next)">
+              <button type="button" className="ft-btn-ghost" onClick={() => navigate('/autopilot')} title="Autopilot">
                 <Rocket size={16} />
                 Autopilot
               </button>
-              <button type="button" className="ft-btn-ghost" disabled title="Activity dashboard (next)">
+              <button type="button" className="ft-btn-ghost" onClick={() => navigate('/activity')} title="Operations log">
                 <Activity size={16} />
                 Activity Dashboard
               </button>
@@ -84,15 +91,17 @@ export function WorkspaceDashboardView() {
             Products
           </h2>
           <p className="ft-muted">
-            Data from arms — each card is a <code className="ft-mono">GET /api/products</code> row with live
-            task counts
+            Data from arms — each card is a <code className="ft-mono">GET /api/products</code> row with live task counts. Open a product for{' '}
+            <code className="ft-mono">/p/&lt;id&gt;</code> deep links.
           </p>
         </div>
 
         {listLoading && workspaces.length === 0 ? (
-          <p className="ft-muted" style={{ padding: '2rem 0' }}>
-            Loading products…
-          </p>
+          <div style={{ display: 'grid', gap: '0.75rem' }} aria-busy="true" aria-label="Loading products">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="ft-skeleton" style={{ height: '5.5rem', borderRadius: 'var(--ft-radius-sm)' }} />
+            ))}
+          </div>
         ) : workspaces.length === 0 && !isOnline ? (
           <BackendOfflineCallout onRetry={() => void refreshWorkspaces()} retrying={listLoading} />
         ) : workspaces.length === 0 ? (
@@ -100,7 +109,7 @@ export function WorkspaceDashboardView() {
         ) : (
           <div className="ft-grid-ws ft-animate-slide-in">
             {workspaces.map((w) => (
-              <WorkspaceCard key={w.id} workspace={w} onOpen={() => void openWorkspace(w)} />
+              <WorkspaceCard key={w.id} workspace={w} onOpen={() => navigate(`/p/${encodeURIComponent(w.id)}`)} />
             ))}
             <button type="button" className="ft-add-card" onClick={() => setModalOpen(true)}>
               <div className="ft-add-card-icon">
@@ -115,9 +124,12 @@ export function WorkspaceDashboardView() {
       <CreateProductModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onCreate={(name, workspaceId) => registerProduct(name, workspaceId)}
+        onCreate={async (name, workspaceId) => {
+          const id = await registerProduct(name, workspaceId);
+          navigate(`/p/${encodeURIComponent(id)}`);
+        }}
       />
-      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} fetchVersion={fetchVersion} />
+      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} fetchVersion={fetchVersion} armsEnv={armsEnv} productIdForSse={null} />
     </div>
   );
 }

@@ -34,6 +34,19 @@ export interface Task {
   status: TaskStatus;
   workspaceId: string;
   updatedAt: string;
+  ideaId: string;
+  spec: string;
+  statusReason?: string;
+  planApproved?: boolean;
+  clarificationsJson?: string;
+  sandboxPath?: string;
+  worktreePath?: string;
+  pullRequestUrl?: string;
+  pullRequestHeadBranch?: string;
+  pullRequestNumber?: number;
+  currentExecutionAgentId?: string;
+  createdAt?: string;
+  externalRef?: string;
 }
 
 export type FeedEventType =
@@ -41,9 +54,15 @@ export type FeedEventType =
   | 'task_status_changed'
   | 'task_completed'
   | 'task_dispatched'
+  | 'task_stall_nudged'
+  | 'task_execution_reassigned'
+  | 'task_chat_message'
   | 'cost_recorded'
   | 'checkpoint_saved'
   | 'pull_request_opened'
+  | 'merge_ship_completed'
+  | 'convoy_subtask_dispatched'
+  | 'convoy_subtask_completed'
   | 'agent_status_changed'
   | 'system';
 
@@ -52,6 +71,8 @@ export interface FeedEvent {
   type: FeedEventType;
   message: string;
   createdAt: string;
+  /** Raw SSE JSON for dev inspector */
+  raw?: Record<string, unknown>;
 }
 
 export interface KanbanColumn {
@@ -59,3 +80,9 @@ export interface KanbanColumn {
   label: string;
   columnClass: string;
 }
+
+export type StalledTaskRow = {
+  taskId: string;
+  status: string;
+  reason: string;
+};

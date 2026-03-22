@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -17,17 +18,25 @@ import (
 )
 
 func main() {
-	cfg := config.LoadFromEnv()
+	var configPath string
+	flag.StringVar(&configPath, "c", "", "optional path to config.json or config.toml (same keys as env vars; environment overrides file)")
+	flag.Parse()
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		slog.Error("config", "err", err)
+		os.Exit(1)
+	}
 	initLogging(cfg)
 	if cfg.RedisAddr == "" {
 		slog.Info("arms-worker: ARMS_REDIS_ADDR not set — exiting (no Redis consumer)")
 		return
 	}
 	openCtx, cancelOpen := context.WithTimeout(context.Background(), 2*time.Minute)
-	app, err := platform.OpenApp(openCtx, cfg, platform.Build{})
+	app, errOpen := platform.OpenApp(openCtx, cfg, platform.Build{})
 	cancelOpen()
-	if err != nil {
-		slog.Error("open app", "err", err)
+	if errOpen != nil {
+		slog.Error("open app", "err", errOpen)
 		os.Exit(1)
 	}
 	defer func() { _ = app.Close() }()

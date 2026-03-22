@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log/slog"
 	"net/http"
 	"os"
@@ -25,15 +26,23 @@ var (
 )
 
 func main() {
-	cfg := config.LoadFromEnv()
+	var configPath string
+	flag.StringVar(&configPath, "c", "", "optional path to config.json or config.toml (same keys as env vars; environment overrides file)")
+	flag.Parse()
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		slog.Error("config", "err", err)
+		os.Exit(1)
+	}
 	initLogging(cfg)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	app, err := platform.OpenApp(ctx, cfg, platform.Build{Version: Version, Commit: Commit})
-	if err != nil {
-		slog.Error("open app", "err", err)
+	app, errOpen := platform.OpenApp(ctx, cfg, platform.Build{Version: Version, Commit: Commit})
+	if errOpen != nil {
+		slog.Error("open app", "err", errOpen)
 		os.Exit(1)
 	}
 	defer func() { _ = app.Close() }()

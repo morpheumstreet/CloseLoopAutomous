@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { Copy, X } from 'lucide-react';
+import { ArmsHttpError, buildLiveEventsUrl, buildLiveEventsUrlTemplate } from '../../api/armsClient';
 import type { ApiVersion } from '../../api/armsTypes';
-import { ArmsHttpError } from '../../api/armsClient';
+import type { ArmsEnv } from '../../config/armsEnv';
 
 type Props = {
   open: boolean;
   onClose: () => void;
   fetchVersion: () => Promise<ApiVersion>;
+  armsEnv: ArmsEnv;
+  /** When set, SSE URL uses this product id; otherwise shows a template with &lt;product_id&gt;. */
+  productIdForSse?: string | null;
 };
 
 function displayVersion(v: ApiVersion): string {
@@ -17,7 +21,22 @@ function displayVersion(v: ApiVersion): string {
   return v.version?.trim() || '—';
 }
 
-export function AboutModal({ open, onClose, fetchVersion }: Props) {
+function maskSecret(s: string): string {
+  const t = s.trim();
+  if (!t) return '(unset)';
+  if (t.length <= 6) return '••••••';
+  return `${t.slice(0, 3)}…${t.slice(-2)}`;
+}
+
+async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function AboutModal({ open, onClose, fetchVersion, armsEnv, productIdForSse }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<ApiVersion | null>(null);
@@ -50,10 +69,12 @@ export function AboutModal({ open, onClose, fetchVersion }: Props) {
 
   if (!open) return null;
 
+  const sseUrl = productIdForSse ? buildLiveEventsUrl(armsEnv, productIdForSse) : buildLiveEventsUrlTemplate(armsEnv);
+
   return (
     <div className="ft-modal-root" role="dialog" aria-modal="true" aria-labelledby="ft-about-title">
       <button type="button" className="ft-modal-backdrop" aria-label="Close" onClick={onClose} />
-      <div className="ft-modal-panel" style={{ width: 'min(100%, 440px)' }}>
+      <div className="ft-modal-panel" style={{ width: 'min(100%, 480px)' }}>
         <div className="ft-modal-head">
           <h2 id="ft-about-title" style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>
             About Fishtank
@@ -68,9 +89,80 @@ export function AboutModal({ open, onClose, fetchVersion }: Props) {
             <code className="ft-mono">GET /api/version</code>.
           </p>
 
-          {loading ? <p className="ft-muted" style={{ margin: 0 }}>Loading version…</p> : null}
+          <section style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--mc-border)' }}>
+            <h3 className="ft-field-label" style={{ marginBottom: '0.5rem' }}>
+              Connection (VITE_ARMS_*)
+            </h3>
+            <dl style={{ margin: 0, display: 'grid', gap: '0.5rem', fontSize: '0.8rem' }}>
+              <div>
+                <dt className="ft-muted" style={{ fontSize: '0.7rem' }}>
+                  Base URL
+                </dt>
+                <dd style={{ margin: 0, wordBreak: 'break-all' }} className="ft-mono">
+                  {armsEnv.baseUrl}
+                </dd>
+              </div>
+              <div>
+                <dt className="ft-muted" style={{ fontSize: '0.7rem' }}>
+                  Bearer token
+                </dt>
+                <dd style={{ margin: 0 }} className="ft-mono">
+                  {armsEnv.token ? maskSecret(armsEnv.token) : '(unset — VITE_ARMS_TOKEN)'}
+                </dd>
+              </div>
+              <div>
+                <dt className="ft-muted" style={{ fontSize: '0.7rem' }}>
+                  Basic user
+                </dt>
+                <dd style={{ margin: 0 }} className="ft-mono">
+                  {armsEnv.basicUser || '(unset — VITE_ARMS_BASIC_USER)'}
+                </dd>
+              </div>
+            </dl>
+            <div style={{ marginTop: '0.65rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.35rem', marginBottom: '0.25rem' }}>
+                <span className="ft-muted" style={{ fontSize: '0.7rem' }}>
+                  SSE URL (<code className="ft-mono">?token=</code> for EventSource)
+                </span>
+                <button type="button" className="ft-btn-ghost" style={{ fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }} onClick={() => void copyText(sseUrl)}>
+                  <Copy size={12} />
+                  Copy
+                </button>
+              </div>
+              <pre
+                style={{
+                  margin: 0,
+                  padding: '0.45rem',
+                  fontSize: '0.65rem',
+                  wordBreak: 'break-all',
+                  whiteSpace: 'pre-wrap',
+                  background: 'var(--mc-bg-tertiary)',
+                  border: '1px solid var(--mc-border)',
+                }}
+              >
+                {sseUrl}
+              </pre>
+              {!productIdForSse ? (
+                <p className="ft-muted" style={{ fontSize: '0.7rem', marginTop: '0.35rem', marginBottom: 0 }}>
+                  Replace <code className="ft-mono">&lt;product_id&gt;</code> with a real id, or open a workspace and revisit About for a ready-made URL.
+                </p>
+              ) : null}
+            </div>
+          </section>
+
+          <section style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--mc-border)' }}>
+            <h3 className="ft-field-label" style={{ marginBottom: '0.35rem' }}>
+              API docs
+            </h3>
+            <p className="ft-muted" style={{ margin: 0, fontSize: '0.8rem', lineHeight: 1.5 }}>
+              Machine-readable spec in the repo: <code className="ft-mono">docs/openapi/arms-openapi.yaml</code> — import into Swagger UI or Redocly. Route inventory:{' '}
+              <code className="ft-mono">GET /api/docs/routes</code>.
+            </p>
+          </section>
+
+          {loading ? <p className="ft-muted" style={{ margin: '1rem 0 0' }}>Loading version…</p> : null}
           {error ? (
-            <p className="ft-banner ft-banner--error" role="alert" style={{ margin: 0 }}>
+            <p className="ft-banner ft-banner--error" role="alert" style={{ margin: '1rem 0 0' }}>
               {error}
             </p>
           ) : null}
@@ -78,7 +170,7 @@ export function AboutModal({ open, onClose, fetchVersion }: Props) {
           {info && !loading ? (
             <dl
               style={{
-                margin: 0,
+                margin: '1rem 0 0',
                 display: 'grid',
                 gap: '0.65rem',
                 fontSize: '0.875rem',

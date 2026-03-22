@@ -136,6 +136,13 @@ button:disabled {
   animation: ft-slide-in 0.2s ease-out;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .ft-animate-slide-in,
+  .ft-animate-pulse-soft {
+    animation: none;
+  }
+}
+
 /* Layout primitives */
 .ft-screen {
   min-height: 100vh;
@@ -962,4 +969,111 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ft-skeleton {
+  border-radius: var(--ft-radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--mc-bg-tertiary) 0%,
+    color-mix(in srgb, var(--mc-text-secondary) 12%, var(--mc-bg-tertiary)) 50%,
+    var(--mc-bg-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  animation: ft-skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ft-skeleton {
+    animation: none;
+    background: var(--mc-bg-tertiary);
+  }
+}
+
+@keyframes ft-skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.ft-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.ft-table th,
+.ft-table td {
+  text-align: left;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--mc-border);
+}
+
+.ft-table th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--mc-text-secondary);
+}
+
+.ft-kanban-col-body--drop-active {
+  outline: 2px dashed color-mix(in srgb, var(--mc-accent-blue) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.ft-task-card--dragging {
+  opacity: 0.55;
+}
+
+.ft-mobile-tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--mc-border);
+  background: var(--mc-bg-secondary);
+}
+
+.ft-mobile-tab {
+  flex: 1;
+  padding: 0.65rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--mc-text-secondary);
+  border-bottom: 2px solid transparent;
+}
+
+.ft-mobile-tab--active {
+  color: var(--mc-text);
+  border-bottom-color: var(--mc-accent);
+}
+
+.ft-feed-status {
+  font-size: 0.65rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--mc-border);
+  border-radius: var(--ft-radius-sm);
+}
+
+.ft-feed-status--live {
+  border-color: color-mix(in srgb, var(--mc-accent-green) 45%, var(--mc-border));
+  color: var(--mc-accent-green);
+}
+
+.ft-feed-status--off {
+  color: var(--mc-text-secondary);
+}
+
+.ft-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

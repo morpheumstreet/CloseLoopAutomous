@@ -1,5 +1,5 @@
 import type { ApiAgentHealthItem, ApiProduct, ApiTask, ArmsSsePayload } from '../api/armsTypes';
-import type { Agent, FeedEvent, FeedEventType, Task, TaskStatus, WorkspaceStats } from '../domain/types';
+import type { Agent, FeedEvent, FeedEventType, StalledTaskRow, Task, TaskStatus, WorkspaceStats } from '../domain/types';
 
 const TASK_STATUSES = new Set<string>([
   'planning',
@@ -33,6 +33,19 @@ export function apiTaskToTask(t: ApiTask): Task {
     status: coerceTaskStatus(t.status),
     workspaceId: t.product_id,
     updatedAt: t.updated_at,
+    ideaId: t.idea_id,
+    spec: t.spec,
+    statusReason: t.status_reason,
+    planApproved: t.plan_approved,
+    clarificationsJson: t.clarifications_json,
+    sandboxPath: t.sandbox_path,
+    worktreePath: t.worktree_path,
+    pullRequestUrl: t.pull_request_url,
+    pullRequestHeadBranch: t.pull_request_head_branch,
+    pullRequestNumber: t.pull_request_number,
+    currentExecutionAgentId: t.current_execution_agent_id,
+    createdAt: t.created_at,
+    externalRef: t.external_ref,
   };
 }
 
@@ -99,12 +112,27 @@ function mapArmsTypeToFeedType(armsType: string): FeedEventType {
   switch (armsType) {
     case 'task_dispatched':
       return 'task_dispatched';
+    case 'task_completed':
+      return 'task_completed';
+    case 'task_stall_nudged':
+      return 'task_stall_nudged';
+    case 'task_execution_reassigned':
+      return 'task_execution_reassigned';
+    case 'task_chat_message':
+    case 'task_chat_queue_ack':
+      return 'task_chat_message';
     case 'cost_recorded':
       return 'cost_recorded';
     case 'checkpoint_saved':
       return 'checkpoint_saved';
     case 'pull_request_opened':
       return 'pull_request_opened';
+    case 'merge_ship_completed':
+      return 'merge_ship_completed';
+    case 'convoy_subtask_dispatched':
+      return 'convoy_subtask_dispatched';
+    case 'convoy_subtask_completed':
+      return 'convoy_subtask_completed';
     default:
       return 'system';
   }
@@ -116,6 +144,16 @@ function formatArmsActivityMessage(p: ArmsSsePayload): string {
   switch (p.type) {
     case 'task_dispatched':
       return `Task dispatched${task}`;
+    case 'task_completed':
+      return `Task completed${task}`;
+    case 'task_stall_nudged':
+      return `Stall nudge${task}`;
+    case 'task_execution_reassigned':
+      return `Execution reassigned${task}`;
+    case 'task_chat_message':
+      return `Task chat${task}`;
+    case 'task_chat_queue_ack':
+      return `Chat queue ack${task}`;
     case 'cost_recorded': {
       const amount = p.data?.amount;
       return typeof amount === 'number' ? `Cost recorded: ${amount}` : 'Cost recorded';
@@ -126,23 +164,43 @@ function formatArmsActivityMessage(p: ArmsSsePayload): string {
       const url = p.data?.html_url;
       return typeof url === 'string' ? `PR opened: ${url}` : 'Pull request opened';
     }
+    case 'merge_ship_completed':
+      return `Merge ship completed${task}`;
+    case 'convoy_subtask_dispatched':
+      return `Convoy subtask dispatched${task}`;
+    case 'convoy_subtask_completed':
+      return `Convoy subtask completed${task}`;
     default:
       return `${t}${task}`;
   }
 }
 
 /** Maps one SSE `data:` JSON line to a UI feed row, or null to skip (e.g. hello). */
-export function ssePayloadToFeedEvent(raw: unknown, seq: number): FeedEvent | null {
+export function ssePayloadToFeedEvent(raw: unknown, seq: number, includeRaw: boolean): FeedEvent | null {
   if (!raw || typeof raw !== 'object') return null;
   const p = raw as ArmsSsePayload;
   if (p.event === 'hello') return null;
   const armsType = p.type ?? p.event;
   if (!armsType) return null;
   const ts = p.ts && typeof p.ts === 'string' ? p.ts : new Date().toISOString();
+  const rawObj = includeRaw && raw && typeof raw === 'object' ? { ...(raw as Record<string, unknown>) } : undefined;
   return {
     id: `${ts}-${seq}-${armsType}`,
     type: mapArmsTypeToFeedType(armsType),
     message: formatArmsActivityMessage(p),
     createdAt: ts,
+    raw: rawObj,
   };
+}
+
+export function stalledApiToRows(rows: Record<string, unknown>[]): StalledTaskRow[] {
+  return rows
+    .map((r) => {
+      const taskId = typeof r.task_id === 'string' ? r.task_id : '';
+      const status = typeof r.status === 'string' ? r.status : '';
+      const reason = typeof r.reason === 'string' ? r.reason : '';
+      if (!taskId) return null;
+      return { taskId, status, reason };
+    })
+    .filter((x): x is NonNullable<typeof x> => x != null);
 }

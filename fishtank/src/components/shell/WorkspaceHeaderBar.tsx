@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, LayoutGrid, Rocket, Settings, Zap } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Activity, ChevronLeft, LayoutGrid, Rocket, Settings, Zap } from 'lucide-react';
 import { useMissionUi } from '../../context/MissionUiContext';
 import { BackendConnectionPill } from './BackendConnectionPill';
 import { ThemeCycleButton } from './ThemeCycleButton';
@@ -7,7 +8,17 @@ import { AboutModal } from './AboutModal';
 import { formatClock } from '../../lib/time';
 
 export function WorkspaceHeaderBar() {
-  const { activeWorkspace, isOnline, goHome, tasks, agents, fetchVersion } = useMissionUi();
+  const navigate = useNavigate();
+  const {
+    activeWorkspace,
+    productDetail,
+    isOnline,
+    goHome,
+    tasks,
+    agents,
+    fetchVersion,
+    armsEnv,
+  } = useMissionUi();
   const [now, setNow] = useState(() => new Date());
   const [aboutOpen, setAboutOpen] = useState(false);
 
@@ -29,6 +40,14 @@ export function WorkspaceHeaderBar() {
   const workingAgents = scopedAgents.filter((a) => a.status === 'working').length;
   const tasksInQueue = scopedTasks.filter((t) => t.status !== 'done' && t.status !== 'review').length;
 
+  const mqPending = productDetail?.merge_queue_pending;
+  const mergeMethod = productDetail?.merge_policy?.merge_method;
+
+  function handleGoDashboard() {
+    goHome();
+    navigate('/');
+  }
+
   return (
     <header className="ft-header-bar">
       <div className="ft-header-left">
@@ -41,7 +60,7 @@ export function WorkspaceHeaderBar() {
 
         {activeWorkspace ? (
           <>
-            <button type="button" className="ft-btn-icon" onClick={goHome} title="All workspaces">
+            <button type="button" className="ft-btn-icon" onClick={handleGoDashboard} title="All workspaces">
               <ChevronLeft size={16} />
               <LayoutGrid size={16} />
             </button>
@@ -51,9 +70,19 @@ export function WorkspaceHeaderBar() {
                 {activeWorkspace.name}
               </span>
             </div>
+            {mqPending != null && mqPending > 0 ? (
+              <span className="ft-chip ft-show-lg" style={{ fontSize: '0.65rem' }} title="Merge queue pending (read-only)">
+                MQ pending: {mqPending}
+                {mergeMethod ? ` · ${mergeMethod}` : ''}
+              </span>
+            ) : mergeMethod ? (
+              <span className="ft-chip ft-show-lg" style={{ fontSize: '0.65rem' }} title="Merge policy (read-only)">
+                Merge: {mergeMethod}
+              </span>
+            ) : null}
           </>
         ) : (
-          <button type="button" className="ft-chip" onClick={goHome} title="Home">
+          <button type="button" className="ft-chip" onClick={() => navigate('/')} title="Home">
             <LayoutGrid size={16} />
             <span style={{ fontSize: '0.875rem' }}>All Workspaces</span>
           </button>
@@ -62,7 +91,7 @@ export function WorkspaceHeaderBar() {
 
       {activeWorkspace ? (
         <div className="ft-show-lg">
-            <div className="ft-stat-lg">
+          <div className="ft-stat-lg">
             <div className="ft-stat-lg-value" style={{ color: 'var(--mc-accent-blue)' }}>
               {workingAgents}
             </div>
@@ -83,20 +112,24 @@ export function WorkspaceHeaderBar() {
         </span>
         <BackendConnectionPill isOnline={isOnline} />
         <ThemeCycleButton />
-        <button type="button" className="ft-btn-icon" title="Autopilot (UI shell)">
+        <button type="button" className="ft-btn-icon" title="Autopilot" onClick={() => navigate('/autopilot')}>
           <Rocket size={20} />
         </button>
-        <button
-          type="button"
-          className="ft-btn-icon"
-          title="About Fishtank / arms version"
-          onClick={() => setAboutOpen(true)}
-        >
+        <button type="button" className="ft-btn-icon" title="Activity / operations log" onClick={() => navigate('/activity')}>
+          <Activity size={20} />
+        </button>
+        <button type="button" className="ft-btn-icon" title="About Fishtank / arms version" onClick={() => setAboutOpen(true)}>
           <Settings size={20} />
         </button>
       </div>
 
-      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} fetchVersion={fetchVersion} />
+      <AboutModal
+        open={aboutOpen}
+        onClose={() => setAboutOpen(false)}
+        fetchVersion={fetchVersion}
+        armsEnv={armsEnv}
+        productIdForSse={activeWorkspace?.id ?? null}
+      />
     </header>
   );
 }

@@ -2,8 +2,6 @@
 package config
 
 import (
-	"os"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -62,6 +60,11 @@ import (
 //   - ARMS_MERGE_LEASE_SEC — lease TTL for merge-queue ship (default 90)
 //   - ARMS_MERGE_LEASE_OWNER — optional instance id for queue leases (default hostname)
 //   - ARMS_REDIS_ADDR — optional Redis (e.g. localhost:6379). When set, cmd/arms reconciles per-product arms:product_autopilot_tick on startup, every 5 minutes, and after product / product-schedule HTTP changes; cmd/arms-worker consumes the arms queue (product:schedule:tick, arms:product_autopilot_tick, arms:autopilot_tick for manual full TickScheduled sweeps). Without Redis, background autopilot is off (set Redis and run arms-worker).
+//
+// Config file (cmd/arms and cmd/arms-worker -c path):
+//   - JSON or TOML with flat keys matching environment variable names (e.g. ARMS_LISTEN, DATABASE_PATH, MC_API_TOKEN).
+//   - Keys are case-insensitive in file; hyphens are treated as underscores.
+//   - Process environment always overrides values from the file when the variable is set in the environment.
 type Config struct {
 	ListenAddr                        string
 	MCAPIToken                        string
@@ -122,197 +125,9 @@ type ACLUser struct {
 	Role     string // "admin" or "read"
 }
 
-// LoadFromEnv reads configuration from the process environment.
+// LoadFromEnv reads configuration from the process environment only.
 func LoadFromEnv() Config {
-	addr := os.Getenv("ARMS_LISTEN")
-	if addr == "" {
-		addr = ":8080"
-	}
-	token := os.Getenv("MC_API_TOKEN")
-	secret := os.Getenv("WEBHOOK_SECRET")
-	allow := strings.EqualFold(os.Getenv("ARMS_ALLOW_SAME_ORIGIN"), "1") ||
-		strings.EqualFold(os.Getenv("ARMS_ALLOW_SAME_ORIGIN"), "true")
-	dbPath := strings.TrimSpace(os.Getenv("DATABASE_PATH"))
-	backup := strings.EqualFold(os.Getenv("ARMS_DB_BACKUP"), "1") ||
-		strings.EqualFold(os.Getenv("ARMS_DB_BACKUP"), "true")
-	ocURL := strings.TrimSpace(os.Getenv("OPENCLAW_GATEWAY_URL"))
-	ocTok := strings.TrimSpace(os.Getenv("OPENCLAW_GATEWAY_TOKEN"))
-	dt := 30 * time.Second
-	if s := strings.TrimSpace(os.Getenv("OPENCLAW_DISPATCH_TIMEOUT_SEC")); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n > 0 {
-			dt = time.Duration(n) * time.Second
-		}
-	}
-	device := strings.TrimSpace(os.Getenv("ARMS_DEVICE_ID"))
-	sessionKey := strings.TrimSpace(os.Getenv("ARMS_OPENCLAW_SESSION_KEY"))
-	logJSON := strings.EqualFold(os.Getenv("ARMS_LOG_JSON"), "1") ||
-		strings.EqualFold(os.Getenv("ARMS_LOG_JSON"), "true")
-	accessLog := true
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("ARMS_ACCESS_LOG"))) {
-	case "0", "false", "off", "no":
-		accessLog = false
-	}
-	autopilotTick := 0
-	if s := strings.TrimSpace(os.Getenv("ARMS_AUTOPILOT_TICK_SEC")); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n > 0 {
-			autopilotTick = n
-		}
-	}
-	budgetCap := 100.0
-	if s := strings.TrimSpace(os.Getenv("ARMS_BUDGET_DEFAULT_CAP")); s != "" {
-		if f, err := strconv.ParseFloat(s, 64); err == nil && f >= 0 {
-			budgetCap = f
-		}
-	}
-	ghTok := strings.TrimSpace(os.Getenv("ARMS_GITHUB_TOKEN"))
-	if ghTok == "" {
-		ghTok = strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
-	}
-	ghAPI := strings.TrimSpace(os.Getenv("ARMS_GITHUB_API_URL"))
-	ghBackend := strings.ToLower(strings.TrimSpace(os.Getenv("ARMS_GITHUB_PR_BACKEND")))
-	ghBin := strings.TrimSpace(os.Getenv("ARMS_GH_BIN"))
-	ghHost := strings.TrimSpace(os.Getenv("ARMS_GITHUB_HOST"))
-	gitWorktrees := strings.EqualFold(os.Getenv("ARMS_ENABLE_GIT_WORKTREES"), "1") ||
-		strings.EqualFold(os.Getenv("ARMS_ENABLE_GIT_WORKTREES"), "true")
-	gitExe := strings.TrimSpace(os.Getenv("ARMS_GIT_BIN"))
-	wsRoot := strings.TrimSpace(os.Getenv("ARMS_WORKSPACE_ROOT"))
-	agentStale := 300
-	if s, ok := os.LookupEnv("ARMS_AGENT_STALE_SEC"); ok {
-		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
-			agentStale = n
-		}
-	}
-	corsOrigin := strings.TrimSpace(os.Getenv("ARMS_CORS_ALLOW_ORIGIN"))
-	acl := parseARMSACL(os.Getenv("ARMS_ACL"))
-	mergeBackend := strings.ToLower(strings.TrimSpace(os.Getenv("ARMS_MERGE_BACKEND")))
-	mergeMethod := strings.TrimSpace(os.Getenv("ARMS_MERGE_METHOD"))
-	mergeLease := 90
-	if s := strings.TrimSpace(os.Getenv("ARMS_MERGE_LEASE_SEC")); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n > 0 {
-			mergeLease = n
-		}
-	}
-	mergeOwner := strings.TrimSpace(os.Getenv("ARMS_MERGE_LEASE_OWNER"))
-	redisAddr := strings.TrimSpace(os.Getenv("ARMS_REDIS_ADDR"))
-	useAsynqSched := strings.EqualFold(os.Getenv("ARMS_USE_ASYNQ_SCHEDULER"), "1") ||
-		strings.EqualFold(os.Getenv("ARMS_USE_ASYNQ_SCHEDULER"), "true")
-	autoStallNudge := strings.EqualFold(os.Getenv("ARMS_AUTO_STALL_NUDGE_ENABLED"), "1") ||
-		strings.EqualFold(os.Getenv("ARMS_AUTO_STALL_NUDGE_ENABLED"), "true")
-	autoStallInterval := 300
-	if s := strings.TrimSpace(os.Getenv("ARMS_AUTO_STALL_NUDGE_INTERVAL_SEC")); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n > 0 {
-			autoStallInterval = n
-		}
-	}
-	autoStallCooldown := 3600
-	if s, ok := os.LookupEnv("ARMS_AUTO_STALL_NUDGE_COOLDOWN_SEC"); ok {
-		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && n >= 0 {
-			autoStallCooldown = n
-		}
-	}
-	autoStallMaxDay := 6
-	if s, ok := os.LookupEnv("ARMS_AUTO_STALL_NUDGE_MAX_PER_DAY"); ok {
-		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && n >= 0 {
-			autoStallMaxDay = n
-		}
-	}
-	autoStallReassign := strings.EqualFold(os.Getenv("ARMS_AUTO_STALL_REASSIGN_ENABLED"), "1") ||
-		strings.EqualFold(os.Getenv("ARMS_AUTO_STALL_REASSIGN_ENABLED"), "true")
-	autoStallReassignCD := 7200
-	if s, ok := os.LookupEnv("ARMS_AUTO_STALL_REASSIGN_COOLDOWN_SEC"); ok {
-		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && n >= 0 {
-			autoStallReassignCD = n
-		}
-	}
-	autoStallReassignMax := 4
-	if s, ok := os.LookupEnv("ARMS_AUTO_STALL_REASSIGN_MAX_PER_DAY"); ok {
-		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && n >= 0 {
-			autoStallReassignMax = n
-		}
-	}
-	knowSnippets := 5
-	if s := strings.TrimSpace(os.Getenv("ARMS_KNOWLEDGE_DISPATCH_SNIPPETS")); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n > 0 {
-			knowSnippets = n
-		}
-	}
-	knowDisableInject := strings.EqualFold(os.Getenv("ARMS_KNOWLEDGE_DISABLE_DISPATCH"), "1") ||
-		strings.EqualFold(os.Getenv("ARMS_KNOWLEDGE_DISABLE_DISPATCH"), "true")
-	knowAutoIngest := true
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("ARMS_KNOWLEDGE_AUTO_INGEST"))) {
-	case "0", "false", "off", "no":
-		knowAutoIngest = false
-	}
-	knowBackend := strings.ToLower(strings.TrimSpace(os.Getenv("ARMS_KNOWLEDGE_BACKEND")))
-	if knowBackend == "" {
-		knowBackend = "fts5"
-	}
-	chromemPath := strings.TrimSpace(os.Getenv("ARMS_CHROMEM_PERSISTENCE_PATH"))
-	if chromemPath == "" {
-		chromemPath = "./data/chromem-knowledge"
-	}
-	chromemCompress := strings.EqualFold(os.Getenv("ARMS_CHROMEM_COMPRESS"), "1") ||
-		strings.EqualFold(os.Getenv("ARMS_CHROMEM_COMPRESS"), "true")
-	chromemEmbedder := strings.ToLower(strings.TrimSpace(os.Getenv("ARMS_CHROMEM_EMBEDDER")))
-	if chromemEmbedder == "" {
-		chromemEmbedder = "ollama"
-	}
-	chromemModel := strings.TrimSpace(os.Getenv("ARMS_CHROMEM_EMBEDDER_MODEL"))
-	chromemOllamaBase := strings.TrimSpace(os.Getenv("ARMS_CHROMEM_OLLAMA_BASE_URL"))
-	chromemOpenAIKey := strings.TrimSpace(os.Getenv("ARMS_CHROMEM_OPENAI_API_KEY"))
-	chromemOpenAIModel := strings.TrimSpace(os.Getenv("ARMS_CHROMEM_OPENAI_MODEL"))
-	return Config{
-		ListenAddr:                        addr,
-		MCAPIToken:                        strings.TrimSpace(token),
-		WebhookSecret:                     strings.TrimSpace(secret),
-		AllowLocalhost:                    allow,
-		DatabasePath:                      dbPath,
-		DatabaseBackupBeforeMigrate:       backup,
-		OpenClawGatewayURL:                ocURL,
-		OpenClawGatewayToken:              ocTok,
-		OpenClawDispatchTimeout:           dt,
-		ArmsDeviceID:                      device,
-		OpenClawSessionKey:                sessionKey,
-		LogJSON:                           logJSON,
-		AccessLog:                         accessLog,
-		AutopilotTickSec:                  autopilotTick,
-		BudgetDefaultCap:                  budgetCap,
-		GitHubToken:                       ghTok,
-		GitHubAPIURL:                      ghAPI,
-		GitHubPRBackend:                   ghBackend,
-		GhPath:                            ghBin,
-		GitHubHost:                        ghHost,
-		EnableGitWorktrees:                gitWorktrees,
-		GitBin:                            gitExe,
-		WorkspaceRoot:                     wsRoot,
-		AgentStaleSec:                     agentStale,
-		CORSAllowOrigin:                   corsOrigin,
-		ACLUsers:                          acl,
-		MergeBackend:                      mergeBackend,
-		MergeMethod:                       mergeMethod,
-		MergeLeaseSec:                     mergeLease,
-		MergeLeaseOwner:                   mergeOwner,
-		RedisAddr:                         redisAddr,
-		UseAsynqScheduler:                 useAsynqSched,
-		AutoStallNudgeEnabled:             autoStallNudge,
-		AutoStallNudgeIntervalSec:         autoStallInterval,
-		AutoStallNudgeCooldownSec:         autoStallCooldown,
-		AutoStallNudgeMaxPerDay:           autoStallMaxDay,
-		AutoStallReassignEnabled:          autoStallReassign,
-		AutoStallReassignCooldownSec:      autoStallReassignCD,
-		AutoStallReassignMaxPerDay:        autoStallReassignMax,
-		KnowledgeDispatchSnippetLimit:     knowSnippets,
-		KnowledgeDisableDispatchInjection: knowDisableInject,
-		KnowledgeAutoIngest:               knowAutoIngest,
-		KnowledgeBackend:                  knowBackend,
-		ChromemPersistencePath:            chromemPath,
-		ChromemCompress:                   chromemCompress,
-		ChromemEmbedder:                   chromemEmbedder,
-		ChromemEmbedderModel:              chromemModel,
-		ChromemOllamaBaseURL:              chromemOllamaBase,
-		ChromemOpenAIAPIKey:               chromemOpenAIKey,
-		ChromemOpenAIModel:                chromemOpenAIModel,
-	}
+	return buildConfig(nil)
 }
 
 // parseARMSACL parses ARMS_ACL: "user|password|role" entries separated by ';'.

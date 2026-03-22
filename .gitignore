@@ -67,3 +67,4 @@ arms/*.db
 arms/*.db-journal
 arms/*.pre-migrate-*.bak
 /bin
+/config
