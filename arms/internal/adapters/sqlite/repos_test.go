@@ -90,6 +90,144 @@ func TestProductIdeaTaskRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConvoyEdgesPersisted(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	ps := NewProductStore(db)
+	is := NewIdeaStore(db)
+	ts := NewTaskStore(db)
+	cs := NewConvoyStore(db)
+	now := time.Unix(1700000000, 0).UTC()
+	p := &domain.Product{
+		ID: domain.ProductID("prod-1"), Name: "n", Stage: domain.StageResearch, ResearchSummary: "",
+		WorkspaceID: "ws", UpdatedAt: now,
+	}
+	if err := ps.Save(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	idea := &domain.Idea{
+		ID: domain.IdeaID("idea-1"), ProductID: domain.ProductID("prod-1"), Title: "t", Description: "d",
+		Impact: 0.5, Feasibility: 0.6, Reasoning: "r", Decided: false,
+		Decision: domain.DecisionPass, CreatedAt: now,
+	}
+	if err := is.Save(ctx, idea); err != nil {
+		t.Fatal(err)
+	}
+	task := &domain.Task{
+		ID: domain.TaskID("task-1"), ProductID: domain.ProductID("prod-1"), IdeaID: domain.IdeaID("idea-1"), Spec: "s",
+		Status: domain.StatusPlanning, PlanApproved: false, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := ts.Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	conv := &domain.Convoy{
+		ID: domain.ConvoyID("conv-1"), ProductID: domain.ProductID("prod-1"),
+		ParentID: domain.TaskID("task-1"), CreatedAt: now,
+		Subtasks: []domain.Subtask{
+			{ID: domain.SubtaskID("s1"), AgentRole: "builder", DagLayer: 0},
+			{ID: domain.SubtaskID("s2"), AgentRole: "tester", DagLayer: 1, DependsOn: []domain.SubtaskID{"s1"}},
+		},
+	}
+	if err := cs.Save(ctx, conv); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM convoy_edges WHERE convoy_id = ?`, "conv-1").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("convoy_edges count want 1 got %d", n)
+	}
+	var fromID, toID string
+	if err := db.QueryRowContext(ctx,
+		`SELECT from_subtask_id, to_subtask_id FROM convoy_edges WHERE convoy_id = ?`, "conv-1",
+	).Scan(&fromID, &toID); err != nil {
+		t.Fatal(err)
+	}
+	if fromID != "s1" || toID != "s2" {
+		t.Fatalf("edge want s1->s2 got %s->%s", fromID, toID)
+	}
+	// Resave: drop dependency — materialized edges must follow depends_on_json.
+	conv2, err := cs.ByID(ctx, domain.ConvoyID("conv-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conv2.Subtasks[1].DependsOn = nil
+	if err := cs.Save(ctx, conv2); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM convoy_edges WHERE convoy_id = ?`, "conv-1").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("after dep removal want 0 edges got %d", n)
+	}
+}
+
+func TestConvoyByParentTaskAndDelete(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	ps := NewProductStore(db)
+	is := NewIdeaStore(db)
+	ts := NewTaskStore(db)
+	cs := NewConvoyStore(db)
+	now := time.Unix(1700000000, 0).UTC()
+	p := &domain.Product{
+		ID: domain.ProductID("prod-1"), Name: "n", Stage: domain.StageResearch, ResearchSummary: "",
+		WorkspaceID: "ws", UpdatedAt: now,
+	}
+	if err := ps.Save(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	idea := &domain.Idea{
+		ID: domain.IdeaID("idea-1"), ProductID: domain.ProductID("prod-1"), Title: "t", Description: "d",
+		Impact: 0.5, Feasibility: 0.6, Reasoning: "r", Decided: false,
+		Decision: domain.DecisionPass, CreatedAt: now,
+	}
+	if err := is.Save(ctx, idea); err != nil {
+		t.Fatal(err)
+	}
+	task := &domain.Task{
+		ID: domain.TaskID("task-1"), ProductID: domain.ProductID("prod-1"), IdeaID: domain.IdeaID("idea-1"), Spec: "s",
+		Status: domain.StatusPlanning, PlanApproved: false, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := ts.Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	conv := &domain.Convoy{
+		ID: domain.ConvoyID("conv-1"), ProductID: domain.ProductID("prod-1"),
+		ParentID: domain.TaskID("task-1"), CreatedAt: now,
+		Subtasks: []domain.Subtask{{ID: domain.SubtaskID("s1"), AgentRole: "builder"}},
+	}
+	if err := cs.Save(ctx, conv); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cs.ByParentTask(ctx, domain.TaskID("task-1"))
+	if err != nil || got.ID != "conv-1" {
+		t.Fatalf("ByParentTask: %+v err %v", got, err)
+	}
+	if err := cs.Delete(ctx, domain.ConvoyID("conv-1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cs.ByParentTask(ctx, domain.TaskID("task-1")); err != domain.ErrNotFound {
+		t.Fatalf("after delete want ErrNotFound got %v", err)
+	}
+}
+
 func TestProductSoftDelete(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, ":memory:")

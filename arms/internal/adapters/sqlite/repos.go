@@ -877,6 +877,17 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			return err
 		}
 	}
+	for _, st := range c.Subtasks {
+		sid := string(st.ID)
+		for _, d := range st.DependsOn {
+			_, err := tx.ExecContext(ctx, `
+INSERT OR IGNORE INTO convoy_edges (convoy_id, from_subtask_id, to_subtask_id) VALUES (?, ?, ?)
+`, string(c.ID), string(d), sid)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	return tx.Commit()
 }
 
@@ -955,6 +966,33 @@ FROM convoy_subtasks WHERE convoy_id = ? ORDER BY dag_layer, id`, string(id))
 		MetadataJSON: meta,
 		CreatedAt:    ct,
 	}, nil
+}
+
+func (s *ConvoyStore) ByParentTask(ctx context.Context, parentTaskID domain.TaskID) (*domain.Convoy, error) {
+	var cid string
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM convoys WHERE parent_task_id = ?`, string(parentTaskID)).Scan(&cid)
+	if err == sql.ErrNoRows {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.ByID(ctx, domain.ConvoyID(cid))
+}
+
+func (s *ConvoyStore) Delete(ctx context.Context, id domain.ConvoyID) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM convoys WHERE id = ?`, string(id))
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 func (s *ConvoyStore) ListByProduct(ctx context.Context, productID domain.ProductID) ([]domain.Convoy, error) {

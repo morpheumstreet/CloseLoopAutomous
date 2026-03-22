@@ -377,6 +377,30 @@ func (s *ConvoyStore) ByID(_ context.Context, id domain.ConvoyID) (*domain.Convo
 	return &cp, nil
 }
 
+func (s *ConvoyStore) ByParentTask(_ context.Context, parentTaskID domain.TaskID) (*domain.Convoy, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, c := range s.data {
+		if c.ParentID != parentTaskID {
+			continue
+		}
+		cp := *c
+		cp.Subtasks = append([]domain.Subtask(nil), c.Subtasks...)
+		return &cp, nil
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (s *ConvoyStore) Delete(_ context.Context, id domain.ConvoyID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.data[id]; !ok {
+		return domain.ErrNotFound
+	}
+	delete(s.data, id)
+	return nil
+}
+
 func (s *ConvoyStore) ListByProduct(_ context.Context, productID domain.ProductID) ([]domain.Convoy, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

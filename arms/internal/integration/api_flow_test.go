@@ -428,6 +428,14 @@ func TestHTTP_ConvoySubtaskWebhookAndSecondDispatch(t *testing.T) {
 	mustJSON(t, cli, http.MethodPost, base+"/api/convoys/"+cid+"/dispatch-ready", []byte(`{"estimated_cost":1}`), http.StatusOK, nil)
 	var c1 map[string]any
 	mustJSON(t, cli, http.MethodGet, base+"/api/convoys/"+cid, nil, http.StatusOK, &c1)
+	edges1, _ := c1["edges"].([]any)
+	if len(edges1) != 1 {
+		t.Fatalf("edges: %#v", edges1)
+	}
+	e0 := edges1[0].(map[string]any)
+	if e0["from"] != "b1" || e0["to"] != "t1" {
+		t.Fatalf("edge want b1->t1 got %#v", e0)
+	}
 	subs1, _ := c1["subtasks"].([]any)
 	if len(subs1) != 2 {
 		t.Fatalf("subtasks: %#v", subs1)
@@ -452,6 +460,61 @@ func TestHTTP_ConvoySubtaskWebhookAndSecondDispatch(t *testing.T) {
 	}
 	if t1["dispatched"] != true || t1["completed"] != false {
 		t.Fatalf("tester after second dispatch: %#v", t1)
+	}
+}
+
+func TestHTTP_TaskConvoyMCShape(t *testing.T) {
+	cfg := config.Config{AccessLog: false}
+	app := platform.NewInMemoryApp(cfg, platform.Build{})
+	t.Cleanup(func() { _ = app.Close() })
+	srv := httptest.NewServer(httpapi.NewRouter(cfg, app.Handlers))
+	t.Cleanup(srv.Close)
+	cli := srv.Client()
+	base := srv.URL
+
+	var prod map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/products", []byte(`{"name":"mc-shape","workspace_id":"ws-mc"}`), http.StatusCreated, &prod)
+	pid, _ := prod["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/research", nil, http.StatusOK, &prod)
+	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/ideation", nil, http.StatusOK, &prod)
+	var ideasWrap struct {
+		Ideas []map[string]any `json:"ideas"`
+	}
+	mustJSON(t, cli, http.MethodGet, base+"/api/products/"+pid+"/ideas", nil, http.StatusOK, &ideasWrap)
+	iid, _ := ideasWrap.Ideas[0]["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/ideas/"+iid+"/swipe", []byte(`{"decision":"yes"}`), http.StatusOK, nil)
+	var task map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks", []byte(fmt.Sprintf(`{"idea_id":%q,"spec":"parent for mc convoy"}`, iid)), http.StatusCreated, &task)
+	tid, _ := task["id"].(string)
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/plan/approve", []byte(`{}`), http.StatusOK, &task)
+	mustJSON(t, cli, http.MethodPatch, base+"/api/tasks/"+tid, []byte(`{"status":"assigned"}`), http.StatusOK, &task)
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/dispatch", []byte(`{"estimated_cost":1}`), http.StatusOK, &task)
+
+	mcBody := []byte(`{"strategy":"manual","name":"MC Convoy","subtasks":[{"title":"Step A","suggested_role":"builder","description":"d1"}]}`)
+	var mc map[string]any
+	mustJSON(t, cli, http.MethodPost, base+"/api/tasks/"+tid+"/convoy", mcBody, http.StatusCreated, &mc)
+	if mc["name"] != "MC Convoy" || mc["strategy"] != "manual" {
+		t.Fatalf("mc create: %#v", mc)
+	}
+	subs, _ := mc["subtasks"].([]any)
+	if len(subs) != 1 {
+		t.Fatalf("subtasks: %#v", subs)
+	}
+	st0 := subs[0].(map[string]any)
+	tk, _ := st0["task"].(map[string]any)
+	if tk["title"] != "Step A" || tk["status"] != "inbox" {
+		t.Fatalf("nested task: %#v", tk)
+	}
+
+	var mc2 map[string]any
+	mustJSON(t, cli, http.MethodGet, base+"/api/tasks/"+tid+"/convoy", nil, http.StatusOK, &mc2)
+	if mc2["parent_task_id"] != tid {
+		t.Fatalf("parent_task_id: %#v", mc2)
+	}
+	var prog map[string]any
+	mustJSON(t, cli, http.MethodGet, base+"/api/tasks/"+tid+"/convoy/progress", nil, http.StatusOK, &prog)
+	if prog["total"].(float64) != 1 {
+		t.Fatalf("progress total: %#v", prog)
 	}
 }
 

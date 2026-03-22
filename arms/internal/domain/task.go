@@ -44,11 +44,11 @@ func AllowedKanbanTransition(from, to TaskStatus) bool {
 	case StatusPlanning:
 		return to == StatusInbox
 	case StatusInbox:
-		return to == StatusAssigned || to == StatusPlanning
+		return to == StatusAssigned || to == StatusPlanning || to == StatusConvoyActive
 	case StatusAssigned:
-		return to == StatusInProgress || to == StatusInbox || to == StatusFailed
+		return to == StatusInProgress || to == StatusInbox || to == StatusFailed || to == StatusConvoyActive
 	case StatusInProgress:
-		return to == StatusTesting || to == StatusReview || to == StatusFailed || to == StatusAssigned
+		return to == StatusTesting || to == StatusReview || to == StatusFailed || to == StatusAssigned || to == StatusConvoyActive
 	case StatusTesting:
 		return to == StatusReview || to == StatusInProgress || to == StatusFailed
 	case StatusReview:
@@ -56,7 +56,7 @@ func AllowedKanbanTransition(from, to TaskStatus) bool {
 	case StatusDone, StatusFailed:
 		return to == StatusPlanning || to == StatusInbox // retry / reopen
 	case StatusConvoyActive:
-		return to == StatusReview || to == StatusFailed || to == StatusInProgress
+		return to == StatusReview || to == StatusFailed || to == StatusInProgress || to == StatusInbox
 	default:
 		return false
 	}

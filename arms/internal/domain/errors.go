@@ -26,4 +26,6 @@ var (
 	ErrProductNotDeleted = fmt.Errorf("%w: product is not deleted", ErrConflict)
 	// ErrStaleEntity wraps ErrConflict when an optimistic update sees a changed row version (e.g. updated_at).
 	ErrStaleEntity = fmt.Errorf("%w: concurrent modification", ErrConflict)
+	// ErrConvoyExists wraps ErrConflict when a second convoy is created for the same parent task (Mission Control rule).
+	ErrConvoyExists = fmt.Errorf("%w: convoy already exists for this parent task", ErrConflict)
 )

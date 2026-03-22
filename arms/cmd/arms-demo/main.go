@@ -140,13 +140,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := convoySvc.DispatchReady(ctx, conv.ID, 0); err != nil {
+	if _, err := convoySvc.DispatchReady(ctx, conv.ID, 0); err != nil {
 		log.Fatal(err)
 	}
 	if err := convoySvc.CompleteSubtask(ctx, conv.ID, bID, t.ID); err != nil {
 		log.Fatal(err)
 	}
-	if err := convoySvc.DispatchReady(ctx, conv.ID, 0); err != nil {
+	if _, err := convoySvc.DispatchReady(ctx, conv.ID, 0); err != nil {
 		log.Fatal(err)
 	}
 	cfinal, _ := convoys.ByID(ctx, conv.ID)

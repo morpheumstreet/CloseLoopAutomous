@@ -105,11 +105,25 @@ Task JSON includes at least: `id`, `product_id`, `idea_id`, `spec`, `status` (st
 | Method | Path | Body | Notes |
 |--------|------|------|--------|
 | GET | `/api/products/{id}/convoys` | — | `{ "convoys": [ … ] }` |
-| POST | `/api/convoys` | `parent_task_id`, `product_id`, `subtasks[]` with `agent_role`, optional `id`, `depends_on` | **`depends_on`** must reference subtask ids in the same payload; **cycles** and **unknown deps** → **400** **`invalid_input`**. |
-| GET | `/api/convoys/{id}` | — | |
+| POST | `/api/convoys` | `parent_task_id`, `product_id`, `subtasks[]` with `agent_role`, optional `id`, `depends_on` | **`depends_on`** must reference subtask ids in the same payload; **cycles** and **unknown deps** → **400** **`invalid_input`**. Empty **`subtasks`** is allowed (plan to append via task-scoped route). |
+| GET | `/api/convoys/{id}` | — | Native arms JSON (**`edges`**, **`graph`**, subtask **`status`**, …). |
 | GET | `/api/convoys/{id}/mail` | — | Query: optional **`limit`**. **`{ "messages": [ { id, convoy_id, subtask_id, body, created_at } ] }`**. **503** **`not_configured`** if mail store not wired. |
 | POST | `/api/convoys/{id}/mail` | `{ "subtask_id", "body" }` | Append-only convoy mail (**201** `{ "status": "ok" }`). **503** if mail not configured. |
-| POST | `/api/convoys/{id}/dispatch-ready` | JSON **`{ "estimated_cost": <number> }`** (optional; empty body = **0**) | Dispatches one ready wave of subtasks. Each subtask about to be sent is checked with **`budget.Composite`** using **`estimated_cost`** (same semantics as **`POST …/dispatch`** per dispatch). **402** **`budget_exceeded`** when caps would be exceeded. |
+| POST | `/api/convoys/{id}/dispatch-ready` | JSON **`{ "estimated_cost": <number> }`** (optional; empty body = **0**) | Dispatches one ready wave of subtasks. Returns **`(dispatched count)`** internally; HTTP body is updated convoy. **402** **`budget_exceeded`** when caps would be exceeded. |
+
+**Mission Control–style task routes** (same convoy rows as above; JSON maps ARMS subtasks to MC **`task`** objects and stores **`name` / `strategy` / `status`** in **`metadata_json.mc_compat`**):
+
+| Method | Path | Body | Notes |
+|--------|------|------|--------|
+| GET | `/api/tasks/{id}/convoy` | — | **404** `No convoy found for this task` when missing. |
+| POST | `/api/tasks/{id}/convoy` | optional **`strategy`** (default `manual`; **`ai`** → **501**), **`name`**, **`subtasks[]`** with **`title`**, **`description?`**, **`suggested_role?`**, **`agent_id?`**, **`depends_on?`**, **`decomposition_spec?`** | **409** **`convoy_exists`** if a convoy already exists for the parent. Best-effort **`convoy_active`** on parent task. |
+| PATCH | `/api/tasks/{id}/convoy` | **`{ "status" }`** | Merges into **`mc_compat`** (e.g. pause dispatch when not **`active`**). |
+| DELETE | `/api/tasks/{id}/convoy` | — | **`{ "success": true }`**; may move **`convoy_active`** parent to **`inbox`**. |
+| GET | `/api/tasks/{id}/convoy/progress` | — | Status breakdown + subtask summary (synthetic **`task.status`**). |
+| POST | **`/api/tasks/{id}/convoy/dispatch`** | **`{ "estimated_cost" }`** optional | Same wave as **`dispatch-ready`**; **`{ dispatched, total, results[] }`**. |
+| POST | **`/api/tasks/{id}/convoy/subtasks`** | **`{ "subtasks": [ … ] }`** | **201** body is an **array** of new MC-shaped subtask rows. |
+
+Singular aliases: **`GET`/`POST /api/convoy/{id}/mail`** (same as **`…/convoys/{id}/mail`**), plus existing **`/api/convoy`** create and **`dispatch-ready`**.
 
 ---
 

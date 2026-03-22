@@ -123,19 +123,20 @@ func (s *Service) ListByProduct(ctx context.Context, productID domain.ProductID)
 
 // DispatchReady dispatches subtasks whose dependencies are already completed (one wave).
 // estimatedCostPerSubtask is passed to Budget.AssertWithinBudget once per subtask about to be dispatched (parity with POST /api/tasks/{id}/dispatch).
-func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID, estimatedCostPerSubtask float64) error {
+// The returned count is how many subtasks transitioned to dispatched in this call (0 when none ready, parent health blocks, or all already dispatched).
+func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID, estimatedCostPerSubtask float64) (dispatched int, err error) {
 	c, err := s.Convoys.ByID(ctx, convoyID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	parent, err := s.Tasks.ByID(ctx, c.ParentID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if s.Health != nil {
 		h, herr := s.Health.ByTask(ctx, parent.ID)
 		if herr == nil && h != nil && domain.AgentHealthBlocksConvoyDispatch(h.Status) {
-			return nil
+			return 0, nil
 		}
 	}
 	completed := make(map[domain.SubtaskID]bool, len(c.Subtasks))
@@ -161,24 +162,25 @@ func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID, e
 		}
 		if s.Budget != nil {
 			if err := s.Budget.AssertWithinBudget(ctx, c.ProductID, estimatedCostPerSubtask); err != nil {
-				return err
+				return dispatched, err
 			}
 		}
 		ref, err := s.Gateway.DispatchSubtask(ctx, *parent, *st)
 		if err != nil {
 			st.DispatchAttempts++
 			if saveErr := s.Convoys.Save(ctx, c); saveErr != nil {
-				return saveErr
+				return dispatched, saveErr
 			}
 			maxA := s.maxDispatchAttempts()
 			if st.DispatchAttempts >= maxA {
-				return fmt.Errorf("%w: subtask %s after %d attempts: %v", domain.ErrGateway, st.ID, st.DispatchAttempts, err)
+				return dispatched, fmt.Errorf("%w: subtask %s after %d attempts: %v", domain.ErrGateway, st.ID, st.DispatchAttempts, err)
 			}
 			continue
 		}
 		st.DispatchAttempts = 0
 		st.Dispatched = true
 		st.ExternalRef = ref
+		dispatched++
 		if s.Events != nil {
 			_ = s.Events.Publish(ctx, ports.LiveActivityEvent{
 				Type:      "convoy_subtask_dispatched",
@@ -194,7 +196,10 @@ func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID, e
 			})
 		}
 	}
-	return s.Convoys.Save(ctx, c)
+	if err := s.Convoys.Save(ctx, c); err != nil {
+		return dispatched, err
+	}
+	return dispatched, nil
 }
 
 // PostMail appends inter-subtask mail for a convoy.
@@ -291,4 +296,80 @@ func (s *Service) CompleteSubtask(ctx context.Context, convoyID domain.ConvoyID,
 		})
 	}
 	return nil
+}
+
+// GetByParentTask returns the convoy whose parent task id matches (Mission Control lookup key).
+func (s *Service) GetByParentTask(ctx context.Context, parentID domain.TaskID) (*domain.Convoy, error) {
+	return s.Convoys.ByParentTask(ctx, parentID)
+}
+
+// DeleteConvoy removes a convoy and its subtasks/edges (SQLite FK cascade).
+func (s *Service) DeleteConvoy(ctx context.Context, id domain.ConvoyID) error {
+	return s.Convoys.Delete(ctx, id)
+}
+
+// AppendSubtasks adds subtasks to the convoy for parentID and recomputes dag layers.
+func (s *Service) AppendSubtasks(ctx context.Context, parentID domain.TaskID, extra []domain.Subtask) (*domain.Convoy, error) {
+	c, err := s.Convoys.ByParentTask(ctx, parentID)
+	if err != nil {
+		return nil, err
+	}
+	parent, err := s.Tasks.ByID(ctx, parentID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ports.RequireActiveProduct(ctx, s.Products, parent.ProductID); err != nil {
+		return nil, err
+	}
+	if c.ProductID != parent.ProductID {
+		return nil, fmt.Errorf("%w: convoy product mismatch", domain.ErrInvalidInput)
+	}
+	for i := range extra {
+		if extra[i].ID == "" {
+			extra[i].ID = s.IDs.NewSubtaskID()
+		}
+		mj, err := normalizeMetadataJSON(extra[i].MetadataJSON)
+		if err != nil {
+			return nil, fmt.Errorf("%w: subtask metadata_json must be a JSON object", domain.ErrInvalidInput)
+		}
+		extra[i].MetadataJSON = mj
+	}
+	merged := append(append([]domain.Subtask(nil), c.Subtasks...), extra...)
+	if err := domain.ValidateConvoySubtasks(merged); err != nil {
+		return nil, err
+	}
+	applyDagLayers(merged)
+	c.Subtasks = merged
+	meta, err := MergeMCCompatIntoMetadata(c.MetadataJSON, MCCompatFields{UpdatedAt: s.Clock.Now()})
+	if err != nil {
+		return nil, err
+	}
+	c.MetadataJSON = meta
+	if err := s.Convoys.Save(ctx, c); err != nil {
+		return nil, err
+	}
+	return s.Convoys.ByID(ctx, c.ID)
+}
+
+// PatchMCCompat merges Mission Control–style mc_compat fields (e.g. status) into convoy metadata.
+func (s *Service) PatchMCCompat(ctx context.Context, convoyID domain.ConvoyID, patch MCCompatFields) (*domain.Convoy, error) {
+	c, err := s.Convoys.ByID(ctx, convoyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ports.RequireActiveProduct(ctx, s.Products, c.ProductID); err != nil {
+		return nil, err
+	}
+	if patch.UpdatedAt.IsZero() {
+		patch.UpdatedAt = s.Clock.Now()
+	}
+	meta, err := MergeMCCompatIntoMetadata(c.MetadataJSON, patch)
+	if err != nil {
+		return nil, err
+	}
+	c.MetadataJSON = meta
+	if err := s.Convoys.Save(ctx, c); err != nil {
+		return nil, err
+	}
+	return s.Convoys.ByID(ctx, c.ID)
 }

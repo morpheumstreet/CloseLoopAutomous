@@ -25,6 +25,9 @@ func writeError(w http.ResponseWriter, status int, code, msg string) {
 
 func mapDomainErr(w http.ResponseWriter, err error) bool {
 	switch {
+	case errors.Is(err, domain.ErrConvoyExists):
+		writeError(w, http.StatusConflict, "convoy_exists", err.Error())
+		return true
 	case errors.Is(err, domain.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
 		return true

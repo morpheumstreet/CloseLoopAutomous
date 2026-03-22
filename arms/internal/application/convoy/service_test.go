@@ -111,14 +111,14 @@ func TestDispatchReady_WaitsForDependencyCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
+	if _, err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
 		t.Fatal(err)
 	}
 	c1, _ := convoys.ByID(ctx, c.ID)
 	if !c1.Subtasks[0].Dispatched || c1.Subtasks[1].Dispatched {
 		t.Fatalf("first wave: want only builder dispatched, got %#v", c1.Subtasks)
 	}
-	if err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
+	if _, err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
 		t.Fatal(err)
 	}
 	c2, _ := convoys.ByID(ctx, c.ID)
@@ -128,7 +128,7 @@ func TestDispatchReady_WaitsForDependencyCompletion(t *testing.T) {
 	if err := svc.CompleteSubtask(ctx, c.ID, bID, tt.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
+	if _, err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
 		t.Fatal(err)
 	}
 	c3, _ := convoys.ByID(ctx, c.ID)
@@ -168,7 +168,7 @@ func TestDispatchReady_PublishesLiveActivity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
+	if _, err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.CompleteSubtask(ctx, c.ID, "s1", tt.ID); err != nil {
@@ -258,7 +258,7 @@ func TestDispatchReady_RetriesGatewayThenSucceeds(t *testing.T) {
 		t.Fatal(err)
 	}
 	for wave := 0; wave < 3; wave++ {
-		if err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
+		if _, err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
 			t.Fatalf("wave %d: %v", wave, err)
 		}
 	}
@@ -296,10 +296,10 @@ func TestDispatchReady_GatewayExhausted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
+	if _, err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
 		t.Fatalf("first dispatch: %v", err)
 	}
-	err = svc.DispatchReady(ctx, c.ID, 0)
+	_, err = svc.DispatchReady(ctx, c.ID, 0)
 	if err == nil || !errors.Is(err, domain.ErrGateway) {
 		t.Fatalf("want ErrGateway on second dispatch, got %v", err)
 	}
@@ -341,7 +341,7 @@ func TestDispatchReady_ParentHealthBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
+	if _, err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
 		t.Fatal(err)
 	}
 	cf, _ := convoys.ByID(ctx, c.ID)
@@ -349,7 +349,7 @@ func TestDispatchReady_ParentHealthBlocks(t *testing.T) {
 		t.Fatal("dispatch should be deferred while parent health is stalled")
 	}
 	_ = health.UpsertHeartbeat(ctx, tt.ID, p.ID, "healthy", "{}", clock.Now())
-	if err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
+	if _, err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
 		t.Fatal(err)
 	}
 	cf2, _ := convoys.ByID(ctx, c.ID)

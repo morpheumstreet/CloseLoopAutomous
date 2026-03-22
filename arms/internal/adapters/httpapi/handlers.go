@@ -1077,7 +1077,7 @@ func (h *Handlers) dispatchConvoy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := domain.ConvoyID(r.PathValue("id"))
-	if err := h.Convoy.DispatchReady(r.Context(), id, req.EstimatedCost); err != nil {
+	if _, err := h.Convoy.DispatchReady(r.Context(), id, req.EstimatedCost); err != nil {
 		if mapDomainErr(w, err) {
 			return
 		}
@@ -2766,6 +2766,11 @@ func convoyToJSON(c *domain.Convoy) map[string]any {
 	if meta == "" {
 		meta = "{}"
 	}
+	rawEdges := convoy.SubtaskDependencyEdges(c.Subtasks)
+	edgeObjs := make([]map[string]any, len(rawEdges))
+	for i := range rawEdges {
+		edgeObjs[i] = map[string]any{"from": rawEdges[i].From, "to": rawEdges[i].To}
+	}
 	return map[string]any{
 		"id":            string(c.ID),
 		"product_id":    string(c.ProductID),
@@ -2776,6 +2781,7 @@ func convoyToJSON(c *domain.Convoy) map[string]any {
 			"edge_count": edgeCount,
 			"max_depth":  maxLayer,
 		},
+		"edges":      edgeObjs,
 		"subtasks":   subs,
 		"created_at": c.CreatedAt.Format(time.RFC3339Nano),
 	}

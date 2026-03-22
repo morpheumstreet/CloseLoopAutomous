@@ -3,9 +3,10 @@ package domain
 import "fmt"
 
 // ValidateConvoySubtasks checks that depends_on ids exist and the dependency graph is acyclic.
+// An empty slice is valid (Mission Control allows creating a convoy with zero subtasks, then POST …/subtasks).
 func ValidateConvoySubtasks(subtasks []Subtask) error {
 	if len(subtasks) == 0 {
-		return fmt.Errorf("%w: convoy needs at least one subtask", ErrInvalidInput)
+		return nil
 	}
 	ids := make(map[SubtaskID]struct{}, len(subtasks))
 	for i := range subtasks {

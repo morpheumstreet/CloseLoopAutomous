@@ -344,6 +344,17 @@ components:
         id: { type: string }
         product_id: { type: string }
         parent_id: { type: string }
+        metadata_json: { type: string }
+        graph:
+          type: object
+          properties:
+            node_count: { type: integer }
+            edge_count: { type: integer }
+            max_depth: { type: integer }
+        edges:
+          type: array
+          description: Normalized dependency arcs (same semantics as GET …/graph); also persisted in SQLite convoy_edges
+          items: { $ref: "#/components/schemas/ConvoyGraphEdge" }
         subtasks:
           type: array
           items: { $ref: "#/components/schemas/Subtask" }
@@ -404,6 +415,77 @@ components:
             node_count: { type: integer }
             edge_count: { type: integer }
             max_depth: { type: integer }
+
+    MissionControlCreateSubtask:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        suggested_role: { type: string }
+        agent_id: { type: string, description: "Mapped to agent_role / metadata hint in arms" }
+        depends_on:
+          type: array
+          items: { type: string }
+
+    MissionControlCreateConvoyRequest:
+      type: object
+      properties:
+        strategy: { type: string, example: "manual", description: "ai returns 501 in arms" }
+        name: { type: string }
+        decomposition_spec: { type: string }
+        subtasks:
+          type: array
+          items: { $ref: "#/components/schemas/MissionControlCreateSubtask" }
+
+    MissionControlConvoyResponse:
+      type: object
+      description: GET/POST/PATCH …/tasks/{id}/convoy — MC-oriented fields plus arms extensions (metadata_json, edges, graph)
+      additionalProperties: true
+      properties:
+        id: { type: string }
+        parent_task_id: { type: string }
+        product_id: { type: string }
+        name: { type: string }
+        strategy: { type: string }
+        decomposition_strategy: { type: string }
+        decomposition_spec: { type: string }
+        status: { type: string }
+        total_subtasks: { type: integer }
+        completed_subtasks: { type: integer }
+        failed_subtasks: { type: integer }
+        subtasks:
+          type: array
+          items: { type: object, additionalProperties: true }
+
+    MissionControlConvoyProgressResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        convoy_id: { type: string }
+        status: { type: string }
+        total: { type: integer }
+        completed: { type: integer }
+        failed: { type: integer }
+        breakdown:
+          type: object
+          additionalProperties: { type: integer }
+        subtasks:
+          type: array
+          items: { type: object, additionalProperties: true }
+
+    MissionControlConvoyDispatchResponse:
+      type: object
+      properties:
+        dispatched: { type: integer }
+        total: { type: integer }
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              taskId: { type: string }
+              success: { type: boolean }
 
     CreateProductRequest:
       type: object
@@ -1255,6 +1337,162 @@ paths:
               schema: { $ref: "#/components/schemas/Task" }
         "402":
           description: Estimated cost would exceed caps or default cumulative budget
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/tasks/{id}/convoy:
+    get:
+      tags: [Tasks, Convoys]
+      summary: Get convoy by parent task (Mission Control shape)
+      description: Same logical convoy as GET /api/convoys/{id}, but keyed by parent task id. Subtasks include nested `task` with synthetic Kanban status mapping.
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MissionControlConvoyResponse" }
+        "404":
+          description: No convoy for this task
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    post:
+      tags: [Tasks, Convoys]
+      summary: Create convoy under task (Mission Control)
+      description: Body accepts MC-style fields; `strategy: ai` returns 501. Stores MC-oriented fields under `metadata_json.mc_compat`.
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MissionControlCreateConvoyRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MissionControlConvoyResponse" }
+        "409":
+          description: Convoy already exists for parent task
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    patch:
+      tags: [Tasks, Convoys]
+      summary: Update convoy status (Mission Control)
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, description: "e.g. active, paused — stored in mc_compat" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MissionControlConvoyResponse" }
+        "404":
+          description: No convoy for this task
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [Tasks, Convoys]
+      summary: Delete convoy for task (Mission Control)
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+        "404":
+          description: No convoy for this task
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/tasks/{id}/convoy/progress:
+    get:
+      tags: [Tasks, Convoys]
+      summary: Convoy progress summary (Mission Control)
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MissionControlConvoyProgressResponse" }
+        "404":
+          description: No convoy for this task
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/tasks/{id}/convoy/dispatch:
+    post:
+      tags: [Tasks, Convoys]
+      summary: Dispatch ready convoy subtasks (Mission Control path)
+      description: Same wave semantics as POST /api/convoys/{id}/dispatch-ready; honors `mc_compat.status` pause.
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DispatchRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MissionControlConvoyDispatchResponse" }
+        "404":
+          description: No convoy for this task
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/tasks/{id}/convoy/subtasks:
+    post:
+      tags: [Tasks, Convoys]
+      summary: Append subtasks to convoy (Mission Control)
+      parameters:
+        - $ref: "#/components/parameters/taskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subtasks]
+              properties:
+                subtasks:
+                  type: array
+                  items: { $ref: "#/components/schemas/MissionControlCreateSubtask" }
+      responses:
+        "201":
+          description: Created rows (array body, MC-shaped)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+        "404":
+          description: No convoy for this task
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

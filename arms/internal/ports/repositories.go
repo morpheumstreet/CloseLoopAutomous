@@ -124,7 +124,9 @@ type TaskRepository interface {
 type ConvoyRepository interface {
 	Save(ctx context.Context, c *domain.Convoy) error
 	ByID(ctx context.Context, id domain.ConvoyID) (*domain.Convoy, error)
+	ByParentTask(ctx context.Context, parentTaskID domain.TaskID) (*domain.Convoy, error)
 	ListByProduct(ctx context.Context, productID domain.ProductID) ([]domain.Convoy, error)
+	Delete(ctx context.Context, id domain.ConvoyID) error
 }
 
 type CostRepository interface {
