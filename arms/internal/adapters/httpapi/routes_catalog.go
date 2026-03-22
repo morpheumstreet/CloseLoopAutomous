@@ -59,7 +59,7 @@ func routeCatalog() []RouteEntry {
 		{"GET", "/api/convoys/{id}", "Get convoy by id"},
 		{"GET", "/api/convoys/{id}/mail", "Inter-subtask mail (?limit=); 503 if mail store not wired"},
 		{"POST", "/api/convoys/{id}/mail", "Append mail {subtask_id, body}"},
-		{"POST", "/api/convoys/{id}/dispatch-ready", "Dispatch ready convoy subtasks; JSON {estimated_cost} per subtask for budget.Composite (same as task dispatch; empty body treats as 0)"},
+		{"POST", "/api/convoys/{id}/dispatch-ready", "Dispatch ready convoy subtasks; JSON {estimated_cost} per subtask for budget.Composite (same as task dispatch; empty body treats as 0). When AgentHealth for the parent task is error-like (stalled/error/failed/offline), no-op success. Gateway failures increment subtask dispatch_attempts until cap (default 5), then 502."},
 		{"POST", "/api/convoy", "MC alias: same as POST /api/convoys"},
 		{"GET", "/api/convoy/{id}", "MC alias: same as GET /api/convoys/{id}"},
 		{"POST", "/api/convoy/{id}/dispatch-ready", "MC alias: same as POST /api/convoys/{id}/dispatch-ready"},

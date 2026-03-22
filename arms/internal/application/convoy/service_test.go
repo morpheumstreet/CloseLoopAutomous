@@ -2,6 +2,7 @@ package convoy
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -204,5 +205,154 @@ func TestCreateConvoyRejectsDependencyCycle(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("want validation error")
+	}
+}
+
+// subtaskFailGW fails DispatchSubtask per subtask id for a fixed number of calls, then delegates to Stub.
+type subtaskFailGW struct {
+	inner *gw.Stub
+	left  map[domain.SubtaskID]int
+}
+
+func (f *subtaskFailGW) DispatchTask(ctx context.Context, task domain.Task) (string, error) {
+	return f.inner.DispatchTask(ctx, task)
+}
+
+func (f *subtaskFailGW) DispatchSubtask(ctx context.Context, parent domain.TaskID, sub domain.Subtask) (string, error) {
+	if f.left != nil {
+		if n, ok := f.left[sub.ID]; ok && n > 0 {
+			f.left[sub.ID] = n - 1
+			return "", domain.ErrGateway
+		}
+	}
+	return f.inner.DispatchSubtask(ctx, parent, sub)
+}
+
+func TestDispatchReady_RetriesGatewayThenSucceeds(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	tasks := memory.NewTaskStore()
+	convoys := memory.NewConvoyStore()
+	gateway := &subtaskFailGW{inner: &gw.Stub{}, left: map[domain.SubtaskID]int{"s1": 2}}
+
+	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
+	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
+	tt := &domain.Task{
+		ID: domain.TaskID("task-1"), ProductID: p.ID, IdeaID: domain.IdeaID("idea-1"),
+		Spec: "s", Status: domain.StatusAssigned, PlanApproved: true,
+		CreatedAt: clock.Now(), UpdatedAt: clock.Now(),
+	}
+	if err := tasks.Save(ctx, tt); err != nil {
+		t.Fatal(err)
+	}
+	bpol := &budget.Composite{Costs: memory.NewCostStore(), Caps: memory.NewCostCapStore(), Clock: clock, DefaultCumulative: 0}
+	svc := &Service{
+		Convoys: convoys, Tasks: tasks, Products: products, Gateway: gateway, Budget: bpol,
+		Clock: clock, IDs: ids, MaxSubtaskDispatchAttempts: 5,
+	}
+	c, err := svc.Create(ctx, tt.ID, p.ID, []domain.Subtask{{ID: "s1", AgentRole: "builder"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for wave := 0; wave < 3; wave++ {
+		if err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
+			t.Fatalf("wave %d: %v", wave, err)
+		}
+	}
+	cf, _ := convoys.ByID(ctx, c.ID)
+	if !cf.Subtasks[0].Dispatched || cf.Subtasks[0].DispatchAttempts != 0 {
+		t.Fatalf("want dispatched and attempts reset, got %#v", cf.Subtasks[0])
+	}
+}
+
+func TestDispatchReady_GatewayExhausted(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	tasks := memory.NewTaskStore()
+	convoys := memory.NewConvoyStore()
+	gateway := &subtaskFailGW{inner: &gw.Stub{}, left: map[domain.SubtaskID]int{"s1": 99}}
+
+	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
+	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
+	tt := &domain.Task{
+		ID: domain.TaskID("task-1"), ProductID: p.ID, IdeaID: domain.IdeaID("idea-1"),
+		Spec: "s", Status: domain.StatusAssigned, PlanApproved: true,
+		CreatedAt: clock.Now(), UpdatedAt: clock.Now(),
+	}
+	if err := tasks.Save(ctx, tt); err != nil {
+		t.Fatal(err)
+	}
+	bpol := &budget.Composite{Costs: memory.NewCostStore(), Caps: memory.NewCostCapStore(), Clock: clock, DefaultCumulative: 0}
+	svc := &Service{
+		Convoys: convoys, Tasks: tasks, Products: products, Gateway: gateway, Budget: bpol,
+		Clock: clock, IDs: ids, MaxSubtaskDispatchAttempts: 2,
+	}
+	c, err := svc.Create(ctx, tt.ID, p.ID, []domain.Subtask{{ID: "s1", AgentRole: "builder"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
+		t.Fatalf("first dispatch: %v", err)
+	}
+	err = svc.DispatchReady(ctx, c.ID, 0)
+	if err == nil || !errors.Is(err, domain.ErrGateway) {
+		t.Fatalf("want ErrGateway on second dispatch, got %v", err)
+	}
+	cf, _ := convoys.ByID(ctx, c.ID)
+	if cf.Subtasks[0].Dispatched || cf.Subtasks[0].DispatchAttempts != 2 {
+		t.Fatalf("want 2 attempts, not dispatched, got %#v", cf.Subtasks[0])
+	}
+}
+
+func TestDispatchReady_ParentHealthBlocks(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	tasks := memory.NewTaskStore()
+	convoys := memory.NewConvoyStore()
+	health := memory.NewAgentHealthStore()
+	gateway := &gw.Stub{}
+
+	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
+	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
+	tt := &domain.Task{
+		ID: domain.TaskID("task-1"), ProductID: p.ID, IdeaID: domain.IdeaID("idea-1"),
+		Spec: "s", Status: domain.StatusAssigned, PlanApproved: true,
+		CreatedAt: clock.Now(), UpdatedAt: clock.Now(),
+	}
+	if err := tasks.Save(ctx, tt); err != nil {
+		t.Fatal(err)
+	}
+	if err := health.UpsertHeartbeat(ctx, tt.ID, p.ID, "stalled", "{}", clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	bpol := &budget.Composite{Costs: memory.NewCostStore(), Caps: memory.NewCostCapStore(), Clock: clock, DefaultCumulative: 0}
+	svc := &Service{
+		Convoys: convoys, Tasks: tasks, Products: products, Gateway: gateway, Budget: bpol,
+		Health: health, Clock: clock, IDs: ids,
+	}
+	c, err := svc.Create(ctx, tt.ID, p.ID, []domain.Subtask{{ID: "s1", AgentRole: "builder"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	cf, _ := convoys.ByID(ctx, c.ID)
+	if cf.Subtasks[0].Dispatched {
+		t.Fatal("dispatch should be deferred while parent health is stalled")
+	}
+	_ = health.UpsertHeartbeat(ctx, tt.ID, p.ID, "healthy", "{}", clock.Now())
+	if err := svc.DispatchReady(ctx, c.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	cf2, _ := convoys.ByID(ctx, c.ID)
+	if !cf2.Subtasks[0].Dispatched {
+		t.Fatal("expected dispatch after health recovered")
 	}
 }

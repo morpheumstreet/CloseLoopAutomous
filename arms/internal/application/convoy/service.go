@@ -10,6 +10,8 @@ import (
 	"github.com/closeloopautomous/arms/internal/ports"
 )
 
+const defaultMaxSubtaskDispatchAttempts = 5
+
 // Service builds a convoy DAG and dispatches subtasks through the same gateway port as single tasks.
 type Service struct {
 	Convoys  ports.ConvoyRepository
@@ -17,10 +19,20 @@ type Service struct {
 	Products ports.ProductRepository
 	Gateway  ports.AgentGateway
 	Budget   ports.BudgetPolicy // optional; when set, enforces caps per subtask dispatch (like task.Dispatch)
-	Mail     ports.ConvoyMailRepository // optional; nil → mail routes return not configured
+	Health   ports.AgentHealthRepository // optional; parent task agent-health can defer dispatch-ready
+	Mail     ports.ConvoyMailRepository  // optional; nil → mail routes return not configured
+	// MaxSubtaskDispatchAttempts caps failed gateway calls per subtask before ErrGateway (0 → defaultMaxSubtaskDispatchAttempts).
+	MaxSubtaskDispatchAttempts int
 	Clock    ports.Clock
 	IDs      ports.IdentityGenerator
 	Events   ports.LiveActivityPublisher // optional: SSE / outbox on dispatch + subtask completion
+}
+
+func (s *Service) maxDispatchAttempts() int {
+	if s.MaxSubtaskDispatchAttempts > 0 {
+		return s.MaxSubtaskDispatchAttempts
+	}
+	return defaultMaxSubtaskDispatchAttempts
 }
 
 // Create attaches subtasks to a parent task (roles + dependencies only; no dispatch).
@@ -73,6 +85,12 @@ func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID, e
 	if err != nil {
 		return err
 	}
+	if s.Health != nil {
+		h, herr := s.Health.ByTask(ctx, parent.ID)
+		if herr == nil && h != nil && domain.AgentHealthBlocksConvoyDispatch(h.Status) {
+			return nil
+		}
+	}
 	completed := make(map[domain.SubtaskID]bool, len(c.Subtasks))
 	for i := range c.Subtasks {
 		if c.Subtasks[i].Completed {
@@ -101,8 +119,17 @@ func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID, e
 		}
 		ref, err := s.Gateway.DispatchSubtask(ctx, parent.ID, *st)
 		if err != nil {
-			return fmt.Errorf("%w: subtask %s: %v", domain.ErrGateway, st.ID, err)
+			st.DispatchAttempts++
+			if saveErr := s.Convoys.Save(ctx, c); saveErr != nil {
+				return saveErr
+			}
+			maxA := s.maxDispatchAttempts()
+			if st.DispatchAttempts >= maxA {
+				return fmt.Errorf("%w: subtask %s after %d attempts: %v", domain.ErrGateway, st.ID, st.DispatchAttempts, err)
+			}
+			continue
 		}
+		st.DispatchAttempts = 0
 		st.Dispatched = true
 		st.ExternalRef = ref
 		if s.Events != nil {

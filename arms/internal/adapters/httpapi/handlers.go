@@ -2266,13 +2266,14 @@ func convoyToJSON(c *domain.Convoy) map[string]any {
 			deps[j] = string(d)
 		}
 		subs[i] = map[string]any{
-			"id":              string(c.Subtasks[i].ID),
-			"agent_role":      c.Subtasks[i].AgentRole,
-			"depends_on":      deps,
-			"dispatched":      c.Subtasks[i].Dispatched,
-			"completed":       c.Subtasks[i].Completed,
-			"external_ref":    c.Subtasks[i].ExternalRef,
-			"last_checkpoint": c.Subtasks[i].LastCheckpoint,
+			"id":                string(c.Subtasks[i].ID),
+			"agent_role":        c.Subtasks[i].AgentRole,
+			"depends_on":        deps,
+			"dispatched":        c.Subtasks[i].Dispatched,
+			"completed":         c.Subtasks[i].Completed,
+			"external_ref":      c.Subtasks[i].ExternalRef,
+			"last_checkpoint":   c.Subtasks[i].LastCheckpoint,
+			"dispatch_attempts": c.Subtasks[i].DispatchAttempts,
 		}
 	}
 	return map[string]any{

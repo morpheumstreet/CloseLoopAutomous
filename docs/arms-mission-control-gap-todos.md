@@ -2,15 +2,15 @@
 
 Use this as the master backlog for bringing `arms` toward Autensa/Mission Control backend parity. Check items off as you implement them.
 
-**Backlog checklist (§1–§10):** `85` done · `21` open · **~80%** complete — see **[Master backlog (all checklist items)](#master-backlog-all-checklist-items)** for the full table; _grep_ `- [x]` / `- [ ]` in this file to refresh counts after edits._
+**Backlog checklist (§1–§10):** `86` done · `20` open · **~81%** complete — see **[Master backlog (all checklist items)](#master-backlog-all-checklist-items)** for the full table; _grep_ `- [x]` / `- [ ]` in this file to refresh counts after edits._
 
-**Next priority:** ML on **`preference_models`** (learning loop) and convoy **graph + mail + health-based dispatch**. Optional polish: stable PR correlation keys for extreme dedupe.
+**Next priority:** ML on **`preference_models`** (learning loop) and convoy **full graph metadata + richer mail / API parity**. **Baseline done:** convoy **`dispatch-ready`** respects parent **`task_agent_health`** (blocks on stalled/error/failed/offline) and persists **`dispatch_attempts`** with a retry cap before hard **`ErrGateway`**. Optional polish: stable PR correlation keys for extreme dedupe.
 
 **Asynq scheduling (steady state):** Set **`ARMS_REDIS_ADDR`** and run **`cmd/arms-worker`** alongside **`cmd/arms`**. **`ARMS_AUTOPILOT_TICK_SEC`** and **`ARMS_USE_ASYNQ_SCHEDULER`** are **deprecated** (ignored; warnings if set). **`cmd/arms`** runs startup + **5m** resync (**`product_schedules`** + per-product reconcile) plus HTTP hooks; worker runs **`product:schedule:tick`**, **`arms:product_autopilot_tick`**, and optional **`arms:autopilot_tick`**.
 
 **What this is:** a single checklist + design locks for **backend parity** with [mission-control](https://github.com/crshdn/mission-control): API routes, SQLite schema, OpenClaw wiring, safety/cost/workspace, realtime, and convoy/autopilot gaps. It is **not** a fishtank/UI spec; pair with [api-ref.md](api-ref.md) for HTTP details and [recomendeddesign.md](recomendeddesign.md) for the broader architecture sketch.
 
-_Re-checked against the `arms/` tree (2026-03-23): SQLite schema **v17** (`ExpectedSchemaVersion` in `internal/adapters/sqlite/migrate.go`); baseline vs “full MC” is called out so unchecked rows are not misread as “missing entirely” when a slim table or route already exists._
+_Re-checked against the `arms/` tree (2026-03-23): SQLite schema **v18** (`ExpectedSchemaVersion` in `internal/adapters/sqlite/migrate.go`); baseline vs “full MC” is called out so unchecked rows are not misread as “missing entirely” when a slim table or route already exists._
 
 _See also [recomendeddesign.md](recomendeddesign.md) (earlier “GoAutensa” outline); this file is the live parity checklist + locked target architecture._
 
@@ -100,7 +100,7 @@ Rough calendar: **~4 weeks core (A–C)** + **polish (D)**; optional future belo
 | Phase | Time (guide) | Deliverables |
 |-------|----------------|--------------|
 | **A — Production safety** | 1–2 wk | **Done (when `AgentHealth` wired):** MC convoy singular aliases (`/api/convoy/...`); **`GET /api/products/{id}/stalled-tasks`**; completion webhook + **`POST /api/tasks/{id}/complete`** → **`task_agent_health`** **`completed`** + **`task_completed`** outbox in **one SQLite transaction** (`LiveActivityTX.CompleteTaskWithEvent`); task **`sandbox_path` / `worktree_path`** (008–009). **Manual stall nudge:** **`POST /api/tasks/{id}/stall-nudge`** (optional JSON `{ "note" }`) → `status_reason` prefix + optional agent-health `stall_nudges[]` + SSE **`task_stall_nudged`**. **Merge queue ship:** FIFO head + **lease** + optional **real merge** (`ARMS_MERGE_BACKEND=github|local`), conflict/failure persisted on row; **`merge_ship_completed`** SSE; **autopilot merge policy** (tier + **`merge_policy_json`** gates, **semi_auto** gated auto-ship, **resolve** routes, **same-Tx outbox** on merge finish when SQLite outbox is wired) — see **Remarks — merge-queue autopilot policy** above. **Still open:** **auto**-nudge/reassign, multi-instance **DB leases** for task completion / product gates beyond merge queue. |
-| **B — Full autonomy** | ~2 wk | Convoy: **done (baseline DAG semantics):** `convoy_subtasks.completed` (migration 011); dependents **`dispatch-ready`** only after upstream **completed**; webhook **`convoy_id` + `subtask_id`** + parent **`task_id`**; SSE **`convoy_subtask_dispatched`** / **`convoy_subtask_completed`**. **TBD:** full graph algorithms package, **mailbox**, deeper **agent health** (retries, convoy-aware dispatch). **GitHub PR + post-execution (#60)** — **done (baseline):** REST + **`gh`**, duplicate recovery, agent + **CI** HMAC webhooks, auto PR/merge path for tiers. Deeper **ideas** scoring/metadata; **`swipe_history`** table + list API (**done**); **`preference_models`** table + **`GET/PUT /api/products/{id}/preference-model`** (**done** baseline); **ML / learning loop** still **TBD**. |
+| **B — Full autonomy** | ~2 wk | Convoy: **done (baseline DAG semantics):** `convoy_subtasks.completed` (migration 011); dependents **`dispatch-ready`** only after upstream **completed**; webhook **`convoy_id` + `subtask_id`** + parent **`task_id`**; SSE **`convoy_subtask_dispatched`** / **`convoy_subtask_completed`**. **Baseline:** parent-task **agent-health gate** + **`dispatch_attempts`** / gateway retry cap (migration **018**). **TBD:** full graph algorithms package, richer **mailbox** / MC API surface. **GitHub PR + post-execution (#60)** — **done (baseline):** REST + **`gh`**, duplicate recovery, agent + **CI** HMAC webhooks, auto PR/merge path for tiers. Deeper **ideas** scoring/metadata; **`swipe_history`** table + list API (**done**); **`preference_models`** table + **`GET/PUT /api/products/{id}/preference-model`** (**done** baseline); **ML / learning loop** still **TBD**. |
 | **C — Polish** | ~1 wk | **Agent** domain + listing/health APIs (replace stub). **`product_schedules`** on **Asynq** (Redis) — **done:** migration **017**, **`product:schedule:tick`**, cron + one-shot **`delay_seconds`**, HTTP fields on **`GET/PATCH …/product-schedule`**; optional follow-up: cancel/replace stale Redis tasks on schedule edits. Autopilot tick offload via Redis **done**. Optional **Ed25519** on OpenClaw `connect`. **Maybe pool** resurface / batch re-eval. ~~**HTTP aliases** `/api/convoy/*`~~ (done in A). |
 | **D — Optional future** | — | Embedded UI (e.g. HTMX/templ), Postgres adapter, pure-Go agent runtime (replace OpenClaw). |
 
@@ -198,7 +198,7 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 | 65 | 6 | Done | **SSE** — **`convoy_subtask_dispatched`**, **`convoy_subtask_completed`** (same hub/outbox path as other live events when wired) |
 | 66 | 6 | Open | Persist full convoy DAG metadata as in MC (beyond current domain + completion flags) |
 | 67 | 6 | Open | Convoy mail / inter-subtask messaging (port + persistence) |
-| 68 | 6 | Open | Integrate convoy dispatch with agent health and retries |
+| 68 | 6 | Done | Convoy **`dispatch-ready`**: optional **`AgentHealth`** gate on **parent** task (`stalled` / `error` / `failed` / `offline` / `dead` → no-op); **`dispatch_attempts`** on **`convoy_subtasks`** (migration **018**); cap (default 5) then **`ErrGateway`** |
 | 69 | 6 | Done | Minimal HTTP — `POST /api/convoys`, `GET /api/convoys/{id}`, `GET /api/products/{id}/convoys`, `POST /api/convoys/{id}/dispatch-ready`; `convoy.Service.Get`, `ListByProduct`; `ports.ConvoyRepository.ListByProduct`; subtask **`completed`** in JSON |
 | 70 | 6 | Open | API parity with MC convoy — mail, graph, richer status (**naming / singular aliases:** done — §1) |
 | 71 | 6 | Open | Richer subtask model (agent config, retries, nudges) if required for parity |
@@ -338,7 +338,7 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 - [x] **SSE** — **`convoy_subtask_dispatched`**, **`convoy_subtask_completed`** (same hub/outbox path as other live events when wired)
 - [ ] Persist full convoy DAG metadata as in MC (beyond current domain + completion flags)
 - [ ] Convoy mail / inter-subtask messaging (port + persistence)
-- [ ] Integrate convoy dispatch with agent health and retries
+- [x] Integrate convoy dispatch with agent health and retries — parent-task health gate + **`dispatch_attempts`** + retry cap (**018**)
 - [x] Minimal HTTP — `POST /api/convoys`, `GET /api/convoys/{id}`, `GET /api/products/{id}/convoys`, `POST /api/convoys/{id}/dispatch-ready`; `convoy.Service.Get`, `ListByProduct`; `ports.ConvoyRepository.ListByProduct`; subtask **`completed`** in JSON
 - [ ] API parity with MC convoy — mail, graph, richer status (**naming / singular aliases:** done — §1)
 - [ ] Richer subtask model (agent config, retries, nudges) if required for parity
@@ -403,7 +403,7 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 
 | Area            | Rough priority for a vertical slice                         |
 |-----------------|--------------------------------------------------------------|
-| SQLite + core tables | Unblocks everything else (current **v17** migrations)     |
+| SQLite + core tables | Unblocks everything else (current **v18** migrations)     |
 | HTTP + auth + tasks/products | Makes the service usable from a UI or CLI            |
 | Real OpenClaw WS   | Closes the execution-plane gap                            |
 | Webhooks           | Completes the async completion loop                       |

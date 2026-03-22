@@ -268,8 +268,12 @@ components:
           type: array
           items: { type: string }
         dispatched: { type: boolean }
+        completed: { type: boolean }
         external_ref: { type: string }
         last_checkpoint: { type: string }
+        dispatch_attempts:
+          type: integer
+          description: Failed gateway dispatch count before successful dispatch (capped; default max 5)
 
     Convoy:
       type: object
@@ -1072,6 +1076,9 @@ paths:
     post:
       tags: [Convoys]
       summary: Dispatch ready subtasks (one wave)
+      description: |
+        When `task_agent_health` for the parent task is stalled, error, failed, offline, or dead, returns 200 with no new dispatches.
+        On gateway failure, increments per-subtask `dispatch_attempts` until the cap (default 5), then responds with 502.
       parameters:
         - $ref: "#/components/parameters/convoyId"
       responses:
@@ -1080,6 +1087,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Convoy" }
+        "502":
+          description: Gateway error after retry cap for a subtask
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /api/costs:
     post:

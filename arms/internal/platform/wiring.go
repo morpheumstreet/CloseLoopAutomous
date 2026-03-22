@@ -167,6 +167,7 @@ func buildHandlers(
 		Products: products,
 		Gateway:  agentGW,
 		Budget:   budgetPolicy,
+		Health:   agentHealth,
 		Mail:     convoyMail,
 		Clock:    clock,
 		IDs:      ids,

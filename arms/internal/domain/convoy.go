@@ -19,4 +19,6 @@ type Subtask struct {
 	Completed    bool // set after agent reports done (webhook); gates dependents for dispatch
 	ExternalRef  string
 	LastCheckpoint string
+	// DispatchAttempts counts failed Gateway.DispatchSubtask calls while not yet dispatched (for retry cap).
+	DispatchAttempts int
 }

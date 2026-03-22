@@ -486,9 +486,9 @@ ON CONFLICT(id) DO UPDATE SET
 			return err
 		}
 		_, err = tx.ExecContext(ctx, `
-INSERT INTO convoy_subtasks (convoy_id, id, agent_role, depends_on_json, dispatched, completed, external_ref, last_checkpoint)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-`, string(c.ID), string(st.ID), st.AgentRole, string(deps), boolInt(st.Dispatched), boolInt(st.Completed), st.ExternalRef, st.LastCheckpoint)
+INSERT INTO convoy_subtasks (convoy_id, id, agent_role, depends_on_json, dispatched, completed, external_ref, last_checkpoint, dispatch_attempts)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, string(c.ID), string(st.ID), st.AgentRole, string(deps), boolInt(st.Dispatched), boolInt(st.Completed), st.ExternalRef, st.LastCheckpoint, st.DispatchAttempts)
 		if err != nil {
 			return err
 		}
@@ -519,7 +519,7 @@ SELECT id, product_id, parent_task_id, created_at FROM convoys WHERE id = ?`, st
 		ct, _ = time.Parse(time.RFC3339, cat)
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, agent_role, depends_on_json, dispatched, completed, external_ref, last_checkpoint
+SELECT id, agent_role, depends_on_json, dispatched, completed, external_ref, last_checkpoint, dispatch_attempts
 FROM convoy_subtasks WHERE convoy_id = ? ORDER BY id`, string(id))
 	if err != nil {
 		return nil, err
@@ -528,8 +528,8 @@ FROM convoy_subtasks WHERE convoy_id = ? ORDER BY id`, string(id))
 	var subs []domain.Subtask
 	for rows.Next() {
 		var sid, role, depj, xref, lcp string
-		var disp, done int
-		if err := rows.Scan(&sid, &role, &depj, &disp, &done, &xref, &lcp); err != nil {
+		var disp, done, att int
+		if err := rows.Scan(&sid, &role, &depj, &disp, &done, &xref, &lcp, &att); err != nil {
 			return nil, err
 		}
 		var depStrs []string
@@ -541,13 +541,14 @@ FROM convoy_subtasks WHERE convoy_id = ? ORDER BY id`, string(id))
 			deps[i] = domain.SubtaskID(depStrs[i])
 		}
 		subs = append(subs, domain.Subtask{
-			ID:             domain.SubtaskID(sid),
-			DependsOn:      deps,
-			AgentRole:      role,
-			Dispatched:     disp != 0,
-			Completed:      done != 0,
-			ExternalRef:    xref,
-			LastCheckpoint: lcp,
+			ID:               domain.SubtaskID(sid),
+			DependsOn:        deps,
+			AgentRole:        role,
+			Dispatched:       disp != 0,
+			Completed:        done != 0,
+			ExternalRef:      xref,
+			LastCheckpoint:   lcp,
+			DispatchAttempts: att,
 		})
 	}
 	if err := rows.Err(); err != nil {
