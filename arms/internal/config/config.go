@@ -22,6 +22,7 @@ import (
 //   - OPENCLAW_DISPATCH_TIMEOUT_SEC — dispatch RPC timeout seconds (default 30)
 //   - ARMS_DEVICE_ID — optional X-Arms-Device-Id on WS handshake
 //   - ARMS_OPENCLAW_SESSION_KEY — sessionKey for chat.send dispatch
+//   - ARMS_OPENCLAW_LIVE_CONTRACT — "1"/"true"/"yes" with OPENCLAW_GATEWAY_URL + ARMS_OPENCLAW_SESSION_KEY runs integration live gateway tests (#105); see internal/integration/openclaw_live_contract_test.go
 //   - ARMS_LOG_JSON — "1" or "true" for JSON logs to stdout (default text)
 //   - ARMS_ACCESS_LOG — "0", "false", "off", "no" disables per-request access logging (default on)
 //   - ARMS_USE_ASYNQ_SCHEDULER — deprecated no-op (still parsed for compatibility). When ARMS_REDIS_ADDR is set, cmd/arms always uses Asynq as the scheduling plane; a warning is logged if this env is set.
@@ -40,6 +41,9 @@ import (
 //   - ARMS_AUTO_STALL_NUDGE_INTERVAL_SEC — enqueue interval for that tick (default 300); minimum 60 when enforced in cmd/arms
 //   - ARMS_AUTO_STALL_NUDGE_COOLDOWN_SEC — min seconds between auto-nudges per task (default 3600)
 //   - ARMS_AUTO_STALL_NUDGE_MAX_PER_DAY — max auto-nudges per task per rolling 24h (default 6); 0 disables the cap
+//   - ARMS_AUTO_STALL_REASSIGN_ENABLED — "1" or "true" to re-dispatch stalled tasks to another execution agent before auto-nudge (#107; requires registry + gateway + same stall tick as nudge)
+//   - ARMS_AUTO_STALL_REASSIGN_COOLDOWN_SEC — min seconds between auto-reassigns per task (default 7200 when reassign enabled and unset/0)
+//   - ARMS_AUTO_STALL_REASSIGN_MAX_PER_DAY — max auto-reassigns per task per rolling 24h (default 4); 0 disables the cap
 //   - ARMS_KNOWLEDGE_DISPATCH_SNIPPETS — max knowledge bullets appended per OpenClaw dispatch (default 5)
 //   - ARMS_KNOWLEDGE_DISABLE_DISPATCH — "1" or "true" to keep knowledge HTTP/CRUD but skip dispatch-time injection
 //   - ARMS_KNOWLEDGE_AUTO_INGEST — "0", "false", "off", "no" to disable auto-append to knowledge from swipes, product feedback, task/convoy completion (default on)
@@ -95,6 +99,9 @@ type Config struct {
 	AutoStallNudgeIntervalSec         int
 	AutoStallNudgeCooldownSec         int
 	AutoStallNudgeMaxPerDay           int
+	AutoStallReassignEnabled          bool
+	AutoStallReassignCooldownSec      int
+	AutoStallReassignMaxPerDay        int
 	KnowledgeDispatchSnippetLimit     int
 	KnowledgeDisableDispatchInjection bool
 	KnowledgeAutoIngest               bool
@@ -209,6 +216,20 @@ func LoadFromEnv() Config {
 			autoStallMaxDay = n
 		}
 	}
+	autoStallReassign := strings.EqualFold(os.Getenv("ARMS_AUTO_STALL_REASSIGN_ENABLED"), "1") ||
+		strings.EqualFold(os.Getenv("ARMS_AUTO_STALL_REASSIGN_ENABLED"), "true")
+	autoStallReassignCD := 7200
+	if s, ok := os.LookupEnv("ARMS_AUTO_STALL_REASSIGN_COOLDOWN_SEC"); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && n >= 0 {
+			autoStallReassignCD = n
+		}
+	}
+	autoStallReassignMax := 4
+	if s, ok := os.LookupEnv("ARMS_AUTO_STALL_REASSIGN_MAX_PER_DAY"); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && n >= 0 {
+			autoStallReassignMax = n
+		}
+	}
 	knowSnippets := 5
 	if s := strings.TrimSpace(os.Getenv("ARMS_KNOWLEDGE_DISPATCH_SNIPPETS")); s != "" {
 		if n, err := strconv.Atoi(s); err == nil && n > 0 {
@@ -277,6 +298,9 @@ func LoadFromEnv() Config {
 		AutoStallNudgeIntervalSec:         autoStallInterval,
 		AutoStallNudgeCooldownSec:         autoStallCooldown,
 		AutoStallNudgeMaxPerDay:           autoStallMaxDay,
+		AutoStallReassignEnabled:          autoStallReassign,
+		AutoStallReassignCooldownSec:      autoStallReassignCD,
+		AutoStallReassignMaxPerDay:        autoStallReassignMax,
 		KnowledgeDispatchSnippetLimit:     knowSnippets,
 		KnowledgeDisableDispatchInjection: knowDisableInject,
 		KnowledgeAutoIngest:               knowAutoIngest,

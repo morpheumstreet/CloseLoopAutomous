@@ -323,6 +323,27 @@ func (s *TaskStore) ListByProduct(_ context.Context, productID domain.ProductID)
 	return out, nil
 }
 
+func (s *TaskStore) CountByExecutionAgent(_ context.Context, productID domain.ProductID, agentID string) (int, error) {
+	if strings.TrimSpace(agentID) == "" {
+		return 0, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n := 0
+	ag := strings.TrimSpace(agentID)
+	for _, t := range s.data {
+		if t.ProductID != productID || t.CurrentExecutionAgentID != ag {
+			continue
+		}
+		switch t.Status {
+		case domain.StatusInProgress, domain.StatusTesting, domain.StatusReview, domain.StatusConvoyActive:
+			n++
+		default:
+		}
+	}
+	return n, nil
+}
+
 func (s *TaskStore) TryComplete(_ context.Context, taskID domain.TaskID, at time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

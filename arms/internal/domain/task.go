@@ -90,6 +90,8 @@ type Task struct {
 	PullRequestURL       string
 	PullRequestNumber    int
 	PullRequestHeadBranch string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	// CurrentExecutionAgentID is the registered execution_agents row last chosen for this task (dispatch / auto-reassign).
+	CurrentExecutionAgentID string
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }

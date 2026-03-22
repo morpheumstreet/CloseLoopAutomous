@@ -2350,6 +2350,9 @@ func taskToJSON(t *domain.Task) map[string]any {
 	if strings.TrimSpace(t.PullRequestHeadBranch) != "" {
 		m["pull_request_head_branch"] = t.PullRequestHeadBranch
 	}
+	if strings.TrimSpace(t.CurrentExecutionAgentID) != "" {
+		m["current_execution_agent_id"] = t.CurrentExecutionAgentID
+	}
 	return m
 }
 

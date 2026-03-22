@@ -682,8 +682,8 @@ func (s *TaskStore) Save(ctx context.Context, t *domain.Task) error {
 		pa = 1
 	}
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO tasks (id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, pull_request_url, pull_request_number, pull_request_head_branch, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO tasks (id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, pull_request_url, pull_request_number, pull_request_head_branch, current_execution_agent_id, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   product_id = excluded.product_id,
   idea_id = excluded.idea_id,
@@ -699,18 +699,19 @@ ON CONFLICT(id) DO UPDATE SET
   pull_request_url = excluded.pull_request_url,
   pull_request_number = excluded.pull_request_number,
   pull_request_head_branch = excluded.pull_request_head_branch,
+  current_execution_agent_id = excluded.current_execution_agent_id,
   created_at = excluded.created_at,
   updated_at = excluded.updated_at
 `, string(t.ID), string(t.ProductID), string(t.IdeaID), t.Spec, string(t.Status), t.StatusReason, pa, t.ClarificationsJSON,
 		t.Checkpoint, t.ExternalRef, t.SandboxPath, t.WorktreePath,
-		t.PullRequestURL, t.PullRequestNumber, t.PullRequestHeadBranch,
+		t.PullRequestURL, t.PullRequestNumber, t.PullRequestHeadBranch, t.CurrentExecutionAgentID,
 		t.CreatedAt.Format(time.RFC3339Nano), t.UpdatedAt.Format(time.RFC3339Nano))
 	return err
 }
 
 func (s *TaskStore) ByID(ctx context.Context, id domain.TaskID) (*domain.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, pull_request_url, pull_request_number, pull_request_head_branch, created_at, updated_at
+SELECT id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, pull_request_url, pull_request_number, pull_request_head_branch, current_execution_agent_id, created_at, updated_at
 FROM tasks WHERE id = ?`, string(id))
 	t, err := scanTaskRow(row)
 	if err != nil {
@@ -724,7 +725,7 @@ FROM tasks WHERE id = ?`, string(id))
 
 func (s *TaskStore) ListByProduct(ctx context.Context, productID domain.ProductID) ([]domain.Task, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, pull_request_url, pull_request_number, pull_request_head_branch, created_at, updated_at
+SELECT id, product_id, idea_id, spec, status, status_reason, plan_approved, clarifications_json, checkpoint, external_ref, sandbox_path, worktree_path, pull_request_url, pull_request_number, pull_request_head_branch, current_execution_agent_id, created_at, updated_at
 FROM tasks WHERE product_id = ?
 ORDER BY updated_at DESC`, string(productID))
 	if err != nil {
@@ -742,29 +743,42 @@ ORDER BY updated_at DESC`, string(productID))
 	return out, rows.Err()
 }
 
+func (s *TaskStore) CountByExecutionAgent(ctx context.Context, productID domain.ProductID, agentID string) (int, error) {
+	if strings.TrimSpace(agentID) == "" {
+		return 0, nil
+	}
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM tasks
+WHERE product_id = ? AND current_execution_agent_id = ?
+  AND status IN ('in_progress', 'testing', 'review', 'convoy_active')`,
+		string(productID), strings.TrimSpace(agentID)).Scan(&n)
+	return n, err
+}
+
 func scanTaskRow(row *sql.Row) (*domain.Task, error) {
 	var (
-		sid, pid, iid, spec, st, sreason, clar, ck, ref, sand, wt, pru, prh, ca, ua string
-		pa, prn                                                                     int
+		sid, pid, iid, spec, st, sreason, clar, ck, ref, sand, wt, pru, prh, execAg, ca, ua string
+		pa, prn                                                                              int
 	)
-	if err := row.Scan(&sid, &pid, &iid, &spec, &st, &sreason, &pa, &clar, &ck, &ref, &sand, &wt, &pru, &prn, &prh, &ca, &ua); err != nil {
+	if err := row.Scan(&sid, &pid, &iid, &spec, &st, &sreason, &pa, &clar, &ck, &ref, &sand, &wt, &pru, &prn, &prh, &execAg, &ca, &ua); err != nil {
 		return nil, err
 	}
-	return buildTaskFromScan(sid, pid, iid, spec, st, sreason, pa, clar, ck, ref, sand, wt, pru, prn, prh, ca, ua)
+	return buildTaskFromScan(sid, pid, iid, spec, st, sreason, pa, clar, ck, ref, sand, wt, pru, prn, prh, execAg, ca, ua)
 }
 
 func scanTaskRows(rows *sql.Rows) (*domain.Task, error) {
 	var (
-		sid, pid, iid, spec, st, sreason, clar, ck, ref, sand, wt, pru, prh, ca, ua string
-		pa, prn                                                                     int
+		sid, pid, iid, spec, st, sreason, clar, ck, ref, sand, wt, pru, prh, execAg, ca, ua string
+		pa, prn                                                                              int
 	)
-	if err := rows.Scan(&sid, &pid, &iid, &spec, &st, &sreason, &pa, &clar, &ck, &ref, &sand, &wt, &pru, &prn, &prh, &ca, &ua); err != nil {
+	if err := rows.Scan(&sid, &pid, &iid, &spec, &st, &sreason, &pa, &clar, &ck, &ref, &sand, &wt, &pru, &prn, &prh, &execAg, &ca, &ua); err != nil {
 		return nil, err
 	}
-	return buildTaskFromScan(sid, pid, iid, spec, st, sreason, pa, clar, ck, ref, sand, wt, pru, prn, prh, ca, ua)
+	return buildTaskFromScan(sid, pid, iid, spec, st, sreason, pa, clar, ck, ref, sand, wt, pru, prn, prh, execAg, ca, ua)
 }
 
-func buildTaskFromScan(sid, pid, iid, spec, st, sreason string, pa int, clar, ck, ref, sand, wt, pru string, prn int, prh, ca, ua string) (*domain.Task, error) {
+func buildTaskFromScan(sid, pid, iid, spec, st, sreason string, pa int, clar, ck, ref, sand, wt, pru string, prn int, prh, execAg, ca, ua string) (*domain.Task, error) {
 	cat, err := time.Parse(time.RFC3339Nano, ca)
 	if err != nil {
 		cat, _ = time.Parse(time.RFC3339, ca)
@@ -774,23 +788,24 @@ func buildTaskFromScan(sid, pid, iid, spec, st, sreason string, pa int, clar, ck
 		uat, _ = time.Parse(time.RFC3339, ua)
 	}
 	return &domain.Task{
-		ID:                    domain.TaskID(sid),
-		ProductID:             domain.ProductID(pid),
-		IdeaID:                domain.IdeaID(iid),
-		Spec:                  spec,
-		Status:                domain.TaskStatus(st),
-		StatusReason:          sreason,
-		PlanApproved:          pa != 0,
-		ClarificationsJSON:    clar,
-		Checkpoint:            ck,
-		ExternalRef:           ref,
-		SandboxPath:           sand,
-		WorktreePath:          wt,
-		PullRequestURL:        pru,
-		PullRequestNumber:     prn,
-		PullRequestHeadBranch: prh,
-		CreatedAt:             cat,
-		UpdatedAt:             uat,
+		ID:                      domain.TaskID(sid),
+		ProductID:               domain.ProductID(pid),
+		IdeaID:                  domain.IdeaID(iid),
+		Spec:                    spec,
+		Status:                  domain.TaskStatus(st),
+		StatusReason:            sreason,
+		PlanApproved:            pa != 0,
+		ClarificationsJSON:      clar,
+		Checkpoint:              ck,
+		ExternalRef:             ref,
+		SandboxPath:             sand,
+		WorktreePath:            wt,
+		PullRequestURL:          pru,
+		PullRequestNumber:       prn,
+		PullRequestHeadBranch:   prh,
+		CurrentExecutionAgentID: execAg,
+		CreatedAt:               cat,
+		UpdatedAt:               uat,
 	}, nil
 }
 

@@ -68,6 +68,25 @@ ORDER BY created_at DESC LIMIT ?`, limit)
 	return scanExecutionAgents(rows)
 }
 
+func (s *ExecutionAgentStore) ListByProduct(ctx context.Context, productID domain.ProductID, limit int) ([]domain.ExecutionAgent, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	pid := string(productID)
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, display_name, product_id, source, external_ref, created_at FROM execution_agents
+WHERE product_id IS NULL OR product_id = ?
+ORDER BY created_at ASC LIMIT ?`, pid, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanExecutionAgents(rows)
+}
+
 func scanExecutionAgents(rows *sql.Rows) ([]domain.ExecutionAgent, error) {
 	var out []domain.ExecutionAgent
 	for rows.Next() {

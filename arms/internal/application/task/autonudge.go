@@ -23,9 +23,11 @@ type AutoStallNudgeSettings struct {
 
 // AutoNudgeResult describes the outcome of [Service.AutoNudgeStallIfDue].
 type AutoNudgeResult struct {
-	Nudged      bool
-	StallReason string // no_heartbeat | heartbeat_stale when stalled
-	SkipReason  string // disabled | no_agent_health | not_stalled | cooldown | max_per_day
+	Nudged       bool
+	Reassigned   bool   // true when [Service.tryAutoReassignIfDue] re-dispatched to another execution agent (#107)
+	ReassignTo   string // new execution_agents id when Reassigned
+	StallReason  string // no_heartbeat | heartbeat_stale when stalled
+	SkipReason   string // disabled | no_agent_health | not_stalled | cooldown | max_per_day | reassign_* | no_alternate_agent | …
 }
 
 // AutoNudgeStallIfDue applies auto-nudge policy for one task: stalled heartbeat only, cooldown, optional daily cap.
@@ -50,6 +52,14 @@ func (s *Service) AutoNudgeStallIfDue(ctx context.Context, t *domain.Task) (Auto
 	stalled, stallReason := StalledTaskState(now, s.AutoStallNudge.StaleThreshold, t, row)
 	if !stalled {
 		out.SkipReason = "not_stalled"
+		return out, nil
+	}
+	if ok, newAg, _, rerr := s.tryAutoReassignIfDue(ctx, t, stallReason); rerr != nil {
+		return out, rerr
+	} else if ok {
+		out.Reassigned = true
+		out.ReassignTo = newAg
+		out.StallReason = stallReason
 		return out, nil
 	}
 	detail := ""

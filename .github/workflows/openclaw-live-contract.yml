@@ -1,0 +1,30 @@
+# Optional: run live OpenClaw WebSocket contract tests (#105) against a real gateway.
+# Configure repository secrets: OPENCLAW_GATEWAY_URL, OPENCLAW_GATEWAY_TOKEN (optional),
+# ARMS_OPENCLAW_SESSION_KEY. Manual trigger only — not on every PR.
+name: openclaw-live-contract
+
+on:
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: arms
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: arms/go.sum
+
+      - name: Live OpenClaw contracts
+        env:
+          ARMS_OPENCLAW_LIVE_CONTRACT: "1"
+          OPENCLAW_GATEWAY_URL: ${{ secrets.OPENCLAW_GATEWAY_URL }}
+          OPENCLAW_GATEWAY_TOKEN: ${{ secrets.OPENCLAW_GATEWAY_TOKEN }}
+          ARMS_OPENCLAW_SESSION_KEY: ${{ secrets.ARMS_OPENCLAW_SESSION_KEY }}
+          ARMS_DEVICE_ID: ${{ secrets.ARMS_DEVICE_ID }}
+        run: go test -tags=integration ./internal/integration/... -run '^TestLiveOpenClaw_' -count=1 -timeout 120s -v

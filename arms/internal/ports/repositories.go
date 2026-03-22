@@ -116,6 +116,8 @@ type TaskRepository interface {
 	Save(ctx context.Context, t *domain.Task) error
 	ByID(ctx context.Context, id domain.TaskID) (*domain.Task, error)
 	ListByProduct(ctx context.Context, productID domain.ProductID) ([]domain.Task, error)
+	// CountByExecutionAgent counts tasks in execution-heavy statuses bound to agentID within a product (#107).
+	CountByExecutionAgent(ctx context.Context, productID domain.ProductID, agentID string) (int, error)
 	// TryComplete sets status to done when the task is in_progress, testing, or review.
 	// Returns nil if the task is already done (idempotent). ErrNotFound if missing. ErrInvalidTransition otherwise.
 	TryComplete(ctx context.Context, taskID domain.TaskID, at time.Time) error

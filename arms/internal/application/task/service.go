@@ -28,6 +28,8 @@ type Service struct {
 	AgentHealth    ports.AgentHealthRepository // optional: stall nudge heartbeats
 	MergeShip      ports.MergeQueueShipper     // optional: auto merge-queue completion on task done (full_auto always; semi_auto when GitHub gates pass)
 	AutoStallNudge AutoStallNudgeSettings      // optional: periodic auto stall nudge (#83); zero value disables
+	ExecAgents     ports.ExecutionAgentRegistry // optional: execution agent registry (#107 binding + auto-reassign)
+	AutoStallReassign AutoStallReassignSettings // optional: auto re-dispatch to another agent on stall (#107)
 	// KnowledgeAutoIngest optional (#90); after successful task completion, best-effort knowledge row (summary may be empty).
 	KnowledgeAutoIngest func(ctx context.Context, task *domain.Task, source string, knowledgeSummary string)
 }
@@ -274,6 +276,11 @@ func (s *Service) Dispatch(ctx context.Context, taskID domain.TaskID, estimatedC
 	ref, err := s.Gateway.DispatchTask(ctx, *t)
 	if err != nil {
 		return fmt.Errorf("%w: %v", domain.ErrGateway, err)
+	}
+	if s.ExecAgents != nil && strings.TrimSpace(t.CurrentExecutionAgentID) == "" {
+		if aid, aerr := s.pickLeastLoadedExecutionAgent(ctx, t.ProductID, ""); aerr == nil && aid != "" {
+			t.CurrentExecutionAgentID = aid
+		}
 	}
 	t.Status = domain.StatusInProgress
 	t.ExternalRef = ref

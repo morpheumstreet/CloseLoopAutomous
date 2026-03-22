@@ -57,6 +57,27 @@ func (s *ExecutionAgentStore) List(_ context.Context, limit int) ([]domain.Execu
 	return out, nil
 }
 
+func (s *ExecutionAgentStore) ListByProduct(_ context.Context, productID domain.ProductID, limit int) ([]domain.ExecutionAgent, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []domain.ExecutionAgent
+	for _, a := range s.byID {
+		if a.ProductID != "" && a.ProductID != productID {
+			continue
+		}
+		cp := *a
+		out = append(out, cp)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
 type AgentMailboxStore struct {
 	mu   sync.Mutex
 	rows []domain.AgentMailboxMessage

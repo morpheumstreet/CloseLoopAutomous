@@ -185,6 +185,10 @@ func buildHandlers(
 	if cfg.AgentStaleSec <= 0 {
 		staleThresh = 300 * time.Second
 	}
+	reassignCD := time.Duration(cfg.AutoStallReassignCooldownSec) * time.Second
+	if cfg.AutoStallReassignEnabled && reassignCD <= 0 {
+		reassignCD = 2 * time.Hour
+	}
 	taskSvc := &task.Service{
 		Tasks:       tasks,
 		Products:    products,
@@ -199,11 +203,17 @@ func buildHandlers(
 		Gate:        task.NewProductGate(),
 		Ship:        ship,
 		AgentHealth: agentHealth,
+		ExecAgents:  execAgents,
 		AutoStallNudge: task.AutoStallNudgeSettings{
 			Enabled:        cfg.AutoStallNudgeEnabled,
 			StaleThreshold: staleThresh,
 			Cooldown:       time.Duration(cfg.AutoStallNudgeCooldownSec) * time.Second,
 			MaxPerDay:      cfg.AutoStallNudgeMaxPerDay,
+		},
+		AutoStallReassign: task.AutoStallReassignSettings{
+			Enabled:   cfg.AutoStallReassignEnabled,
+			Cooldown:  reassignCD,
+			MaxPerDay: cfg.AutoStallReassignMaxPerDay,
 		},
 		KnowledgeAutoIngest: func(ctx context.Context, t *domain.Task, source string, knowledgeSummary string) {
 			_ = knowSvc.IngestFromTaskCompletion(ctx, t, source, knowledgeSummary)
