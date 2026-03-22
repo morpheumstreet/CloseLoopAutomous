@@ -106,9 +106,13 @@ func main() {
 
 	bID := domain.SubtaskID("builder-1")
 	testerID := domain.SubtaskID("tester-1")
-	conv, err := convoySvc.Create(ctx, t.ID, p.ID, []domain.Subtask{
-		{ID: bID, AgentRole: "builder"},
-		{ID: testerID, AgentRole: "tester", DependsOn: []domain.SubtaskID{bID}},
+	conv, err := convoySvc.Create(ctx, convoy.CreateInput{
+		ParentTaskID: t.ID,
+		ProductID:    p.ID,
+		Subtasks: []domain.Subtask{
+			{ID: bID, AgentRole: "builder"},
+			{ID: testerID, AgentRole: "tester", DependsOn: []domain.SubtaskID{bID}},
+		},
 	})
 	if err != nil {
 		log.Fatal(err)

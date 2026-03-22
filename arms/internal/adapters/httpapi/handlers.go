@@ -27,6 +27,7 @@ import (
 	"github.com/closeloopautomous/arms/internal/application/mergequeue"
 	productapp "github.com/closeloopautomous/arms/internal/application/product"
 	"github.com/closeloopautomous/arms/internal/application/task"
+	"github.com/closeloopautomous/arms/internal/application/taskchat"
 	"github.com/closeloopautomous/arms/internal/domain"
 	"github.com/closeloopautomous/arms/internal/ports"
 )
@@ -42,6 +43,7 @@ type Handlers struct {
 	Autopilot *autopilot.Service
 	Feedback  *feedback.Service
 	Task      *task.Service
+	TaskChat  *taskchat.Service
 	Convoy    *convoy.Service
 	Agent     *agentapp.Service
 	Cost           *cost.Service
@@ -443,12 +445,16 @@ func (h *Handlers) maybePoolBatchReeval(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	pid := domain.ProductID(r.PathValue("id"))
-	if err := h.Autopilot.BatchReevaluateMaybePool(r.Context(), pid, req.Note, req.NextEvaluateDelaySec); err != nil {
+	ctx := r.Context()
+	if err := h.Autopilot.BatchReevaluateMaybePool(ctx, pid, req.Note, req.NextEvaluateDelaySec); err != nil {
 		if mapDomainErr(w, err) {
 			return
 		}
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
+	}
+	if h.Autopilot != nil {
+		h.Autopilot.RefreshPreferenceModelBestEffort(ctx, pid)
 	}
 	h.listMaybePool(w, r)
 }
@@ -478,6 +484,9 @@ func (h *Handlers) postProductFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 	detail, _ := json.Marshal(map[string]string{"feedback_id": f.ID})
 	h.logOperation(ctx, "http", "product.feedback.append", "product", string(pid), string(detail), "")
+	if h.Autopilot != nil {
+		h.Autopilot.RefreshPreferenceModelBestEffort(ctx, pid)
+	}
 	writeJSON(w, http.StatusCreated, feedbackToJSON(f))
 }
 
@@ -799,6 +808,133 @@ func (h *Handlers) nudgeStallTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, taskToJSON(t))
 }
 
+func (h *Handlers) postTaskChat(w http.ResponseWriter, r *http.Request) {
+	if h.TaskChat == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "task chat not available")
+		return
+	}
+	var req postTaskChatReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if err := req.validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	ctx := r.Context()
+	tid := domain.TaskID(r.PathValue("id"))
+	msg, err := h.TaskChat.Append(ctx, tid, req.Body, req.Author, req.Queue)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	detail, _ := json.Marshal(map[string]string{"message_id": msg.ID, "task_id": string(tid)})
+	h.logOperation(ctx, "http", "task_chat.append", "task", string(tid), string(detail), msg.ProductID)
+	writeJSON(w, http.StatusCreated, taskChatMessageToJSON(msg))
+}
+
+func (h *Handlers) getTaskChat(w http.ResponseWriter, r *http.Request) {
+	if h.TaskChat == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "task chat not available")
+		return
+	}
+	limit := 200
+	if q := strings.TrimSpace(r.URL.Query().Get("limit")); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, "validation", "limit must be a positive integer")
+			return
+		}
+		limit = n
+	}
+	ctx := r.Context()
+	tid := domain.TaskID(r.PathValue("id"))
+	list, err := h.TaskChat.ListByTask(ctx, tid, limit)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	out := make([]any, 0, len(list))
+	for i := range list {
+		out = append(out, taskChatMessageToJSON(&list[i]))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"task_id": string(tid), "messages": out})
+}
+
+func (h *Handlers) listProductChatQueue(w http.ResponseWriter, r *http.Request) {
+	if h.TaskChat == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "task chat not available")
+		return
+	}
+	limit := 100
+	if q := strings.TrimSpace(r.URL.Query().Get("limit")); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, "validation", "limit must be a positive integer")
+			return
+		}
+		limit = n
+	}
+	ctx := r.Context()
+	pid := domain.ProductID(r.PathValue("id"))
+	list, err := h.TaskChat.ListQueue(ctx, pid, limit)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	out := make([]any, 0, len(list))
+	for i := range list {
+		out = append(out, taskChatMessageToJSON(&list[i]))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"product_id": string(pid), "queued": out})
+}
+
+func (h *Handlers) ackProductChatQueue(w http.ResponseWriter, r *http.Request) {
+	if h.TaskChat == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "task chat not available")
+		return
+	}
+	ctx := r.Context()
+	pid := domain.ProductID(r.PathValue("id"))
+	mid := strings.TrimSpace(r.PathValue("messageId"))
+	if mid == "" {
+		writeError(w, http.StatusBadRequest, "validation", "messageId required")
+		return
+	}
+	if err := h.TaskChat.AckQueue(ctx, pid, mid); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	detail, _ := json.Marshal(map[string]string{"message_id": mid})
+	h.logOperation(ctx, "http", "task_chat.queue_ack", "product", string(pid), string(detail), pid)
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "message_id": mid})
+}
+
+func taskChatMessageToJSON(m *domain.TaskChatMessage) map[string]any {
+	return map[string]any{
+		"id":             m.ID,
+		"product_id":     string(m.ProductID),
+		"task_id":        string(m.TaskID),
+		"author":         m.Author,
+		"body":           m.Body,
+		"queue_pending":  m.QueuePending,
+		"created_at":     m.CreatedAt.UTC().Format(time.RFC3339Nano),
+	}
+}
+
 func (h *Handlers) completeTask(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := domain.TaskID(r.PathValue("id"))
@@ -837,12 +973,19 @@ func (h *Handlers) createConvoy(w http.ResponseWriter, r *http.Request) {
 			deps[j] = domain.SubtaskID(d)
 		}
 		subs[i] = domain.Subtask{
-			ID:        domain.SubtaskID(req.Subtasks[i].ID),
-			DependsOn: deps,
-			AgentRole: req.Subtasks[i].AgentRole,
+			ID:           domain.SubtaskID(req.Subtasks[i].ID),
+			DependsOn:    deps,
+			AgentRole:    req.Subtasks[i].AgentRole,
+			Title:        req.Subtasks[i].Title,
+			MetadataJSON: req.Subtasks[i].MetadataJSON,
 		}
 	}
-	c, err := h.Convoy.Create(r.Context(), domain.TaskID(req.ParentTaskID), domain.ProductID(req.ProductID), subs)
+	c, err := h.Convoy.Create(r.Context(), convoy.CreateInput{
+		ParentTaskID: domain.TaskID(req.ParentTaskID),
+		ProductID:    domain.ProductID(req.ProductID),
+		MetadataJSON: req.MetadataJSON,
+		Subtasks:     subs,
+	})
 	if err != nil {
 		if mapDomainErr(w, err) {
 			return
@@ -2453,8 +2596,14 @@ func (h *Handlers) listConvoyMail(w http.ResponseWriter, r *http.Request) {
 	for i := range list {
 		m := list[i]
 		out = append(out, map[string]any{
-			"id": m.ID, "convoy_id": string(m.ConvoyID), "subtask_id": string(m.SubtaskID),
-			"body": m.Body, "created_at": m.CreatedAt.UTC().Format(time.RFC3339Nano),
+			"id":              m.ID,
+			"convoy_id":       string(m.ConvoyID),
+			"subtask_id":      string(m.FromSubtaskID),
+			"from_subtask_id": string(m.FromSubtaskID),
+			"to_subtask_id":   string(m.ToSubtaskID),
+			"kind":            m.Kind,
+			"body":            m.Body,
+			"created_at":      m.CreatedAt.UTC().Format(time.RFC3339Nano),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": out})
@@ -2472,7 +2621,16 @@ func (h *Handlers) postConvoyMail(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	id := domain.ConvoyID(r.PathValue("id"))
-	if err := h.Convoy.PostMail(ctx, id, domain.SubtaskID(req.SubtaskID), req.Body); err != nil {
+	from := strings.TrimSpace(req.FromSubtaskID)
+	if from == "" {
+		from = strings.TrimSpace(req.SubtaskID)
+	}
+	if err := h.Convoy.PostMail(ctx, id, domain.ConvoyMailDraft{
+		FromSubtaskID: domain.SubtaskID(from),
+		ToSubtaskID:   domain.SubtaskID(strings.TrimSpace(req.ToSubtaskID)),
+		Kind:          req.Kind,
+		Body:          req.Body,
+	}); err != nil {
 		if mapDomainErr(w, err) {
 			return
 		}
@@ -2483,28 +2641,68 @@ func (h *Handlers) postConvoyMail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"status": "ok"})
 }
 
+func convoySubtaskWorkloadStatus(st domain.Subtask, done map[domain.SubtaskID]bool) string {
+	if st.Completed {
+		return "completed"
+	}
+	if st.Dispatched {
+		return "running"
+	}
+	for _, d := range st.DependsOn {
+		if !done[d] {
+			return "blocked"
+		}
+	}
+	return "ready"
+}
+
 func convoyToJSON(c *domain.Convoy) map[string]any {
-	subs := make([]map[string]any, len(c.Subtasks))
+	done := make(map[domain.SubtaskID]bool, len(c.Subtasks))
 	for i := range c.Subtasks {
-		deps := make([]string, len(c.Subtasks[i].DependsOn))
-		for j, d := range c.Subtasks[i].DependsOn {
+		done[c.Subtasks[i].ID] = c.Subtasks[i].Completed
+	}
+	subs := make([]map[string]any, len(c.Subtasks))
+	edgeCount := 0
+	maxLayer := 0
+	for i := range c.Subtasks {
+		st := c.Subtasks[i]
+		edgeCount += len(st.DependsOn)
+		if st.DagLayer > maxLayer {
+			maxLayer = st.DagLayer
+		}
+		deps := make([]string, len(st.DependsOn))
+		for j, d := range st.DependsOn {
 			deps[j] = string(d)
 		}
 		subs[i] = map[string]any{
-			"id":                string(c.Subtasks[i].ID),
-			"agent_role":        c.Subtasks[i].AgentRole,
+			"id":                string(st.ID),
+			"agent_role":        st.AgentRole,
+			"title":             st.Title,
+			"metadata_json":     st.MetadataJSON,
+			"dag_layer":         st.DagLayer,
 			"depends_on":        deps,
-			"dispatched":        c.Subtasks[i].Dispatched,
-			"completed":         c.Subtasks[i].Completed,
-			"external_ref":      c.Subtasks[i].ExternalRef,
-			"last_checkpoint":   c.Subtasks[i].LastCheckpoint,
-			"dispatch_attempts": c.Subtasks[i].DispatchAttempts,
+			"status":            convoySubtaskWorkloadStatus(st, done),
+			"dispatched":        st.Dispatched,
+			"completed":         st.Completed,
+			"external_ref":      st.ExternalRef,
+			"last_checkpoint":   st.LastCheckpoint,
+			"dispatch_attempts": st.DispatchAttempts,
 		}
 	}
+	meta := strings.TrimSpace(c.MetadataJSON)
+	if meta == "" {
+		meta = "{}"
+	}
 	return map[string]any{
-		"id":         string(c.ID),
-		"product_id": string(c.ProductID),
-		"parent_id":  string(c.ParentID),
+		"id":            string(c.ID),
+		"product_id":    string(c.ProductID),
+		"parent_id":     string(c.ParentID),
+		"metadata_json": meta,
+		"graph": map[string]any{
+			"node_count": len(c.Subtasks),
+			"edge_count": edgeCount,
+			"max_depth":  maxLayer,
+		},
 		"subtasks":   subs,
 		"created_at": c.CreatedAt.Format(time.RFC3339Nano),
 	}

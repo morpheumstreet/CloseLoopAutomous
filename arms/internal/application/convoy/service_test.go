@@ -3,6 +3,7 @@ package convoy
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -50,7 +51,7 @@ func TestGetAndListByProduct(t *testing.T) {
 		Clock:    clock,
 		IDs:      ids,
 	}
-	c, err := svc.Create(ctx, tt.ID, p.ID, []domain.Subtask{{AgentRole: "builder"}})
+	c, err := svc.Create(ctx, CreateInput{ParentTaskID: tt.ID, ProductID: p.ID, Subtasks: []domain.Subtask{{AgentRole: "builder"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,10 +104,10 @@ func TestDispatchReady_WaitsForDependencyCompletion(t *testing.T) {
 	svc := &Service{
 		Convoys: convoys, Tasks: tasks, Products: products, Gateway: gateway, Budget: bpol, Clock: clock, IDs: ids,
 	}
-	c, err := svc.Create(ctx, tt.ID, p.ID, []domain.Subtask{
+	c, err := svc.Create(ctx, CreateInput{ParentTaskID: tt.ID, ProductID: p.ID, Subtasks: []domain.Subtask{
 		{ID: bID, AgentRole: "builder"},
 		{ID: testerID, AgentRole: "tester", DependsOn: []domain.SubtaskID{bID}},
-	})
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +164,7 @@ func TestDispatchReady_PublishesLiveActivity(t *testing.T) {
 		Convoys: convoys, Tasks: tasks, Products: products, Gateway: gateway, Budget: bpol2,
 		Clock: clock, IDs: ids, Events: pub,
 	}
-	c, err := svc.Create(ctx, tt.ID, p.ID, []domain.Subtask{{ID: "s1", AgentRole: "builder"}})
+	c, err := svc.Create(ctx, CreateInput{ParentTaskID: tt.ID, ProductID: p.ID, Subtasks: []domain.Subtask{{ID: "s1", AgentRole: "builder"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,10 +200,10 @@ func TestCreateConvoyRejectsDependencyCycle(t *testing.T) {
 	svc := &Service{Convoys: convoys, Tasks: tasks, Products: products, Gateway: gateway, Clock: clock, IDs: ids}
 	a := domain.SubtaskID("a")
 	b := domain.SubtaskID("b")
-	_, err := svc.Create(ctx, tt.ID, p.ID, []domain.Subtask{
+	_, err := svc.Create(ctx, CreateInput{ParentTaskID: tt.ID, ProductID: p.ID, Subtasks: []domain.Subtask{
 		{ID: a, AgentRole: "x", DependsOn: []domain.SubtaskID{b}},
 		{ID: b, AgentRole: "y", DependsOn: []domain.SubtaskID{a}},
-	})
+	}})
 	if err == nil {
 		t.Fatal("want validation error")
 	}
@@ -252,7 +253,7 @@ func TestDispatchReady_RetriesGatewayThenSucceeds(t *testing.T) {
 		Convoys: convoys, Tasks: tasks, Products: products, Gateway: gateway, Budget: bpol,
 		Clock: clock, IDs: ids, MaxSubtaskDispatchAttempts: 5,
 	}
-	c, err := svc.Create(ctx, tt.ID, p.ID, []domain.Subtask{{ID: "s1", AgentRole: "builder"}})
+	c, err := svc.Create(ctx, CreateInput{ParentTaskID: tt.ID, ProductID: p.ID, Subtasks: []domain.Subtask{{ID: "s1", AgentRole: "builder"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +292,7 @@ func TestDispatchReady_GatewayExhausted(t *testing.T) {
 		Convoys: convoys, Tasks: tasks, Products: products, Gateway: gateway, Budget: bpol,
 		Clock: clock, IDs: ids, MaxSubtaskDispatchAttempts: 2,
 	}
-	c, err := svc.Create(ctx, tt.ID, p.ID, []domain.Subtask{{ID: "s1", AgentRole: "builder"}})
+	c, err := svc.Create(ctx, CreateInput{ParentTaskID: tt.ID, ProductID: p.ID, Subtasks: []domain.Subtask{{ID: "s1", AgentRole: "builder"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +337,7 @@ func TestDispatchReady_ParentHealthBlocks(t *testing.T) {
 		Convoys: convoys, Tasks: tasks, Products: products, Gateway: gateway, Budget: bpol,
 		Health: health, Clock: clock, IDs: ids,
 	}
-	c, err := svc.Create(ctx, tt.ID, p.ID, []domain.Subtask{{ID: "s1", AgentRole: "builder"}})
+	c, err := svc.Create(ctx, CreateInput{ParentTaskID: tt.ID, ProductID: p.ID, Subtasks: []domain.Subtask{{ID: "s1", AgentRole: "builder"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,5 +355,95 @@ func TestDispatchReady_ParentHealthBlocks(t *testing.T) {
 	cf2, _ := convoys.ByID(ctx, c.ID)
 	if !cf2.Subtasks[0].Dispatched {
 		t.Fatal("expected dispatch after health recovered")
+	}
+}
+
+func TestCreateAssignsDagLayersAndMetadata(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	tasks := memory.NewTaskStore()
+	convoys := memory.NewConvoyStore()
+	gateway := &gw.Stub{}
+	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
+	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
+	tt := &domain.Task{
+		ID: domain.TaskID("task-1"), ProductID: p.ID, IdeaID: domain.IdeaID("idea-1"),
+		Spec: "s", Status: domain.StatusAssigned, PlanApproved: true,
+		CreatedAt: clock.Now(), UpdatedAt: clock.Now(),
+	}
+	_ = tasks.Save(ctx, tt)
+	svc := &Service{Convoys: convoys, Tasks: tasks, Products: products, Gateway: gateway, Clock: clock, IDs: ids}
+	bID := domain.SubtaskID("b1")
+	cID := domain.SubtaskID("c1")
+	out, err := svc.Create(ctx, CreateInput{
+		ParentTaskID:   tt.ID,
+		ProductID:      p.ID,
+		MetadataJSON:   `{"plan":"alpha"}`,
+		Subtasks: []domain.Subtask{
+			{ID: bID, AgentRole: "builder", Title: "Build", MetadataJSON: `{"k":1}`},
+			{ID: cID, AgentRole: "checker", DependsOn: []domain.SubtaskID{bID}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.MetadataJSON, "plan") {
+		t.Fatalf("convoy metadata: %s", out.MetadataJSON)
+	}
+	var bst, cst domain.Subtask
+	for i := range out.Subtasks {
+		if out.Subtasks[i].ID == bID {
+			bst = out.Subtasks[i]
+		}
+		if out.Subtasks[i].ID == cID {
+			cst = out.Subtasks[i]
+		}
+	}
+	if bst.DagLayer != 0 || cst.DagLayer != 1 {
+		t.Fatalf("dag_layer b=%d c=%d", bst.DagLayer, cst.DagLayer)
+	}
+	if bst.Title != "Build" || !strings.Contains(bst.MetadataJSON, "k") {
+		t.Fatalf("subtask fields: title=%q meta=%q", bst.Title, bst.MetadataJSON)
+	}
+}
+
+func TestPostMailKindAndRecipient(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	tasks := memory.NewTaskStore()
+	convoys := memory.NewConvoyStore()
+	mail := memory.NewConvoyMailStore()
+	gateway := &gw.Stub{}
+	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
+	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
+	tt := &domain.Task{
+		ID: domain.TaskID("task-1"), ProductID: p.ID, IdeaID: domain.IdeaID("idea-1"),
+		Spec: "s", Status: domain.StatusAssigned, PlanApproved: true,
+		CreatedAt: clock.Now(), UpdatedAt: clock.Now(),
+	}
+	_ = tasks.Save(ctx, tt)
+	svc := &Service{Convoys: convoys, Tasks: tasks, Products: products, Gateway: gateway, Mail: mail, Clock: clock, IDs: ids}
+	s1 := domain.SubtaskID("s1")
+	s2 := domain.SubtaskID("s2")
+	c, err := svc.Create(ctx, CreateInput{ParentTaskID: tt.ID, ProductID: p.ID, Subtasks: []domain.Subtask{
+		{ID: s1, AgentRole: "a"},
+		{ID: s2, AgentRole: "b", DependsOn: []domain.SubtaskID{s1}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.PostMail(ctx, c.ID, domain.ConvoyMailDraft{FromSubtaskID: s1, ToSubtaskID: s2, Kind: "handoff", Body: "pass"}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := svc.ListMail(ctx, c.ID, 10)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("list: %#v err %v", list, err)
+	}
+	if list[0].Kind != "handoff" || list[0].ToSubtaskID != s2 {
+		t.Fatalf("msg: %#v", list[0])
 	}
 }

@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,12 +18,17 @@ func NewConvoyMailStore(db *sql.DB) *ConvoyMailStore { return &ConvoyMailStore{d
 
 var _ ports.ConvoyMailRepository = (*ConvoyMailStore)(nil)
 
-func (s *ConvoyMailStore) Append(ctx context.Context, convoyID domain.ConvoyID, subtaskID domain.SubtaskID, body string, at time.Time) error {
+func (s *ConvoyMailStore) Append(ctx context.Context, convoyID domain.ConvoyID, msg domain.ConvoyMailDraft, at time.Time) error {
 	id := uuid.NewString()
 	atStr := at.UTC().Format(time.RFC3339Nano)
+	from := string(msg.FromSubtaskID)
+	to := string(msg.ToSubtaskID)
+	kind := domain.NormalizeConvoyMailKind(msg.Kind)
+	// subtask_id column kept for backward compatibility and indexes — mirror sender.
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO convoy_mail (id, convoy_id, subtask_id, body, created_at) VALUES (?, ?, ?, ?, ?)`,
-		id, string(convoyID), string(subtaskID), body, atStr)
+INSERT INTO convoy_mail (id, convoy_id, subtask_id, body, kind, from_subtask_id, to_subtask_id, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, string(convoyID), from, msg.Body, kind, from, to, atStr)
 	return err
 }
 
@@ -34,7 +40,7 @@ func (s *ConvoyMailStore) ListByConvoy(ctx context.Context, convoyID domain.Conv
 		limit = 500
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, convoy_id, subtask_id, body, created_at FROM convoy_mail
+SELECT id, convoy_id, subtask_id, body, kind, from_subtask_id, to_subtask_id, created_at FROM convoy_mail
 WHERE convoy_id = ? ORDER BY created_at DESC LIMIT ?`, string(convoyID), limit)
 	if err != nil {
 		return nil, err
@@ -43,10 +49,17 @@ WHERE convoy_id = ? ORDER BY created_at DESC LIMIT ?`, string(convoyID), limit)
 	var out []domain.ConvoyMailMessage
 	for rows.Next() {
 		var m domain.ConvoyMailMessage
-		var atStr string
-		if err := rows.Scan(&m.ID, &m.ConvoyID, &m.SubtaskID, &m.Body, &atStr); err != nil {
+		var legacySub, kind, fromSt, toSt, atStr string
+		if err := rows.Scan(&m.ID, &m.ConvoyID, &legacySub, &m.Body, &kind, &fromSt, &toSt, &atStr); err != nil {
 			return nil, err
 		}
+		if strings.TrimSpace(fromSt) == "" {
+			fromSt = legacySub
+		}
+		m.SubtaskID = domain.SubtaskID(fromSt)
+		m.FromSubtaskID = domain.SubtaskID(fromSt)
+		m.ToSubtaskID = domain.SubtaskID(toSt)
+		m.Kind = domain.NormalizeConvoyMailKind(kind)
 		t, perr := time.Parse(time.RFC3339Nano, atStr)
 		if perr != nil {
 			t, _ = time.Parse(time.RFC3339, atStr)

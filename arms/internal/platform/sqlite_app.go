@@ -50,13 +50,14 @@ func OpenApp(ctx context.Context, cfg config.Config, b Build) (*App, error) {
 	sched := sqlite.NewProductScheduleStore(db)
 	cmail := sqlite.NewConvoyMailStore(db)
 	productFb := sqlite.NewProductFeedbackStore(db)
+	taskChat := sqlite.NewTaskChatStore(db)
 	hub := livefeed.NewHub()
 	outbox := sqlite.NewOutboxStore(db)
 	relayCtx, relayCancel := context.WithCancel(ctx)
 	go livefeed.RunOutboxRelay(relayCtx, outbox, hub, 200*time.Millisecond)
 	taskPub := &livefeed.OutboxPublisher{Outbox: outbox}
 	liveTX := sqlite.NewLiveActivityTX(db)
-	h, gwCleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, agentMail, agentHealth, pref, ops, sched, cmail, productFb, hub, taskPub, liveTX, b)
+	h, gwCleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, agentMail, agentHealth, pref, ops, sched, cmail, productFb, taskChat, hub, taskPub, liveTX, b)
 	cleanup := func() {
 		relayCancel()
 		gwCleanup()

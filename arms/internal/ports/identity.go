@@ -14,4 +14,5 @@ type IdentityGenerator interface {
 	NewExecutionAgentID() string
 	NewMailboxMessageID() string
 	NewProductFeedbackID() string
+	NewTaskChatMessageID() string
 }

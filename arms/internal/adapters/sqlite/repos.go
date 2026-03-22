@@ -687,14 +687,19 @@ func (s *ConvoyStore) Save(ctx context.Context, c *domain.Convoy) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	meta := strings.TrimSpace(c.MetadataJSON)
+	if meta == "" {
+		meta = "{}"
+	}
 	_, err = tx.ExecContext(ctx, `
-INSERT INTO convoys (id, product_id, parent_task_id, created_at)
-VALUES (?, ?, ?, ?)
+INSERT INTO convoys (id, product_id, parent_task_id, metadata_json, created_at)
+VALUES (?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   product_id = excluded.product_id,
   parent_task_id = excluded.parent_task_id,
+  metadata_json = excluded.metadata_json,
   created_at = excluded.created_at
-`, string(c.ID), string(c.ProductID), string(c.ParentID), c.CreatedAt.Format(time.RFC3339Nano))
+`, string(c.ID), string(c.ProductID), string(c.ParentID), meta, c.CreatedAt.Format(time.RFC3339Nano))
 	if err != nil {
 		return err
 	}
@@ -706,10 +711,14 @@ ON CONFLICT(id) DO UPDATE SET
 		if err != nil {
 			return err
 		}
+		stMeta := strings.TrimSpace(st.MetadataJSON)
+		if stMeta == "" {
+			stMeta = "{}"
+		}
 		_, err = tx.ExecContext(ctx, `
-INSERT INTO convoy_subtasks (convoy_id, id, agent_role, depends_on_json, dispatched, completed, external_ref, last_checkpoint, dispatch_attempts)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, string(c.ID), string(st.ID), st.AgentRole, string(deps), boolInt(st.Dispatched), boolInt(st.Completed), st.ExternalRef, st.LastCheckpoint, st.DispatchAttempts)
+INSERT INTO convoy_subtasks (convoy_id, id, agent_role, title, metadata_json, dag_layer, depends_on_json, dispatched, completed, external_ref, last_checkpoint, dispatch_attempts)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, string(c.ID), string(st.ID), st.AgentRole, st.Title, stMeta, st.DagLayer, string(deps), boolInt(st.Dispatched), boolInt(st.Completed), st.ExternalRef, st.LastCheckpoint, st.DispatchAttempts)
 		if err != nil {
 			return err
 		}
@@ -727,9 +736,9 @@ func depIDs(ids []domain.SubtaskID) []string {
 
 func (s *ConvoyStore) ByID(ctx context.Context, id domain.ConvoyID) (*domain.Convoy, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, product_id, parent_task_id, created_at FROM convoys WHERE id = ?`, string(id))
-	var cid, pid, parent, cat string
-	if err := row.Scan(&cid, &pid, &parent, &cat); err != nil {
+SELECT id, product_id, parent_task_id, metadata_json, created_at FROM convoys WHERE id = ?`, string(id))
+	var cid, pid, parent, meta, cat string
+	if err := row.Scan(&cid, &pid, &parent, &meta, &cat); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, domain.ErrNotFound
 		}
@@ -740,17 +749,17 @@ SELECT id, product_id, parent_task_id, created_at FROM convoys WHERE id = ?`, st
 		ct, _ = time.Parse(time.RFC3339, cat)
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, agent_role, depends_on_json, dispatched, completed, external_ref, last_checkpoint, dispatch_attempts
-FROM convoy_subtasks WHERE convoy_id = ? ORDER BY id`, string(id))
+SELECT id, agent_role, title, metadata_json, dag_layer, depends_on_json, dispatched, completed, external_ref, last_checkpoint, dispatch_attempts
+FROM convoy_subtasks WHERE convoy_id = ? ORDER BY dag_layer, id`, string(id))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var subs []domain.Subtask
 	for rows.Next() {
-		var sid, role, depj, xref, lcp string
-		var disp, done, att int
-		if err := rows.Scan(&sid, &role, &depj, &disp, &done, &xref, &lcp, &att); err != nil {
+		var sid, role, title, stMeta, depj, xref, lcp string
+		var layer, disp, done, att int
+		if err := rows.Scan(&sid, &role, &title, &stMeta, &layer, &depj, &disp, &done, &xref, &lcp, &att); err != nil {
 			return nil, err
 		}
 		var depStrs []string
@@ -761,10 +770,16 @@ FROM convoy_subtasks WHERE convoy_id = ? ORDER BY id`, string(id))
 		for i := range depStrs {
 			deps[i] = domain.SubtaskID(depStrs[i])
 		}
+		if strings.TrimSpace(stMeta) == "" {
+			stMeta = "{}"
+		}
 		subs = append(subs, domain.Subtask{
 			ID:               domain.SubtaskID(sid),
 			DependsOn:        deps,
 			AgentRole:        role,
+			Title:            title,
+			MetadataJSON:     stMeta,
+			DagLayer:         layer,
 			Dispatched:       disp != 0,
 			Completed:        done != 0,
 			ExternalRef:      xref,
@@ -775,12 +790,16 @@ FROM convoy_subtasks WHERE convoy_id = ? ORDER BY id`, string(id))
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(meta) == "" {
+		meta = "{}"
+	}
 	return &domain.Convoy{
-		ID:        domain.ConvoyID(cid),
-		ProductID: domain.ProductID(pid),
-		ParentID:  domain.TaskID(parent),
-		Subtasks:  subs,
-		CreatedAt: ct,
+		ID:           domain.ConvoyID(cid),
+		ProductID:    domain.ProductID(pid),
+		ParentID:     domain.TaskID(parent),
+		Subtasks:     subs,
+		MetadataJSON: meta,
+		CreatedAt:    ct,
 	}, nil
 }
 

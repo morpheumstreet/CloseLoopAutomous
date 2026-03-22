@@ -24,15 +24,20 @@ func NewConvoyMailStore() *ConvoyMailStore {
 
 var _ ports.ConvoyMailRepository = (*ConvoyMailStore)(nil)
 
-func (s *ConvoyMailStore) Append(_ context.Context, convoyID domain.ConvoyID, subtaskID domain.SubtaskID, body string, at time.Time) error {
+func (s *ConvoyMailStore) Append(_ context.Context, convoyID domain.ConvoyID, msg domain.ConvoyMailDraft, at time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	from := msg.FromSubtaskID
+	kind := domain.NormalizeConvoyMailKind(msg.Kind)
 	m := domain.ConvoyMailMessage{
-		ID:        uuid.NewString(),
-		ConvoyID:  convoyID,
-		SubtaskID: subtaskID,
-		Body:      body,
-		CreatedAt: at.UTC(),
+		ID:            uuid.NewString(),
+		ConvoyID:      convoyID,
+		SubtaskID:     from,
+		FromSubtaskID: from,
+		ToSubtaskID:   msg.ToSubtaskID,
+		Kind:          kind,
+		Body:          msg.Body,
+		CreatedAt:     at.UTC(),
 	}
 	s.rows = append(s.rows, m)
 	if len(s.rows) > convoyMailMax {

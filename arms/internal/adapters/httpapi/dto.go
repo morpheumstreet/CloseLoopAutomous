@@ -256,15 +256,18 @@ func (r *checkpointReq) validate() error {
 }
 
 type subtaskDTO struct {
-	ID        string   `json:"id,omitempty"`
-	AgentRole string   `json:"agent_role"`
-	DependsOn []string `json:"depends_on,omitempty"`
+	ID           string   `json:"id,omitempty"`
+	AgentRole    string   `json:"agent_role"`
+	Title        string   `json:"title,omitempty"`
+	MetadataJSON string   `json:"metadata_json,omitempty"`
+	DependsOn    []string `json:"depends_on,omitempty"`
 }
 
 type createConvoyReq struct {
-	ParentTaskID string       `json:"parent_task_id"`
-	ProductID    string       `json:"product_id"`
-	Subtasks     []subtaskDTO `json:"subtasks"`
+	ParentTaskID   string       `json:"parent_task_id"`
+	ProductID      string       `json:"product_id"`
+	MetadataJSON   string       `json:"metadata_json,omitempty"`
+	Subtasks       []subtaskDTO `json:"subtasks"`
 }
 
 func (r *createConvoyReq) validate() error {
@@ -277,9 +280,21 @@ func (r *createConvoyReq) validate() error {
 	if len(r.Subtasks) == 0 {
 		return fmt.Errorf("subtasks is required")
 	}
+	if strings.TrimSpace(r.MetadataJSON) != "" {
+		var v map[string]any
+		if err := json.Unmarshal([]byte(r.MetadataJSON), &v); err != nil {
+			return fmt.Errorf("metadata_json must be a JSON object")
+		}
+	}
 	for i := range r.Subtasks {
 		if strings.TrimSpace(r.Subtasks[i].AgentRole) == "" {
 			return fmt.Errorf("subtasks[%d].agent_role is required", i)
+		}
+		if strings.TrimSpace(r.Subtasks[i].MetadataJSON) != "" {
+			var v map[string]any
+			if err := json.Unmarshal([]byte(r.Subtasks[i].MetadataJSON), &v); err != nil {
+				return fmt.Errorf("subtasks[%d].metadata_json must be a JSON object", i)
+			}
 		}
 	}
 	return nil
@@ -448,14 +463,34 @@ func (r *patchProductScheduleReq) validate() error {
 }
 
 type postConvoyMailReq struct {
-	SubtaskID string `json:"subtask_id"`
-	Body      string `json:"body"`
+	SubtaskID     string `json:"subtask_id,omitempty"`
+	FromSubtaskID string `json:"from_subtask_id,omitempty"`
+	ToSubtaskID   string `json:"to_subtask_id,omitempty"`
+	Kind          string `json:"kind,omitempty"`
+	Body          string `json:"body"`
 }
 
 func (r *postConvoyMailReq) validate() error {
-	if strings.TrimSpace(r.SubtaskID) == "" {
-		return fmt.Errorf("subtask_id is required")
+	from := strings.TrimSpace(r.FromSubtaskID)
+	if from == "" {
+		from = strings.TrimSpace(r.SubtaskID)
 	}
+	if from == "" {
+		return fmt.Errorf("subtask_id or from_subtask_id is required")
+	}
+	if strings.TrimSpace(r.Body) == "" {
+		return fmt.Errorf("body is required")
+	}
+	return nil
+}
+
+type postTaskChatReq struct {
+	Body   string `json:"body"`
+	Author string `json:"author,omitempty"`
+	Queue  bool   `json:"queue,omitempty"`
+}
+
+func (r *postTaskChatReq) validate() error {
 	if strings.TrimSpace(r.Body) == "" {
 		return fmt.Errorf("body is required")
 	}

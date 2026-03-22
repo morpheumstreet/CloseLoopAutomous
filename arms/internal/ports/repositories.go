@@ -43,9 +43,9 @@ type ProductScheduleRepository interface {
 	ListEnabled(ctx context.Context) ([]domain.ProductSchedule, error)
 }
 
-// ConvoyMailRepository appends and lists messages for convoy subtasks (baseline mail).
+// ConvoyMailRepository appends and lists messages for convoy subtasks (inter-subtask mail).
 type ConvoyMailRepository interface {
-	Append(ctx context.Context, convoyID domain.ConvoyID, subtaskID domain.SubtaskID, body string, at time.Time) error
+	Append(ctx context.Context, convoyID domain.ConvoyID, msg domain.ConvoyMailDraft, at time.Time) error
 	ListByConvoy(ctx context.Context, convoyID domain.ConvoyID, limit int) ([]domain.ConvoyMailMessage, error)
 }
 
@@ -72,6 +72,15 @@ type ProductFeedbackRepository interface {
 	ListByProduct(ctx context.Context, productID domain.ProductID, limit int) ([]domain.ProductFeedback, error)
 	ByID(ctx context.Context, id string) (*domain.ProductFeedback, error)
 	SetProcessed(ctx context.Context, id string, processed bool) error
+}
+
+// TaskChatRepository stores per-task operator/agent chat and queued operator notes.
+type TaskChatRepository interface {
+	Append(ctx context.Context, m *domain.TaskChatMessage) error
+	ByID(ctx context.Context, id string) (*domain.TaskChatMessage, error)
+	ListByTask(ctx context.Context, taskID domain.TaskID, limit int) ([]domain.TaskChatMessage, error)
+	ListPendingQueueByProduct(ctx context.Context, productID domain.ProductID, limit int) ([]domain.TaskChatMessage, error)
+	ClearQueuePending(ctx context.Context, id string) error
 }
 
 type IdeaRepository interface {

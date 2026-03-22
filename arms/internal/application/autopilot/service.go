@@ -2,7 +2,6 @@ package autopilot
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -19,9 +18,10 @@ type Service struct {
 	Ideas          ports.IdeaRepository
 	MaybePool      ports.MaybePoolRepository // optional; nil skips pool persistence
 	Swipes         ports.SwipeHistoryRepository // optional; nil skips persisted swipe log
+	Feedback       ports.ProductFeedbackRepository // optional; enriches preference aggregate when set
 	ResearchCycles ports.ResearchCycleRepository // optional; append-only history on successful research
 	Schedules      ports.ProductScheduleRepository // optional; nil = all products eligible for cadence ticks
-	PrefModel      ports.PreferenceModelRepository // optional; used by RecomputePreferenceModelFromSwipes
+	PrefModel      ports.PreferenceModelRepository // optional; used by preference recomputation
 	Research       ports.ResearchPort
 	Ideation       ports.IdeationPort
 	Clock          ports.Clock
@@ -61,7 +61,19 @@ func (s *Service) RunIdeation(ctx context.Context, productID domain.ProductID) e
 	if p.Stage != domain.StageIdeation {
 		return fmt.Errorf("%w: product stage is %s", domain.ErrInvalidTransition, p.Stage.String())
 	}
-	drafts, err := s.Ideation.GenerateIdeas(ctx, *p, p.ResearchSummary)
+	researchIn := strings.TrimSpace(p.ResearchSummary)
+	if s.PrefModel != nil {
+		if mj, _, ok, err := s.PrefModel.Get(ctx, productID); err == nil && ok {
+			if hints := preferenceHintsForIdeation(mj); hints != "" {
+				if researchIn == "" {
+					researchIn = hints
+				} else {
+					researchIn = researchIn + "\n\n## Operator-derived preference signals (bias new ideas toward these)\n" + hints
+				}
+			}
+		}
+	}
+	drafts, err := s.Ideation.GenerateIdeas(ctx, *p, researchIn)
 	if err != nil {
 		return err
 	}
@@ -166,6 +178,7 @@ func (s *Service) SubmitSwipe(ctx context.Context, ideaID domain.IdeaID, decisio
 			return err
 		}
 	}
+	s.refreshLearnedPreferenceModel(ctx, idea.ProductID)
 	return nil
 }
 
@@ -218,6 +231,7 @@ func (s *Service) PromoteMaybe(ctx context.Context, ideaID domain.IdeaID) error 
 			return err
 		}
 	}
+	s.refreshLearnedPreferenceModel(ctx, idea.ProductID)
 	if p.Stage == domain.StageSwipe {
 		p.Stage = domain.StagePlanning
 		p.UpdatedAt = now
@@ -312,44 +326,9 @@ func (s *Service) scheduleAllowsAutopilot(ctx context.Context, pid domain.Produc
 	return row.Enabled
 }
 
-// RecomputePreferenceModelFromSwipes aggregates swipe_history into preference_models (baseline heuristic; not ML).
+// RecomputePreferenceModelFromSwipes aggregates swipe_history, product_feedback, and maybe-pool stats into preference_models (heuristic weights; not ML).
 func (s *Service) RecomputePreferenceModelFromSwipes(ctx context.Context, productID domain.ProductID, limit int) (string, error) {
-	if s.PrefModel == nil || s.Swipes == nil {
-		return "", fmt.Errorf("%w: preference_model or swipe_history not configured", domain.ErrInvalidInput)
-	}
-	if _, err := s.Products.ByID(ctx, productID); err != nil {
-		return "", err
-	}
-	if limit <= 0 || limit > 5000 {
-		limit = 500
-	}
-	swipes, err := s.Swipes.ListByProduct(ctx, productID, limit)
-	if err != nil {
-		return "", err
-	}
-	counts := make(map[string]int)
-	for i := range swipes {
-		k := swipes[i].Decision
-		if k == "" {
-			continue
-		}
-		counts[k]++
-	}
-	payload := map[string]any{
-		"source":       "swipe_history_aggregate",
-		"counts":       counts,
-		"sample_size":  len(swipes),
-		"generated_at": s.Clock.Now().UTC().Format(time.RFC3339Nano),
-	}
-	b, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-	now := s.Clock.Now()
-	if err := s.PrefModel.Upsert(ctx, productID, string(b), now); err != nil {
-		return "", err
-	}
-	return string(b), nil
+	return s.recomputePreferenceModel(ctx, productID, limit)
 }
 
 // TickScheduled runs due research/ideation steps for every product (best-effort; errors are skipped per product).

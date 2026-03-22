@@ -2,6 +2,8 @@ package autopilot
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,7 +13,19 @@ import (
 	timeadapter "github.com/closeloopautomous/arms/internal/adapters/time"
 	"github.com/closeloopautomous/arms/internal/application/product"
 	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/closeloopautomous/arms/internal/ports"
 )
+
+type captureIdeation struct {
+	lastSummary string
+}
+
+func (c *captureIdeation) GenerateIdeas(_ context.Context, _ domain.Product, researchSummary string) ([]domain.IdeaDraft, error) {
+	c.lastSummary = researchSummary
+	return []domain.IdeaDraft{{Title: "captured", Category: "feature"}}, nil
+}
+
+var _ ports.IdeationPort = (*captureIdeation)(nil)
 
 func TestRunIdeationLinksLatestResearchCycle(t *testing.T) {
 	ctx := context.Background()
@@ -314,11 +328,94 @@ func TestRecomputePreferenceModelFromSwipes(t *testing.T) {
 	if js == "" {
 		t.Fatal("empty json")
 	}
+	var root map[string]any
+	if err := json.Unmarshal([]byte(js), &root); err != nil {
+		t.Fatal(err)
+	}
+	if int(root["version"].(float64)) != preferenceAggregateVersion {
+		t.Fatalf("version: %#v", root["version"])
+	}
+	if root["source"] != "preference_aggregate_v1" {
+		t.Fatalf("source: %v", root["source"])
+	}
 	mj, _, ok, _ := pref.Get(ctx, p.ID)
 	if !ok {
 		t.Fatal("want preference row")
 	}
 	if mj != js {
 		t.Fatalf("stored != returned")
+	}
+}
+
+func TestRecomputePreferenceModelIncludesFeedback(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	fb := memory.NewProductFeedbackStore()
+	pref := memory.NewPreferenceModelStore()
+	svc := &Service{
+		Products:  products,
+		Ideas:     memory.NewIdeaStore(),
+		Swipes:    memory.NewSwipeHistoryStore(),
+		Feedback:  fb,
+		PrefModel: pref,
+		Clock:     clock,
+		Identities: ids,
+	}
+	p := &domain.Product{ID: "p1", Name: "n", Stage: domain.StagePlanning, WorkspaceID: "w", UpdatedAt: clock.Now()}
+	_ = products.Save(ctx, p)
+	_ = fb.Append(ctx, &domain.ProductFeedback{
+		ID: "f1", ProductID: p.ID, Source: "web", Content: "love it",
+		Sentiment: "positive", Category: "ux", CreatedAt: clock.Now(),
+	})
+	js, err := svc.RecomputePreferenceModelFromSwipes(ctx, p.ID, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal([]byte(js), &root); err != nil {
+		t.Fatal(err)
+	}
+	fblock, ok := root["feedback"].(map[string]any)
+	if !ok {
+		t.Fatal("missing feedback block")
+	}
+	if int(fblock["sample_size"].(float64)) != 1 {
+		t.Fatalf("sample_size %v", fblock["sample_size"])
+	}
+}
+
+func TestRunIdeationAppendsPreferenceHints(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	ideas := memory.NewIdeaStore()
+	pref := memory.NewPreferenceModelStore()
+	cap := &captureIdeation{}
+	svc := &Service{
+		Products:  products,
+		Ideas:     ideas,
+		PrefModel: pref,
+		Ideation:  cap,
+		Clock:     clock,
+		Identities: ids,
+	}
+	p := &domain.Product{
+		ID: "p1", Name: "n", Stage: domain.StageIdeation, WorkspaceID: "w",
+		ResearchSummary: "BASE_SUMMARY", UpdatedAt: clock.Now(),
+	}
+	_ = products.Save(ctx, p)
+	model := `{"version":1,"source":"preference_aggregate_v1","generated_at":"2020-01-01T00:00:00Z","category_affinity":{"ux":2.5,"feature":-1}}`
+	_ = pref.Upsert(ctx, p.ID, model, clock.Now())
+	if err := svc.RunIdeation(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(cap.lastSummary, "BASE_SUMMARY") || !strings.Contains(cap.lastSummary, "Operator-derived preference") {
+		t.Fatalf("summary missing expected sections: %q", cap.lastSummary)
+	}
+	if !strings.Contains(cap.lastSummary, "ux") {
+		t.Fatalf("expected category hint in summary: %q", cap.lastSummary)
 	}
 }

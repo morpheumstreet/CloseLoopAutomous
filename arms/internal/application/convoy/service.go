@@ -36,24 +36,36 @@ func (s *Service) maxDispatchAttempts() int {
 }
 
 // Create attaches subtasks to a parent task (roles + dependencies only; no dispatch).
-func (s *Service) Create(ctx context.Context, parent domain.TaskID, productID domain.ProductID, subtasks []domain.Subtask) (*domain.Convoy, error) {
-	if _, err := s.Tasks.ByID(ctx, parent); err != nil {
+func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Convoy, error) {
+	if _, err := s.Tasks.ByID(ctx, in.ParentTaskID); err != nil {
 		return nil, err
 	}
+	subtasks := in.Subtasks
 	for i := range subtasks {
 		if subtasks[i].ID == "" {
 			subtasks[i].ID = s.IDs.NewSubtaskID()
 		}
+		mj, err := normalizeMetadataJSON(subtasks[i].MetadataJSON)
+		if err != nil {
+			return nil, fmt.Errorf("%w: subtask metadata_json must be a JSON object", domain.ErrInvalidInput)
+		}
+		subtasks[i].MetadataJSON = mj
 	}
 	if err := domain.ValidateConvoySubtasks(subtasks); err != nil {
 		return nil, err
 	}
+	applyDagLayers(subtasks)
+	meta, err := normalizeMetadataJSON(in.MetadataJSON)
+	if err != nil {
+		return nil, fmt.Errorf("%w: metadata_json must be a JSON object", domain.ErrInvalidInput)
+	}
 	c := &domain.Convoy{
-		ID:        s.IDs.NewConvoyID(),
-		ProductID: productID,
-		ParentID:  parent,
-		Subtasks:  subtasks,
-		CreatedAt: s.Clock.Now(),
+		ID:           s.IDs.NewConvoyID(),
+		ProductID:    in.ProductID,
+		ParentID:     in.ParentTaskID,
+		Subtasks:     subtasks,
+		MetadataJSON: meta,
+		CreatedAt:    s.Clock.Now(),
 	}
 	if err := s.Convoys.Save(ctx, c); err != nil {
 		return nil, err
@@ -151,29 +163,38 @@ func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID, e
 }
 
 // PostMail appends inter-subtask mail for a convoy.
-func (s *Service) PostMail(ctx context.Context, convoyID domain.ConvoyID, subtaskID domain.SubtaskID, body string) error {
+func (s *Service) PostMail(ctx context.Context, convoyID domain.ConvoyID, msg domain.ConvoyMailDraft) error {
 	if s.Mail == nil {
 		return domain.ErrNotConfigured
 	}
-	body = strings.TrimSpace(body)
-	if body == "" {
+	msg.Body = strings.TrimSpace(msg.Body)
+	if msg.Body == "" {
 		return fmt.Errorf("%w: body required", domain.ErrInvalidInput)
 	}
+	if msg.FromSubtaskID == "" {
+		return fmt.Errorf("%w: from subtask required", domain.ErrInvalidInput)
+	}
+	msg.Kind = domain.NormalizeConvoyMailKind(msg.Kind)
 	c, err := s.Convoys.ByID(ctx, convoyID)
 	if err != nil {
 		return err
 	}
-	found := false
+	if !subtaskInConvoy(c, msg.FromSubtaskID) {
+		return fmt.Errorf("%w: unknown from_subtask_id for convoy", domain.ErrInvalidInput)
+	}
+	if msg.ToSubtaskID != "" && !subtaskInConvoy(c, msg.ToSubtaskID) {
+		return fmt.Errorf("%w: unknown to_subtask_id for convoy", domain.ErrInvalidInput)
+	}
+	return s.Mail.Append(ctx, convoyID, msg, s.Clock.Now())
+}
+
+func subtaskInConvoy(c *domain.Convoy, id domain.SubtaskID) bool {
 	for i := range c.Subtasks {
-		if c.Subtasks[i].ID == subtaskID {
-			found = true
-			break
+		if c.Subtasks[i].ID == id {
+			return true
 		}
 	}
-	if !found {
-		return fmt.Errorf("%w: unknown subtask_id for convoy", domain.ErrInvalidInput)
-	}
-	return s.Mail.Append(ctx, convoyID, subtaskID, body, s.Clock.Now())
+	return false
 }
 
 // ListMail returns newest-first mail for a convoy.

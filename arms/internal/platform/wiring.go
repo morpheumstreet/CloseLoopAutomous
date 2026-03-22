@@ -20,6 +20,7 @@ import (
 	"github.com/closeloopautomous/arms/internal/application/mergequeue"
 	"github.com/closeloopautomous/arms/internal/application/product"
 	"github.com/closeloopautomous/arms/internal/application/task"
+	"github.com/closeloopautomous/arms/internal/application/taskchat"
 	"github.com/closeloopautomous/arms/internal/config"
 	"github.com/closeloopautomous/arms/internal/ports"
 )
@@ -75,7 +76,8 @@ func NewInMemoryApp(cfg config.Config, b Build) *App {
 	sched := memory.NewProductScheduleStore()
 	cmail := memory.NewConvoyMailStore()
 	productFb := memory.NewProductFeedbackStore()
-	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, agentMail, agentHealth, pref, ops, sched, cmail, productFb, hub, hub, nil, b)
+	taskChat := memory.NewTaskChatStore()
+	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, agentMail, agentHealth, pref, ops, sched, cmail, productFb, taskChat, hub, hub, nil, b)
 	return &App{Handlers: h, Products: products, Ideas: ideas, Tasks: tasks, ProductSchedules: sched, db: nil, cleanup: cleanup}
 }
 
@@ -101,6 +103,7 @@ func buildHandlers(
 	productSchedules ports.ProductScheduleRepository,
 	convoyMail ports.ConvoyMailRepository,
 	productFeedback ports.ProductFeedbackRepository,
+	taskChat ports.TaskChatRepository,
 	hub *livefeed.Hub,
 	taskEvents ports.LiveActivityPublisher,
 	liveTX ports.LiveActivityTX,
@@ -129,6 +132,7 @@ func buildHandlers(
 		Ideas:          ideas,
 		MaybePool:      maybePool,
 		Swipes:         swipes,
+		Feedback:       productFeedback,
 		ResearchCycles: researchCycles,
 		Schedules:      productSchedules,
 		PrefModel:      preferenceModels,
@@ -214,6 +218,10 @@ func buildHandlers(
 		Clock:    clock,
 		IDs:      ids,
 	}
+	taskChatSvc := &taskchat.Service{
+		Chat: taskChat, Tasks: tasks, Products: products,
+		Clock: clock, IDs: ids, Events: taskEvents,
+	}
 
 	buildVer := strings.TrimSpace(b.Version)
 	if buildVer == "" {
@@ -229,6 +237,7 @@ func buildHandlers(
 		Agent:          agentSvc,
 		Cost:           costSvc,
 		Feedback:       feedbackSvc,
+		TaskChat:       taskChatSvc,
 		Live:           hub,
 		WorkspacePorts: workspacePorts,
 		MergeQueue:     mergeQueue,
