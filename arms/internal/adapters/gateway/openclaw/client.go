@@ -30,6 +30,8 @@ type Options struct {
 	Timeout    time.Duration // per Dispatch* (handshake + RPC)
 	MinProto   int           // default 3
 	MaxProto   int           // default 3
+	// KnowledgeForDispatch appends ranked snippets to dispatch markdown when non-nil (#90).
+	KnowledgeForDispatch func(ctx context.Context, productID domain.ProductID, query string) (string, error)
 }
 
 // Client speaks native OpenClaw gateway JSON over WebSocket.
@@ -292,7 +294,8 @@ func (c *Client) DispatchTask(ctx context.Context, task domain.Task) (string, er
 		return "", err
 	}
 
-	msg := buildTaskMarkdown(task)
+	kb := c.knowledgeMarkdown(callCtx, task.ProductID, dispatchKnowledgeQueryFromTask(task))
+	msg := TaskDispatchMarkdown(task, kb)
 	params := map[string]any{
 		"sessionKey":      sk,
 		"message":         msg,
@@ -306,7 +309,7 @@ func (c *Client) DispatchTask(ctx context.Context, task domain.Task) (string, er
 	return refFromPayload(payload), nil
 }
 
-func (c *Client) DispatchSubtask(ctx context.Context, parent domain.TaskID, sub domain.Subtask) (string, error) {
+func (c *Client) DispatchSubtask(ctx context.Context, parent domain.Task, sub domain.Subtask) (string, error) {
 	sk := strings.TrimSpace(c.opts.SessionKey)
 	if sk == "" {
 		return "", errors.New("openclaw: set ARMS_OPENCLAW_SESSION_KEY to the gateway sessionKey used for chat.send")
@@ -321,11 +324,12 @@ func (c *Client) DispatchSubtask(ctx context.Context, parent domain.TaskID, sub 
 		return "", err
 	}
 
-	msg := buildSubtaskMarkdown(parent, sub)
+	kb := c.knowledgeMarkdown(callCtx, parent.ProductID, dispatchKnowledgeQueryFromSubtask(parent, sub))
+	msg := SubtaskDispatchMarkdown(parent.ID, sub, kb)
 	params := map[string]any{
 		"sessionKey":     sk,
 		"message":        msg,
-		"idempotencyKey": fmt.Sprintf("arms-subtask-%s-%s-%d", parent, sub.ID, time.Now().UnixNano()),
+		"idempotencyKey": fmt.Sprintf("arms-subtask-%s-%s-%d", parent.ID, sub.ID, time.Now().UnixNano()),
 	}
 	payload, err := c.rpcLocked(callCtx, "chat.send", params)
 	if err != nil {
@@ -342,39 +346,15 @@ func (c *Client) callContext(parent context.Context) (context.Context, context.C
 	return context.WithTimeout(parent, c.opts.Timeout)
 }
 
-func buildTaskMarkdown(t domain.Task) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "**ARMS TASK DISPATCH**\n\n")
-	fmt.Fprintf(&b, "**Task ID:** %s\n", t.ID)
-	fmt.Fprintf(&b, "**Product ID:** %s\n", t.ProductID)
-	fmt.Fprintf(&b, "**Idea ID:** %s\n", t.IdeaID)
-	fmt.Fprintf(&b, "**Status:** %s\n", t.Status.String())
-	if strings.TrimSpace(t.Spec) != "" {
-		fmt.Fprintf(&b, "\n**Specification:**\n%s\n", t.Spec)
+func (c *Client) knowledgeMarkdown(ctx context.Context, pid domain.ProductID, q string) string {
+	if c.opts.KnowledgeForDispatch == nil {
+		return ""
 	}
-	if strings.TrimSpace(t.Checkpoint) != "" {
-		fmt.Fprintf(&b, "\n**Checkpoint:**\n%s\n", t.Checkpoint)
+	s, err := c.opts.KnowledgeForDispatch(ctx, pid, q)
+	if err != nil || strings.TrimSpace(s) == "" {
+		return ""
 	}
-	if strings.TrimSpace(t.ExternalRef) != "" {
-		fmt.Fprintf(&b, "\n**Previous external ref:** %s\n", t.ExternalRef)
-	}
-	return b.String()
-}
-
-func buildSubtaskMarkdown(parent domain.TaskID, sub domain.Subtask) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "**ARMS CONVOY SUBTASK**\n\n")
-	fmt.Fprintf(&b, "**Parent task ID:** %s\n", parent)
-	fmt.Fprintf(&b, "**Subtask ID:** %s\n", sub.ID)
-	fmt.Fprintf(&b, "**Agent role:** %s\n", sub.AgentRole)
-	if len(sub.DependsOn) > 0 {
-		deps := make([]string, len(sub.DependsOn))
-		for i := range sub.DependsOn {
-			deps[i] = string(sub.DependsOn[i])
-		}
-		fmt.Fprintf(&b, "**Depends on:** %s\n", strings.Join(deps, ", "))
-	}
-	return b.String()
+	return s
 }
 
 func refFromPayload(raw json.RawMessage) string {

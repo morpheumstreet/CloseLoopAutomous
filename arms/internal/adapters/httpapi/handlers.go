@@ -24,6 +24,7 @@ import (
 	"github.com/closeloopautomous/arms/internal/application/convoy"
 	"github.com/closeloopautomous/arms/internal/application/cost"
 	"github.com/closeloopautomous/arms/internal/application/feedback"
+	knowledgeapp "github.com/closeloopautomous/arms/internal/application/knowledge"
 	"github.com/closeloopautomous/arms/internal/application/mergequeue"
 	productapp "github.com/closeloopautomous/arms/internal/application/product"
 	"github.com/closeloopautomous/arms/internal/application/task"
@@ -44,6 +45,7 @@ type Handlers struct {
 	Feedback  *feedback.Service
 	Task      *task.Service
 	TaskChat  *taskchat.Service
+	Knowledge *knowledgeapp.Service
 	Convoy    *convoy.Service
 	Agent     *agentapp.Service
 	Cost           *cost.Service

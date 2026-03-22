@@ -2,15 +2,15 @@
 
 Use this as the master backlog for bringing `arms` toward Autensa/Mission Control backend parity. Check items off as you implement them.
 
-**Backlog checklist (§1–§10):** `93` done · `14` open · **~87%** complete — see **[Master backlog (all checklist items)](#master-backlog-all-checklist-items)** for the full table; _grep_ `- [x]` / `- [ ]` in this file to refresh counts after edits._
+**Backlog checklist (§1–§10):** `94` done · `13` open · **~88%** complete — see **[Master backlog (all checklist items)](#master-backlog-all-checklist-items)** for the full table; _grep_ `- [x]` / `- [ ]` in this file to refresh counts after edits._
 
-**Next priority:** **Convoy** — **`dominikbraun/graph`** (or equivalent) + **MC-exact DAG** on top of migration **`022`**. **§8 learner / knowledge injection** into dispatches still **TBD**. **Stalled-task reassign** policy (beyond auto-nudge) still **TBD** when task↔agent binding exists (**#93**/**#94**). **Preference:** **embeddings / trained model** on **`preference_models`** still **TBD**. Optional polish: stable PR correlation keys for extreme dedupe.
+**Next priority:** **Convoy** — **`dominikbraun/graph`** (or equivalent) + **MC-exact DAG** on top of migration **`022`**. **Knowledge:** auto-ingest from **product_feedback** / swipes / agent summaries still **TBD** (CRUD + dispatch injection **done**). **Stalled-task reassign** policy still **TBD** when task↔agent binding exists (**#93**/**#94**). **Preference:** **embeddings / trained model** on **`preference_models`** still **TBD**. Optional polish: stable PR correlation keys for extreme dedupe.
 
 **Asynq scheduling (steady state):** Set **`ARMS_REDIS_ADDR`** and run **`cmd/arms-worker`** alongside **`cmd/arms`**. **`ARMS_AUTOPILOT_TICK_SEC`** and **`ARMS_USE_ASYNQ_SCHEDULER`** are **deprecated** (ignored; warnings if set). **`cmd/arms`** runs startup + **5m** resync (**`product_schedules`** + per-product reconcile) plus HTTP hooks; worker runs **`product:schedule:tick`**, **`arms:product_autopilot_tick`**, optional **`arms:autopilot_tick`**, and (when **`ARMS_AUTO_STALL_NUDGE_ENABLED`**) **`arms:stall_autonudge_tick`**.
 
 **What this is:** a single checklist + design locks for **backend parity** with [mission-control](https://github.com/crshdn/mission-control): API routes, SQLite schema, OpenClaw wiring, safety/cost/workspace, realtime, and convoy/autopilot gaps. It is **not** a fishtank/UI spec; pair with [api-ref.md](api-ref.md) for HTTP details and [recomendeddesign.md](recomendeddesign.md) for the broader architecture sketch.
 
-_Re-checked against the `arms/` tree (2026-03-23): SQLite schema **v23** (`ExpectedSchemaVersion` in `internal/adapters/sqlite/migrate.go`); baseline vs “full MC” is called out so unchecked rows are not misread as “missing entirely” when a slim table or route already exists._
+_Re-checked against the `arms/` tree (2026-03-23): SQLite schema **v24** (`ExpectedSchemaVersion` in `internal/adapters/sqlite/migrate.go`); baseline vs “full MC” is called out so unchecked rows are not misread as “missing entirely” when a slim table or route already exists._
 
 _See also [recomendeddesign.md](recomendeddesign.md) (earlier “GoAutensa” outline); this file is the live parity checklist + locked target architecture._
 
@@ -106,7 +106,7 @@ Rough calendar: **~4 weeks core (A–C)** + **polish (D)**; optional future belo
 
 **Done in-tree (former “first commits”):** Compose **redis** service (optional); **`ARMS_REDIS_ADDR`** + **`cmd/arms-worker`** → **`product:schedule:tick`** + **`arms:product_autopilot_tick`** (+ optional **`arms:autopilot_tick`**), **`cmd/arms`** startup + **5m** resync, transactional **outbox** + **`livefeed`** SSE hub, **workspace** ports + merge queue + optional git worktrees, **GitHub** / **`gh`** behind `PullRequestPublisher`, **swipe_history**, **cost_caps** + composite budget, **task agent health** APIs, **`preference_models`** + **`operations_log`** (migrations 014–015).
 
-**Next vertical slices (suggested):** **(1)** Convoy **`dominikbraun/graph`** + MC-exact DAG/mail parity (build on **`022`**). **(2)** **Learner / knowledge** port + storage + dispatch injection (**§8**). **(3)** **Stalled-task reassign** when execution-agent binding exists (**§7**). **(4)** **ML / embeddings** on **`preference_models`**. **(5)** Optional **`/api/openclaw/*`** HTTP proxy, **operations_log** breadth, PR idempotency keys (#60 polish).
+**Next vertical slices (suggested):** **(1)** Convoy **`dominikbraun/graph`** + MC-exact DAG/mail parity (build on **`022`**). **(2)** **Knowledge auto-ingest** (feedback, swipes, completion summaries) + optional **semantic** store swap (**chromem** / Mem0 HTTP). **(3)** **Stalled-task reassign** when execution-agent binding exists (**§7**). **(4)** **ML / embeddings** on **`preference_models`**. **(5)** Optional **`/api/openclaw/*`** HTTP proxy, **operations_log** breadth, PR idempotency keys (#60 polish).
 
 ---
 
@@ -220,7 +220,7 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 | 87 | 8 | Done | SSE activity (partial) — **`task_dispatched`**, **`cost_recorded`**, **`checkpoint_saved`**, **`task_completed`** (SQLite same-tx + relay; in-memory hub on complete), **`task_stall_nudged`** (operator **`POST .../stall-nudge`**), **`pull_request_opened`**, **`merge_ship_completed`**, **`convoy_subtask_dispatched`**, **`convoy_subtask_completed`**; **`?product_id=`** filter; broader catalog + agent/type filters still TBD |
 | 88 | 8 | Done | Operator chat queue — migration **`023`** **`task_chat_messages`**; **`GET /api/products/{id}/chat-queue`**; **`POST …/chat-queue/{messageId}/ack`**; queued notes via **`POST /api/tasks/{id}/chat`** `{queue:true}` |
 | 89 | 8 | Done | Per-task chat — **`GET`/`POST /api/tasks/{id}/chat`** (chronological history, `author` operator\|agent\|system); SSE **`task_chat_message`**, **`task_chat_queue_ack`** |
-| 90 | 8 | Open | Learner / knowledge base port + storage + injection into future dispatches |
+| 90 | 8 | Done | Knowledge base — migration **`024`** **`knowledge_entries`** + **`knowledge_fts`** (FTS5); **`ports.KnowledgeRepository`**; **`knowledge.Service`**; product CRUD **`/api/products/{id}/knowledge`**; OpenClaw **`KnowledgeForDispatch`** injects ranked snippets on **task** + **convoy subtask** dispatch; **`ARMS_KNOWLEDGE_DISPATCH_SNIPPETS`**, **`ARMS_KNOWLEDGE_DISABLE_DISPATCH`** |
 | 91 | 9 | Done | **Execution agent** registry + repository — **`execution_agents`** table; **`POST /api/agents`**, **`GET /api/agents`** includes **`registry[]`** |
 | 92 | 9 | Done | **Mailbox** (stub) — **`agent_mailbox`** + **`GET/POST /api/agents/{id}/mailbox`** |
 | 93 | 9 | Open | Registration and discovery/import flows (gateway-backed auto-provision) |
@@ -371,7 +371,7 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 - [x] SSE activity (partial) — **`task_dispatched`**, **`cost_recorded`**, **`checkpoint_saved`**, **`task_completed`** (SQLite same-tx + relay; in-memory hub on complete), **`task_stall_nudged`** (manual **`POST .../stall-nudge`** or auto **`arms:stall_autonudge_tick`** with optional **`source":"auto"`**), **`pull_request_opened`**, **`merge_ship_completed`**, **`convoy_subtask_dispatched`**, **`convoy_subtask_completed`**; **`?product_id=`** filter; broader catalog + agent/type filters still TBD
 - [x] Operator chat: product-scoped **queue** of pending operator notes — migration **`023`**; **`GET /api/products/{id}/chat-queue`**; **`POST /api/products/{id}/chat-queue/{messageId}/ack`**; append via **`POST /api/tasks/{id}/chat`** with **`queue: true`**
 - [x] Per-task chat history — **`GET` / `POST /api/tasks/{id}/chat`** (`?limit=`); authors **`operator`** \| **`agent`** \| **`system`**; realtime **`task_chat_message`** / **`task_chat_queue_ack`** on same publisher path as other live events (outbox when **`OutboxPublisher`** wired)
-- [ ] Learner / knowledge base port + storage + injection into future dispatches
+- [x] Learner / knowledge base — SQLite **FTS5** (**`024`**), **`KnowledgeRepository`**, HTTP **`POST/GET/PATCH/DELETE …/knowledge`**, dispatch injection via **`openclaw.Options.KnowledgeForDispatch`** (task + convoy subtask); disable with **`ARMS_KNOWLEDGE_DISABLE_DISPATCH`**; **auto-ingest** from feedback/swipes and **semantic** backends still optional follow-ups
 
 ---
 
@@ -404,7 +404,7 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 
 | Area            | Rough priority for a vertical slice                         |
 |-----------------|--------------------------------------------------------------|
-| SQLite + core tables | Unblocks everything else (current **v23** migrations)     |
+| SQLite + core tables | Unblocks everything else (current **v24** migrations)     |
 | HTTP + auth + tasks/products | Makes the service usable from a UI or CLI            |
 | Real OpenClaw WS   | Closes the execution-plane gap                            |
 | Webhooks           | Completes the async completion loop                       |

@@ -40,6 +40,8 @@ import (
 //   - ARMS_AUTO_STALL_NUDGE_INTERVAL_SEC — enqueue interval for that tick (default 300); minimum 60 when enforced in cmd/arms
 //   - ARMS_AUTO_STALL_NUDGE_COOLDOWN_SEC — min seconds between auto-nudges per task (default 3600)
 //   - ARMS_AUTO_STALL_NUDGE_MAX_PER_DAY — max auto-nudges per task per rolling 24h (default 6); 0 disables the cap
+//   - ARMS_KNOWLEDGE_DISPATCH_SNIPPETS — max knowledge bullets appended per OpenClaw dispatch (default 5)
+//   - ARMS_KNOWLEDGE_DISABLE_DISPATCH — "1" or "true" to keep knowledge HTTP/CRUD but skip dispatch-time injection
 //   - ARMS_CORS_ALLOW_ORIGIN — optional; when non-empty, enables CORS for browser UIs on another origin (e.g. http://localhost:3000 for Fishtank). Use * only for quick local experiments.
 //   - ARMS_ACL — optional HTTP Basic ACL: semicolon-separated entries "user|password|role". Role is admin (default) or read (GET/HEAD only). Non-empty enables auth when MC_API_TOKEN is empty, or adds Basic as an alternative when both are set. User/password must not contain '|' or ';'.
 //   - ARMS_MERGE_BACKEND — merge queue completion: noop (default), github (REST merge PR), local (git merge in repo_clone_path)
@@ -84,6 +86,8 @@ type Config struct {
 	AutoStallNudgeIntervalSec   int
 	AutoStallNudgeCooldownSec   int
 	AutoStallNudgeMaxPerDay     int
+	KnowledgeDispatchSnippetLimit     int
+	KnowledgeDisableDispatchInjection bool
 }
 
 // ACLUser is one Basic-auth principal for coarse HTTP ACL (admin vs read-only).
@@ -187,6 +191,14 @@ func LoadFromEnv() Config {
 			autoStallMaxDay = n
 		}
 	}
+	knowSnippets := 5
+	if s := strings.TrimSpace(os.Getenv("ARMS_KNOWLEDGE_DISPATCH_SNIPPETS")); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			knowSnippets = n
+		}
+	}
+	knowDisableInject := strings.EqualFold(os.Getenv("ARMS_KNOWLEDGE_DISABLE_DISPATCH"), "1") ||
+		strings.EqualFold(os.Getenv("ARMS_KNOWLEDGE_DISABLE_DISPATCH"), "true")
 	return Config{
 		ListenAddr:                  addr,
 		MCAPIToken:                  strings.TrimSpace(token),
@@ -224,6 +236,8 @@ func LoadFromEnv() Config {
 		AutoStallNudgeIntervalSec:   autoStallInterval,
 		AutoStallNudgeCooldownSec:   autoStallCooldown,
 		AutoStallNudgeMaxPerDay:     autoStallMaxDay,
+		KnowledgeDispatchSnippetLimit:     knowSnippets,
+		KnowledgeDisableDispatchInjection: knowDisableInject,
 	}
 }
 

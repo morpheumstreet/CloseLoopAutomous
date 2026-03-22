@@ -18,9 +18,9 @@ func (s *Stub) DispatchTask(_ context.Context, task domain.Task) (string, error)
 	return fmt.Sprintf("gw-task-%s-%d", task.ID, s.Seq), nil
 }
 
-func (s *Stub) DispatchSubtask(_ context.Context, parent domain.TaskID, sub domain.Subtask) (string, error) {
+func (s *Stub) DispatchSubtask(_ context.Context, parent domain.Task, sub domain.Subtask) (string, error) {
 	s.Seq++
-	return fmt.Sprintf("gw-sub-%s-%s-%d", parent, sub.ID, s.Seq), nil
+	return fmt.Sprintf("gw-sub-%s-%s-%d", parent.ID, sub.ID, s.Seq), nil
 }
 
 var _ ports.AgentGateway = (*Stub)(nil)

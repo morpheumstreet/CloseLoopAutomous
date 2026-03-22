@@ -219,7 +219,7 @@ func (f *subtaskFailGW) DispatchTask(ctx context.Context, task domain.Task) (str
 	return f.inner.DispatchTask(ctx, task)
 }
 
-func (f *subtaskFailGW) DispatchSubtask(ctx context.Context, parent domain.TaskID, sub domain.Subtask) (string, error) {
+func (f *subtaskFailGW) DispatchSubtask(ctx context.Context, parent domain.Task, sub domain.Subtask) (string, error) {
 	if f.left != nil {
 		if n, ok := f.left[sub.ID]; ok && n > 0 {
 			f.left[sub.ID] = n - 1

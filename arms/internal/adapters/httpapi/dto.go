@@ -248,6 +248,31 @@ type stallNudgeReq struct {
 	Note string `json:"note,omitempty"`
 }
 
+type postKnowledgeReq struct {
+	Content  string         `json:"content"`
+	TaskID   string         `json:"task_id,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+}
+
+func (r *postKnowledgeReq) validate() error {
+	if strings.TrimSpace(r.Content) == "" {
+		return fmt.Errorf("content is required")
+	}
+	return nil
+}
+
+type patchKnowledgeReq struct {
+	Content  *string        `json:"content,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+}
+
+func (r *patchKnowledgeReq) validate() error {
+	if r.Content == nil && r.Metadata == nil {
+		return fmt.Errorf("at least one of content, metadata is required")
+	}
+	return nil
+}
+
 func (r *checkpointReq) validate() error {
 	if r.Payload == "" {
 		return fmt.Errorf("payload is required")

@@ -83,6 +83,16 @@ type TaskChatRepository interface {
 	ClearQueuePending(ctx context.Context, id string) error
 }
 
+// KnowledgeRepository stores product-scoped knowledge snippets with FTS5 search (SQLite) or in-memory scan.
+type KnowledgeRepository interface {
+	Create(ctx context.Context, e *domain.KnowledgeEntry) error
+	Update(ctx context.Context, id int64, productID domain.ProductID, content string, metadataJSON string, at time.Time) error
+	Delete(ctx context.Context, id int64, productID domain.ProductID) error
+	ByID(ctx context.Context, id int64, productID domain.ProductID) (*domain.KnowledgeEntry, error)
+	ListByProduct(ctx context.Context, productID domain.ProductID, limit int) ([]domain.KnowledgeEntry, error)
+	Search(ctx context.Context, productID domain.ProductID, ftsQuery string, limit int) ([]domain.KnowledgeEntry, error)
+}
+
 type IdeaRepository interface {
 	Save(ctx context.Context, i *domain.Idea) error
 	ByID(ctx context.Context, id domain.IdeaID) (*domain.Idea, error)

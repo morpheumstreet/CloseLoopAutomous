@@ -129,7 +129,7 @@ func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID, e
 				return err
 			}
 		}
-		ref, err := s.Gateway.DispatchSubtask(ctx, parent.ID, *st)
+		ref, err := s.Gateway.DispatchSubtask(ctx, *parent, *st)
 		if err != nil {
 			st.DispatchAttempts++
 			if saveErr := s.Convoys.Save(ctx, c); saveErr != nil {

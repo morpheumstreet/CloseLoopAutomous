@@ -1,8 +1,11 @@
 package platform
 
 import (
+	"context"
 	"strings"
 	"time"
+
+	"github.com/closeloopautomous/arms/internal/domain"
 
 	"github.com/closeloopautomous/arms/internal/adapters/ai"
 	"github.com/closeloopautomous/arms/internal/adapters/budget"
@@ -17,6 +20,7 @@ import (
 	"github.com/closeloopautomous/arms/internal/application/convoy"
 	"github.com/closeloopautomous/arms/internal/application/cost"
 	"github.com/closeloopautomous/arms/internal/application/feedback"
+	knowledgeapp "github.com/closeloopautomous/arms/internal/application/knowledge"
 	"github.com/closeloopautomous/arms/internal/application/livefeed"
 	"github.com/closeloopautomous/arms/internal/application/mergequeue"
 	"github.com/closeloopautomous/arms/internal/application/product"
@@ -78,7 +82,8 @@ func NewInMemoryApp(cfg config.Config, b Build) *App {
 	cmail := memory.NewConvoyMailStore()
 	productFb := memory.NewProductFeedbackStore()
 	taskChat := memory.NewTaskChatStore()
-	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, agentMail, agentHealth, pref, ops, sched, cmail, productFb, taskChat, hub, hub, nil, b)
+	knowledge := memory.NewKnowledgeStore()
+	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, agentMail, agentHealth, pref, ops, sched, cmail, productFb, taskChat, knowledge, hub, hub, nil, b)
 	return &App{Handlers: h, Products: products, Ideas: ideas, Tasks: tasks, ProductSchedules: sched, db: nil, cleanup: cleanup}
 }
 
@@ -105,6 +110,7 @@ func buildHandlers(
 	convoyMail ports.ConvoyMailRepository,
 	productFeedback ports.ProductFeedbackRepository,
 	taskChat ports.TaskChatRepository,
+	knowledge ports.KnowledgeRepository,
 	hub *livefeed.Hub,
 	taskEvents ports.LiveActivityPublisher,
 	liveTX ports.LiveActivityTX,
@@ -112,12 +118,23 @@ func buildHandlers(
 ) (*httpapi.Handlers, func()) {
 	clock := timeadapter.System{}
 	ids := &identity.Sequential{}
+	knowSvc := &knowledgeapp.Service{
+		Products:             products,
+		Repo:                 knowledge,
+		Clock:                clock,
+		DispatchSnippetLimit: cfg.KnowledgeDispatchSnippetLimit,
+	}
+	var knowHook func(context.Context, domain.ProductID, string) (string, error)
+	if !cfg.KnowledgeDisableDispatchInjection {
+		knowHook = knowSvc.DispatchHook()
+	}
 	agentGW, gwCleanup := gw.NewAgentGateway(
 		cfg.OpenClawGatewayURL,
 		cfg.OpenClawGatewayToken,
 		cfg.ArmsDeviceID,
 		cfg.OpenClawSessionKey,
 		cfg.OpenClawDispatchTimeout,
+		knowHook,
 	)
 
 	budgetPolicy := &budget.Composite{
@@ -249,6 +266,7 @@ func buildHandlers(
 		Cost:           costSvc,
 		Feedback:       feedbackSvc,
 		TaskChat:       taskChatSvc,
+		Knowledge:      knowSvc,
 		Live:           hub,
 		WorkspacePorts: workspacePorts,
 		MergeQueue:     mergeQueue,
