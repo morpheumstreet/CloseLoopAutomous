@@ -322,3 +322,44 @@ func TestProductSaveIfUnchangedSince(t *testing.T) {
 		t.Fatalf("second save want ErrStaleEntity, got %v", err)
 	}
 }
+
+// Legacy rows may store updated_at as RFC3339 without fractional seconds; optimistic save must still match.
+func TestProductSaveIfUnchangedSinceSecondPrecisionUpdatedAt(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	ps := NewProductStore(db)
+	now := time.Unix(1700000000, 0).UTC()
+	p := &domain.Product{
+		ID: domain.ProductID("p-sec"), Name: "a", Stage: domain.StageResearch, ResearchSummary: "",
+		WorkspaceID: "ws", UpdatedAt: now,
+	}
+	if err := ps.Save(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	const legacy = "2020-05-01T12:34:56Z"
+	if _, err := db.ExecContext(ctx, `UPDATE products SET updated_at = ? WHERE id = ?`, legacy, string(p.ID)); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := ps.ByID(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prev := loaded.UpdatedAt
+	later := prev.Add(time.Hour)
+	loaded.MissionStatement = "charter"
+	loaded.UpdatedAt = later
+	if err := ps.SaveIfUnchangedSince(ctx, loaded, prev); err != nil {
+		t.Fatalf("SaveIfUnchangedSince with legacy updated_at string: %v", err)
+	}
+	again, err := ps.ByID(ctx, p.ID)
+	if err != nil || again.MissionStatement != "charter" {
+		t.Fatalf("after save: %+v err %v", again, err)
+	}
+}

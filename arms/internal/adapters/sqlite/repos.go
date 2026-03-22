@@ -197,7 +197,25 @@ func (s *ProductStore) SaveIfUnchangedSince(ctx context.Context, p *domain.Produ
 	if !p.DeletedAt.IsZero() {
 		deletedArg = p.DeletedAt.UTC().Format(time.RFC3339Nano)
 	}
-	sinceStr := since.UTC().Format(time.RFC3339Nano)
+	var curUpdated string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT updated_at FROM products WHERE id = ? AND deleted_at IS NULL`,
+		string(p.ID),
+	).Scan(&curUpdated)
+	if err == sql.ErrNoRows {
+		return domain.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	curTime, err := parseProductUpdatedAt(curUpdated)
+	if err != nil {
+		return fmt.Errorf("parse product updated_at: %w", err)
+	}
+	if !curTime.Equal(since.UTC()) {
+		return domain.ErrStaleEntity
+	}
+
 	newUpdated := p.UpdatedAt.UTC().Format(time.RFC3339Nano)
 	res, err := s.db.ExecContext(ctx, `
 UPDATE products SET
@@ -212,7 +230,7 @@ WHERE id = ? AND updated_at = ? AND deleted_at IS NULL`,
 		p.ResearchCadenceSec, p.IdeationCadenceSec, tier, boolInt(p.AutoDispatchEnabled),
 		formatOptionalTime(p.LastAutoResearchAt), formatOptionalTime(p.LastAutoIdeationAt), p.PreferenceModelJSON,
 		mpj, p.MissionStatement, p.VisionStatement, deletedArg, newUpdated,
-		string(p.ID), sinceStr)
+		string(p.ID), curUpdated)
 	if err != nil {
 		return err
 	}
@@ -224,18 +242,22 @@ WHERE id = ? AND updated_at = ? AND deleted_at IS NULL`,
 		return nil
 	}
 	row := s.db.QueryRowContext(ctx, `SELECT updated_at, deleted_at FROM products WHERE id = ?`, string(p.ID))
-	var curUpdated string
+	var curAfter string
 	var delNS sql.NullString
-	switch err := row.Scan(&curUpdated, &delNS); {
-	case err == sql.ErrNoRows:
-		return domain.ErrNotFound
-	case err != nil:
+	if err = row.Scan(&curAfter, &delNS); err != nil {
+		if err == sql.ErrNoRows {
+			return domain.ErrNotFound
+		}
 		return err
 	}
 	if delNS.Valid && strings.TrimSpace(delNS.String) != "" {
 		return domain.ErrNotFound
 	}
-	if strings.TrimSpace(curUpdated) != sinceStr {
+	tAfter, err := parseProductUpdatedAt(curAfter)
+	if err != nil {
+		return err
+	}
+	if !tAfter.Equal(since.UTC()) {
 		return domain.ErrStaleEntity
 	}
 	return domain.ErrNotFound
@@ -327,6 +349,23 @@ func parseOptionalTime(s string) (time.Time, error) {
 		return time.Parse(time.RFC3339, s)
 	}
 	return t, nil
+}
+
+// parseProductUpdatedAt parses products.updated_at text (RFC3339 or RFC3339Nano).
+func parseProductUpdatedAt(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, fmt.Errorf("empty updated_at")
+	}
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err == nil {
+		return t.UTC(), nil
+	}
+	t, err = time.Parse(time.RFC3339, s)
+	if err == nil {
+		return t.UTC(), nil
+	}
+	return time.Time{}, err
 }
 
 // —— maybe pool ——

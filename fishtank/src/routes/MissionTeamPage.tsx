@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Bot, Compass, Info, Target, Users } from 'lucide-react';
 import { ArmsHttpError } from '../api/armsClient';
 import { useMissionUi } from '../context/MissionUiContext';
+import { isStaleEntityError, STALE_PRODUCT_HELP } from '../lib/armsErrors';
 import type { Agent } from '../domain/types';
 
 type TeamOrgLayout = 'outline' | 'org_chart';
@@ -130,6 +131,7 @@ export function MissionTeamPage() {
   const [visionDraft, setVisionDraft] = useState('');
   const [statementsBusy, setStatementsBusy] = useState(false);
   const [statementsError, setStatementsError] = useState<string | null>(null);
+  const [statementsStale, setStatementsStale] = useState(false);
   const [statementsSaved, setStatementsSaved] = useState(false);
 
   useEffect(() => {
@@ -141,6 +143,7 @@ export function MissionTeamPage() {
   const saveStatements = useCallback(async () => {
     if (!productId) return;
     setStatementsError(null);
+    setStatementsStale(false);
     setStatementsSaved(false);
     setStatementsBusy(true);
     try {
@@ -153,11 +156,27 @@ export function MissionTeamPage() {
       setStatementsSaved(true);
       await refreshActiveBoard({ silent: true });
     } catch (e) {
-      setStatementsError(e instanceof ArmsHttpError ? e.message : e instanceof Error ? e.message : 'Save failed');
+      if (isStaleEntityError(e)) {
+        setStatementsStale(true);
+        setStatementsError(STALE_PRODUCT_HELP);
+      } else {
+        setStatementsError(e instanceof ArmsHttpError ? e.message : e instanceof Error ? e.message : 'Save failed');
+      }
     } finally {
       setStatementsBusy(false);
     }
   }, [client, missionDraft, productId, refreshActiveBoard, visionDraft]);
+
+  const reloadStatementsFromServer = useCallback(async () => {
+    setStatementsError(null);
+    setStatementsStale(false);
+    setStatementsBusy(true);
+    try {
+      await refreshActiveBoard({ silent: true });
+    } finally {
+      setStatementsBusy(false);
+    }
+  }, [refreshActiveBoard]);
 
   return (
     <div className="ft-queue-flex" style={{ flex: 1, minWidth: 0, minHeight: 0, padding: '0.75rem', overflow: 'auto' }}>
@@ -202,6 +221,8 @@ export function MissionTeamPage() {
                   onChange={(e) => {
                     setMissionDraft(e.target.value);
                     setStatementsSaved(false);
+                    setStatementsStale(false);
+                    setStatementsError(null);
                   }}
                   placeholder="Why this mission exists — outcomes, scope, or north star (optional)"
                   style={{ width: '100%', resize: 'vertical', minHeight: '4.5rem', fontSize: '0.8rem' }}
@@ -219,6 +240,8 @@ export function MissionTeamPage() {
                   onChange={(e) => {
                     setVisionDraft(e.target.value);
                     setStatementsSaved(false);
+                    setStatementsStale(false);
+                    setStatementsError(null);
                   }}
                   placeholder="Where we are headed longer term — optional"
                   style={{ width: '100%', resize: 'vertical', minHeight: '4.5rem', fontSize: '0.8rem' }}
@@ -236,9 +259,26 @@ export function MissionTeamPage() {
               ) : null}
             </div>
             {statementsError ? (
-              <p className="ft-banner ft-banner--error" role="alert" style={{ margin: '0.65rem 0 0', fontSize: '0.75rem' }}>
-                {statementsError}
-              </p>
+              <div
+                className="ft-banner ft-banner--error"
+                role="alert"
+                style={{
+                  margin: '0.65rem 0 0',
+                  fontSize: '0.75rem',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.5rem',
+                }}
+              >
+                <span style={{ flex: '1 1 12rem', lineHeight: 1.45 }}>{statementsError}</span>
+                {statementsStale ? (
+                  <button type="button" className="ft-btn-ghost" disabled={statementsBusy} onClick={() => void reloadStatementsFromServer()}>
+                    Reload from server
+                  </button>
+                ) : null}
+              </div>
             ) : null}
           </section>
         ) : (
