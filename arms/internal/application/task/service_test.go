@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -745,5 +746,123 @@ func TestOpenPullRequestNilShip(t *testing.T) {
 	_, _, err = svc.OpenPullRequest(ctx, tt.ID, "feat/x", "", "")
 	if err == nil || !errors.Is(err, domain.ErrInvalidInput) {
 		t.Fatalf("want ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestCreateFromSpecWithNewIdea(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	ideas := memory.NewIdeaStore()
+	tasks := memory.NewTaskStore()
+	costs := memory.NewCostStore()
+	checkpoints := memory.NewCheckpointStore()
+	gateway := &gw.Stub{}
+	p, err := (&product.Service{Products: products, Clock: clock, IDs: ids}).Register(ctx, product.RegistrationInput{
+		Name: "p", WorkspaceID: "w",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{
+		Tasks: tasks, Products: products, Ideas: ideas,
+		Gateway: gateway,
+		Budget:  &budget.Static{Cap: 100, Costs: costs},
+		Checkpt: checkpoints,
+		Clock:   clock,
+		IDs:     ids,
+		Ship:    shipping.PullRequestNoop{},
+	}
+	spec := "Dark mode toggle\n\nImplement system preference sync."
+	tt, err := svc.CreateFromSpecWithNewIdea(ctx, p.ID, spec, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tt.Status != domain.StatusPlanning || tt.Spec != spec {
+		t.Fatalf("task: %+v", tt)
+	}
+	gotIdea, err := ideas.ByID(ctx, tt.IdeaID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotIdea.Title != "Dark mode toggle" || !strings.Contains(gotIdea.Description, "Implement system") {
+		t.Fatalf("idea title/desc: %+v", gotIdea)
+	}
+	if !gotIdea.Decided || gotIdea.Decision != domain.DecisionYes || gotIdea.Status != domain.IdeaStatusBuilding {
+		t.Fatalf("idea workflow: %+v", gotIdea)
+	}
+}
+
+func TestCreateFromSpecWithNewIdea_preferredID(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	ideas := memory.NewIdeaStore()
+	tasks := memory.NewTaskStore()
+	costs := memory.NewCostStore()
+	checkpoints := memory.NewCheckpointStore()
+	gateway := &gw.Stub{}
+	p, err := (&product.Service{Products: products, Clock: clock, IDs: ids}).Register(ctx, product.RegistrationInput{
+		Name: "p", WorkspaceID: "w",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{
+		Tasks: tasks, Products: products, Ideas: ideas,
+		Gateway: gateway,
+		Budget:  &budget.Static{Cap: 100, Costs: costs},
+		Checkpt: checkpoints,
+		Clock:   clock,
+		IDs:     ids,
+		Ship:    shipping.PullRequestNoop{},
+	}
+	const wantID = "bot-com-github-https-1"
+	tt, err := svc.CreateFromSpecWithNewIdea(ctx, p.ID, "Title\n\nBody", wantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(tt.IdeaID) != wantID {
+		t.Fatalf("idea id: got %q want %q", tt.IdeaID, wantID)
+	}
+}
+
+func TestCreateFromSpecWithNewIdea_preferredIDConflict(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	ideas := memory.NewIdeaStore()
+	tasks := memory.NewTaskStore()
+	costs := memory.NewCostStore()
+	checkpoints := memory.NewCheckpointStore()
+	gateway := &gw.Stub{}
+	p, err := (&product.Service{Products: products, Clock: clock, IDs: ids}).Register(ctx, product.RegistrationInput{
+		Name: "p", WorkspaceID: "w",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := clock.Now()
+	if err := ideas.Save(ctx, &domain.Idea{
+		ID: "taken", ProductID: p.ID, Title: "x", Decided: true, Decision: domain.DecisionYes,
+		CreatedAt: now, UpdatedAt: now, Source: "manual", Category: "feature",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{
+		Tasks: tasks, Products: products, Ideas: ideas,
+		Gateway: gateway,
+		Budget:  &budget.Static{Cap: 100, Costs: costs},
+		Checkpt: checkpoints,
+		Clock:   clock,
+		IDs:     ids,
+		Ship:    shipping.PullRequestNoop{},
+	}
+	_, err = svc.CreateFromSpecWithNewIdea(ctx, p.ID, "Spec", "taken")
+	if err == nil || !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("want ErrConflict, got %v", err)
 	}
 }

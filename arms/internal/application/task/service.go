@@ -106,6 +106,83 @@ func (s *Service) CreateFromApprovedIdea(ctx context.Context, ideaID domain.Idea
 	return t, nil
 }
 
+// splitSpecTitleBody uses the first non-empty line as title; remainder is description.
+func splitSpecTitleBody(spec string) (title, description string) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return "", ""
+	}
+	first, rest, ok := strings.Cut(spec, "\n")
+	first = strings.TrimSpace(first)
+	rest = strings.TrimSpace(rest)
+	if !ok || rest == "" {
+		if first != "" {
+			return first, ""
+		}
+		one := strings.ReplaceAll(strings.TrimSpace(spec), "\n", " ")
+		if len(one) > 160 {
+			one = one[:160] + "…"
+		}
+		return one, spec
+	}
+	if first == "" {
+		one := strings.ReplaceAll(strings.TrimSpace(spec), "\n", " ")
+		if len(one) > 160 {
+			one = one[:160] + "…"
+		}
+		return one, spec
+	}
+	return first, rest
+}
+
+// CreateFromSpecWithNewIdea inserts an auto-approved manual idea (title/description from spec), then creates the planning task linked to it.
+// preferredIdeaID, when non-empty, is used as the new row's id (must not already exist). Typical source: POST …/nlp/suggest-idea-id.
+func (s *Service) CreateFromSpecWithNewIdea(ctx context.Context, productID domain.ProductID, spec string, preferredIdeaID string) (*domain.Task, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil, fmt.Errorf("%w: spec is required", domain.ErrInvalidInput)
+	}
+	preferredIdeaID = strings.TrimSpace(preferredIdeaID)
+	if len(preferredIdeaID) > 200 {
+		return nil, fmt.Errorf("%w: new_idea_id too long", domain.ErrInvalidInput)
+	}
+	if err := ports.RequireActiveProduct(ctx, s.Products, productID); err != nil {
+		return nil, err
+	}
+	title, desc := splitSpecTitleBody(spec)
+	now := s.Clock.Now()
+	var ideaID domain.IdeaID
+	if preferredIdeaID != "" {
+		if _, err := s.Ideas.ByID(ctx, domain.IdeaID(preferredIdeaID)); err == nil {
+			return nil, fmt.Errorf("%w: idea id %q already exists", domain.ErrConflict, preferredIdeaID)
+		} else if !errors.Is(err, domain.ErrNotFound) {
+			return nil, err
+		}
+		ideaID = domain.IdeaID(preferredIdeaID)
+	} else {
+		ideaID = s.IDs.NewIdeaID()
+	}
+	idea := domain.Idea{
+		ID:          ideaID,
+		ProductID:   productID,
+		Title:       title,
+		Description: desc,
+		Reasoning:   "",
+		Decided:     true,
+		Decision:    domain.DecisionYes,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		Source:      "manual",
+		Category:    "feature",
+	}
+	domain.SyncIdeaStatusFromSwipe(&idea, domain.DecisionYes, now)
+	domain.NormalizeIdeaForSave(&idea, now)
+	if err := s.Ideas.Save(ctx, &idea); err != nil {
+		return nil, err
+	}
+	return s.CreateFromApprovedIdea(ctx, idea.ID, spec)
+}
+
 // ListByProduct returns tasks for a product (newest first), or ErrNotFound if the product does not exist.
 func (s *Service) ListByProduct(ctx context.Context, productID domain.ProductID) ([]domain.Task, error) {
 	if _, err := s.Products.ByID(ctx, productID); err != nil {

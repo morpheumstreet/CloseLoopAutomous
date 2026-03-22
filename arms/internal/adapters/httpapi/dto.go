@@ -182,16 +182,30 @@ func parseSwipe(s string) (domain.SwipeDecision, error) {
 }
 
 type createTaskReq struct {
-	IdeaID string `json:"idea_id"`
-	Spec   string `json:"spec"`
+	IdeaID    string `json:"idea_id,omitempty"`
+	ProductID string `json:"product_id,omitempty"`
+	NewIdeaID string `json:"new_idea_id,omitempty"`
+	Spec      string `json:"spec"`
 }
 
 func (r *createTaskReq) validate() error {
-	if strings.TrimSpace(r.IdeaID) == "" {
-		return fmt.Errorf("idea_id is required")
-	}
 	if strings.TrimSpace(r.Spec) == "" {
 		return fmt.Errorf("spec is required")
+	}
+	iid := strings.TrimSpace(r.IdeaID)
+	pid := strings.TrimSpace(r.ProductID)
+	nid := strings.TrimSpace(r.NewIdeaID)
+	if iid == "" && pid == "" {
+		return fmt.Errorf("idea_id or product_id is required")
+	}
+	if iid != "" && pid != "" {
+		return fmt.Errorf("provide only one of idea_id or product_id")
+	}
+	if nid != "" && iid != "" {
+		return fmt.Errorf("new_idea_id is only allowed with product_id (not with idea_id)")
+	}
+	if nid != "" && pid == "" {
+		return fmt.Errorf("new_idea_id requires product_id")
 	}
 	return nil
 }

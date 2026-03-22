@@ -4,6 +4,7 @@ import { WorkspaceShellLayout } from './components/workspace/WorkspaceShellLayou
 import { WorkspaceDashboardView } from './components/dashboard/WorkspaceDashboardView';
 import { ActivityLogPage } from './routes/ActivityLogPage';
 import { AutopilotPlaceholderPage } from './routes/AutopilotPlaceholderPage';
+import { MissionApprovalsPage } from './routes/MissionApprovalsPage';
 import { MissionAgentsPage } from './routes/MissionAgentsPage';
 import { MissionDocsPage } from './routes/MissionDocsPage';
 import { MissionFactoryPage } from './routes/MissionFactoryPage';
@@ -34,7 +35,7 @@ export default function App() {
               <Route path="agents" element={<MissionAgentsPage />} />
               <Route path="feed" element={<MissionFeedPage />} />
               <Route path="content" element={<WorkspaceModulePlaceholder segment="content" />} />
-              <Route path="approvals" element={<WorkspaceModulePlaceholder segment="approvals" />} />
+              <Route path="approvals" element={<MissionApprovalsPage />} />
               <Route path="council" element={<MissionCouncilPage />} />
               <Route path="calendar" element={<MissionCalendarPage />} />
               <Route path="projects" element={<MissionProjectsPage />} />

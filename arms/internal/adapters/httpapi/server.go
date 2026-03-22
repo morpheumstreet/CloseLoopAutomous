@@ -28,6 +28,7 @@ func NewRouter(cfg Config, h *Handlers) http.Handler {
 	sub.Handle("POST /api/products/{id}/ideation", http.HandlerFunc(h.runIdeation))
 	sub.Handle("GET /api/products/{id}/ideas", http.HandlerFunc(h.listIdeas))
 	sub.Handle("POST /api/products/{id}/nlp/tfidf-suggest-tags", http.HandlerFunc(h.postProductTfidfSuggestTags))
+	sub.Handle("POST /api/products/{id}/nlp/suggest-idea-id", http.HandlerFunc(h.postProductSuggestIdeaID))
 	sub.Handle("GET /api/products/{id}/maybe-pool", http.HandlerFunc(h.listMaybePool))
 	sub.Handle("POST /api/products/{id}/maybe-pool/batch-reeval", http.HandlerFunc(h.maybePoolBatchReeval))
 	sub.Handle("POST /api/products/{id}/feedback", http.HandlerFunc(h.postProductFeedback))

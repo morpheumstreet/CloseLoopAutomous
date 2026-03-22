@@ -358,7 +358,7 @@ export function MissionCouncilPage() {
         </section>
 
         <p className="ft-muted" style={{ fontSize: '0.72rem', margin: 0, paddingBottom: '0.5rem' }}>
-          Merge queue and approvals will gain richer UIs in their own modules as APIs evolve. Use Refresh to sync convoys with the task board.
+          Use the <Link to={`/p/${encodeURIComponent(pid)}/approvals`}>Approvals</Link> module for swipe, maybe pool, and plan approve actions. Use Refresh to sync convoys with the task board.
         </p>
       </div>
     </div>

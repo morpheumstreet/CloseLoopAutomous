@@ -105,7 +105,7 @@ export function MissionQueuePanel({
           disabled={!activeWorkspace}
         >
           <Plus size={18} aria-hidden />
-          New task
+          New Task
         </button>
         <div className="ft-mc-filter-chips" role="group" aria-label="Filter by assignee">
           <button
@@ -177,7 +177,7 @@ export function MissionQueuePanel({
         ) : null}
         {!boardLoading && !boardLoadFailed && scoped.length === 0 ? (
           <div className="ft-muted" style={{ padding: '2rem 1rem', textAlign: 'center', fontSize: '0.875rem' }}>
-            No tasks in this product yet. Create one with <strong>New task</strong> (requires an approved idea id).
+            No tasks in this product yet. Use <strong>New Task</strong> after you have an approved idea (yes / now) without a linked task.
           </div>
         ) : null}
         {!boardLoading && !boardLoadFailed && scoped.length > 0 && filtered.length === 0 ? (
@@ -236,8 +236,9 @@ export function MissionQueuePanel({
 
       <NewTaskModal
         open={newTaskOpen}
+        productId={activeWorkspace?.id ?? ''}
         onClose={() => onNewTaskOpenChange(false)}
-        onCreate={(ideaId, spec) => createTaskForProduct(ideaId, spec)}
+        onCreate={(ideaId, spec, newIdeaId) => createTaskForProduct(ideaId, spec, newIdeaId)}
       />
       <TaskDetailModal task={selected} onClose={() => setSelected(null)} />
     </section>

@@ -77,7 +77,7 @@ export interface MissionUiValue {
   fetchVersion: () => Promise<ApiVersion>;
   fetchOperationsLog: (q?: OperationsLogQuery) => ReturnType<ArmsClient['listOperationsLog']>;
   patchTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>;
-  createTaskForProduct: (ideaId: string, spec: string) => Promise<void>;
+  createTaskForProduct: (ideaId: string | null, spec: string, newIdeaId?: string | null) => Promise<void>;
   approveTaskPlan: (taskId: string) => Promise<void>;
   rejectTaskPlan: (taskId: string, statusReason?: string) => Promise<void>;
   saveTaskClarifications: (taskId: string, clarificationsJson: string) => Promise<void>;
@@ -345,11 +345,19 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
   );
 
   const createTaskForProduct = useCallback(
-    async (ideaId: string, spec: string) => {
+    async (ideaId: string | null, spec: string, newIdeaId?: string | null) => {
       if (!activeWorkspace) {
         throw new Error('No active workspace');
       }
-      await client.createTask({ idea_id: ideaId.trim(), spec: spec.trim() });
+      const s = spec.trim();
+      const nid = newIdeaId?.trim() ?? '';
+      if (nid !== '') {
+        await client.createTask({ product_id: activeWorkspace.id, spec: s, new_idea_id: nid });
+      } else if (ideaId == null || ideaId.trim() === '') {
+        await client.createTask({ product_id: activeWorkspace.id, spec: s });
+      } else {
+        await client.createTask({ idea_id: ideaId.trim(), spec: s });
+      }
       await refreshActiveBoard();
     },
     [activeWorkspace, client, refreshActiveBoard],

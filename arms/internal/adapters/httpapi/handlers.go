@@ -621,7 +621,14 @@ func (h *Handlers) createTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation", err.Error())
 		return
 	}
-	t, err := h.Task.CreateFromApprovedIdea(r.Context(), domain.IdeaID(req.IdeaID), req.Spec)
+	ctx := r.Context()
+	var t *domain.Task
+	var err error
+	if strings.TrimSpace(req.IdeaID) != "" {
+		t, err = h.Task.CreateFromApprovedIdea(ctx, domain.IdeaID(strings.TrimSpace(req.IdeaID)), req.Spec)
+	} else {
+		t, err = h.Task.CreateFromSpecWithNewIdea(ctx, domain.ProductID(strings.TrimSpace(req.ProductID)), req.Spec, strings.TrimSpace(req.NewIdeaID))
+	}
 	if err != nil {
 		if mapDomainErr(w, err) {
 			return
@@ -629,7 +636,12 @@ func (h *Handlers) createTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	td, _ := json.Marshal(map[string]string{"idea_id": req.IdeaID})
+	detail := map[string]string{"idea_id": string(t.IdeaID)}
+	if strings.TrimSpace(req.ProductID) != "" {
+		detail["product_id"] = strings.TrimSpace(req.ProductID)
+		detail["new_idea"] = "1"
+	}
+	td, _ := json.Marshal(detail)
 	h.logOperation(r.Context(), "http", "task.create", "task", string(t.ID), string(td), t.ProductID)
 	writeJSON(w, http.StatusCreated, taskToJSON(t))
 }

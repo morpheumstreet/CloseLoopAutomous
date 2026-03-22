@@ -7,11 +7,6 @@ const COPY: Record<string, { title: string; blurb: string; designRef: string }> 
     blurb: 'Content pipeline and drafts — wire to catalog / autopilot APIs when exposed.',
     designRef: '§2 Other / extensible',
   },
-  approvals: {
-    title: 'Approvals',
-    blurb: 'Approval gates and sign-off — connect plan approve/reject and merge policy UX.',
-    designRef: '§2 Other / extensible',
-  },
   council: {
     title: 'Council',
     blurb: 'Multi-agent review surface — placeholder until convoy / operator queue patterns land.',

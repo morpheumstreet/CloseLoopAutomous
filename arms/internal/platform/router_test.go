@@ -298,3 +298,23 @@ func TestSSEBearerAuth(t *testing.T) {
 		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestPostProductSuggestIdeaID(t *testing.T) {
+	cfg := httpapi.Config{}
+	app := platform.NewInMemoryApp(config.Config{}, platform.Build{})
+	ctx := context.Background()
+	now := time.Unix(1700000000, 0)
+	if err := app.Products.Save(ctx, &domain.Product{
+		ID: "prod-suggest", Name: "s", Stage: domain.StageResearch, WorkspaceID: "w", UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte(`{"spec":"implement oauth refresh token rotation","statement":"security hardening for mission auth"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/products/prod-suggest/nlp/suggest-idea-id", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	httpapi.NewRouter(cfg, app.Handlers).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+}

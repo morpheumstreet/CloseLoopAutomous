@@ -65,6 +65,30 @@ export type ApiTask = {
   created_at?: string;
 };
 
+/** GET /api/products/{id}/ideas — one row from the `ideas` array. */
+export type ApiIdea = {
+  id: string;
+  product_id: string;
+  title?: string;
+  description?: string;
+  decided?: boolean;
+  /** Swipe outcome: pass, maybe, yes, now */
+  decision?: string;
+  /** Set when an idea already has a linked Kanban task. */
+  task_id?: string;
+};
+
+/** POST /api/products/{id}/nlp/suggest-idea-id */
+export type ApiSuggestIdeaIdResponse = {
+  idea_id: string;
+  base_slug?: string;
+  suffix?: number;
+  tags?: { token: string; score: number }[];
+  method?: string;
+  corpus_documents?: number;
+  product_id?: string;
+};
+
 /** GET /api/version (no auth). */
 export type ApiVersion = {
   version: string;

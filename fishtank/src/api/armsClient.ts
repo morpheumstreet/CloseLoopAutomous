@@ -3,7 +3,9 @@ import type {
   ApiAgentHealthItem,
   ApiConvoy,
   ApiConvoyDispatchWaveResponse,
+  ApiIdea,
   ApiKnowledgeEntry,
+  ApiSuggestIdeaIdResponse,
   ApiMaybePoolIdea,
   ApiOperationLogEntry,
   ApiProduct,
@@ -98,6 +100,24 @@ export class ArmsClient {
     return body.tasks ?? [];
   }
 
+  async listProductIdeas(productId: string): Promise<ApiIdea[]> {
+    const body = await this.getJson<{ ideas: ApiIdea[] }>(
+      `/api/products/${encodeURIComponent(productId)}/ideas`,
+    );
+    return body.ideas ?? [];
+  }
+
+  /** TF-IDF slug + numeric suffix; does not create an idea row. */
+  async suggestProductIdeaId(
+    productId: string,
+    body: { spec?: string; statement?: string; extra_corpus?: string[]; top_k?: number; min_token_len?: number; max_slug_tokens?: number },
+  ): Promise<ApiSuggestIdeaIdResponse> {
+    return this.postJson<ApiSuggestIdeaIdResponse>(
+      `/api/products/${encodeURIComponent(productId)}/nlp/suggest-idea-id`,
+      body,
+    );
+  }
+
   async listProductConvoys(productId: string): Promise<ApiConvoy[]> {
     const body = await this.getJson<{ convoys?: ApiConvoy[] }>(
       `/api/products/${encodeURIComponent(productId)}/convoys`,
@@ -145,11 +165,23 @@ export class ArmsClient {
     return res.ideas ?? [];
   }
 
+  async swipeIdea(ideaId: string, decision: 'pass' | 'maybe' | 'yes' | 'now'): Promise<ApiIdea> {
+    return this.postJson<ApiIdea>(`/api/ideas/${encodeURIComponent(ideaId)}/swipe`, { decision });
+  }
+
+  async promoteMaybeIdea(ideaId: string): Promise<ApiIdea> {
+    return this.postJson<ApiIdea>(`/api/ideas/${encodeURIComponent(ideaId)}/promote-maybe`, {});
+  }
+
   async getTask(taskId: string): Promise<ApiTask> {
     return this.getJson<ApiTask>(`/api/tasks/${encodeURIComponent(taskId)}`);
   }
 
-  async createTask(body: { idea_id: string; spec: string }): Promise<ApiTask> {
+  async createTask(
+    body:
+      | { idea_id: string; spec: string }
+      | { product_id: string; spec: string; new_idea_id?: string },
+  ): Promise<ApiTask> {
     return this.postJson<ApiTask>('/api/tasks', body);
   }
 
