@@ -1,6 +1,10 @@
 import type { KanbanColumn, TaskStatus } from './types';
 
-/** Column definitions — labels and accent colors mirror mission-control MissionQueue. */
+/**
+ * Column definitions — labels and accent colors mirror mission-control MissionQueue.
+ * Mission Control (YouTube reference) shorthand: Planning + Inbox + Assigned ≈ **Backlog**;
+ * In progress + Testing + Convoy active ≈ **In progress**; Review + Failed ≈ **Review**; Done ≈ **Done**.
+ */
 export const KANBAN_COLUMNS: KanbanColumn[] = [
   { id: 'planning', label: '📋 Planning', columnClass: 'ft-col-planning' },
   { id: 'inbox', label: 'Inbox', columnClass: 'ft-col-inbox' },

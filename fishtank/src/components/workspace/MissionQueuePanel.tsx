@@ -200,7 +200,11 @@ export function MissionQueuePanel({
                   e.dataTransfer.dropEffect = 'move';
                   setDropOver(col.id);
                 }}
-                onDragLeave={() => setDropOver(null)}
+                onDragLeave={(e) => {
+                  const rel = e.relatedTarget as Node | null;
+                  if (rel && e.currentTarget.contains(rel)) return;
+                  setDropOver(null);
+                }}
                 onDrop={(e) => void handleDrop(col.id, e)}
               >
                 {colTasks.map((t) => (

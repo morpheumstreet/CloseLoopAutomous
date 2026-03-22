@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -15,6 +16,7 @@ import { readArmsEnv } from '../config/armsEnv';
 import type { StalledTaskRow, Task, TaskStatus } from '../domain/types';
 import { useArmsLiveFeed } from '../hooks/useArmsLiveFeed';
 import type { Agent, FeedEvent, WorkspaceStats } from '../domain/types';
+import { shouldRefreshBoardOnArmsSseType } from '../lib/liveBoardRefresh';
 import {
   agentHealthToAgent,
   apiProductToWorkspaceStats,
@@ -69,7 +71,7 @@ export interface MissionUiValue {
   goHome: () => void;
   openWorkspace: (workspace: WorkspaceStats) => Promise<void>;
   refreshWorkspaces: () => Promise<void>;
-  refreshActiveBoard: () => Promise<void>;
+  refreshActiveBoard: (opts?: { silent?: boolean }) => Promise<void>;
   registerProduct: (name: string, workspaceId: string) => Promise<string>;
   dismissError: () => void;
   fetchVersion: () => Promise<ApiVersion>;
@@ -123,22 +125,34 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
 
   const [liveEvents, dispatchLive] = useReducer(liveEventsReducer, []);
 
-  const appendLive = useCallback((event: FeedEvent) => {
-    dispatchLive({ kind: 'append', event });
+  const boardRefreshDebounceRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const refreshActiveBoardRef = useRef<(opts?: { silent?: boolean }) => Promise<void>>(async () => {});
+
+  const flushBoardRefreshTimer = useCallback(() => {
+    if (boardRefreshDebounceRef.current !== null) {
+      window.clearTimeout(boardRefreshDebounceRef.current);
+      boardRefreshDebounceRef.current = null;
+    }
   }, []);
 
   const onFeedLive = useCallback((live: boolean) => {
     setFeedLive(live);
   }, []);
 
-  useArmsLiveFeed(activeWorkspace?.id ?? null, env, appendLive, {
-    reconnectEpoch: feedEpoch,
-    onConnectionLive: onFeedLive,
-  });
-
   useEffect(() => {
     dispatchLive({ kind: 'clear' });
   }, [activeWorkspace?.id]);
+
+  useEffect(() => {
+    flushBoardRefreshTimer();
+  }, [activeWorkspace?.id, flushBoardRefreshTimer]);
+
+  useEffect(
+    () => () => {
+      flushBoardRefreshTimer();
+    },
+    [flushBoardRefreshTimer],
+  );
 
   const bumpFeedReconnect = useCallback(() => {
     setFeedEpoch((e) => e + 1);
@@ -202,30 +216,69 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
     setBoardLoadFailed(false);
   }, []);
 
-  const refreshActiveBoard = useCallback(async () => {
-    if (!activeWorkspace) return;
-    const wid = activeWorkspace.id;
-    setBoardLoading(true);
-    setBoardLoadFailed(false);
-    try {
-      const [apiTasks, stalledRaw, detail] = await Promise.all([
-        client.listProductTasks(wid),
-        client.listStalledTasks(wid),
-        client.getProduct(wid).catch(() => null),
-      ]);
-      setTasks(apiTasks.map(apiTaskToTask));
-      setStalledTasks(stalledApiToRows(stalledRaw));
-      if (detail) setProductDetail(detail);
-      const counts = summarizeTaskCounts(apiTasks);
-      setWorkspaces((prev) => prev.map((w) => (w.id === wid ? { ...w, taskCounts: counts } : w)));
-      setActiveWorkspace((prev) => (prev && prev.id === wid ? { ...prev, taskCounts: counts } : prev));
-    } catch {
-      setBoardLoadFailed(true);
-      setApiError('Failed to refresh the board for this product.');
-    } finally {
-      setBoardLoading(false);
-    }
-  }, [activeWorkspace, client]);
+  const refreshActiveBoard = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!activeWorkspace) return;
+      const wid = activeWorkspace.id;
+      const loud = !opts?.silent;
+      if (loud) {
+        setBoardLoading(true);
+        setBoardLoadFailed(false);
+      }
+      try {
+        const [apiTasks, stalledRaw, detail, health] = await Promise.all([
+          client.listProductTasks(wid),
+          client.listStalledTasks(wid),
+          client.getProduct(wid).catch(() => null),
+          client.listProductAgentHealth(wid).catch(() => []),
+        ]);
+        setTasks(apiTasks.map(apiTaskToTask));
+        setStalledTasks(stalledApiToRows(stalledRaw));
+        setAgents(health.map(agentHealthToAgent));
+        if (detail) setProductDetail(detail);
+        const counts = summarizeTaskCounts(apiTasks);
+        const agentCounts = summarizeAgentCounts(health);
+        setWorkspaces((prev) => prev.map((w) => (w.id === wid ? { ...w, taskCounts: counts, agentCounts } : w)));
+        setActiveWorkspace((prev) => {
+          if (!prev || prev.id !== wid) return prev;
+          if (detail) return apiProductToWorkspaceStats(detail, counts, agentCounts);
+          return { ...prev, taskCounts: counts, agentCounts };
+        });
+      } catch {
+        if (loud) {
+          setBoardLoadFailed(true);
+          setApiError('Failed to refresh the board for this product.');
+        }
+      } finally {
+        if (loud) setBoardLoading(false);
+      }
+    },
+    [activeWorkspace, client],
+  );
+
+  refreshActiveBoardRef.current = refreshActiveBoard;
+
+  const appendLive = useCallback(
+    (event: FeedEvent) => {
+      dispatchLive({ kind: 'append', event });
+      const t = event.armsType;
+      if (t && shouldRefreshBoardOnArmsSseType(t)) {
+        if (boardRefreshDebounceRef.current !== null) {
+          window.clearTimeout(boardRefreshDebounceRef.current);
+        }
+        boardRefreshDebounceRef.current = window.setTimeout(() => {
+          boardRefreshDebounceRef.current = null;
+          void refreshActiveBoardRef.current({ silent: true });
+        }, 400);
+      }
+    },
+    [],
+  );
+
+  useArmsLiveFeed(activeWorkspace?.id ?? null, env, appendLive, {
+    reconnectEpoch: feedEpoch,
+    onConnectionLive: onFeedLive,
+  });
 
   const openWorkspace = useCallback(
     async (workspace: WorkspaceStats) => {
@@ -241,10 +294,14 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
           client.listProductAgentHealth(workspace.id).catch(() => []),
           client.listStalledTasks(workspace.id),
         ]);
+        const tc = summarizeTaskCounts(apiTasks);
+        const ac = summarizeAgentCounts(health);
         if (detail) {
           setProductDetail(detail);
-          setActiveWorkspace(
-            apiProductToWorkspaceStats(detail, summarizeTaskCounts(apiTasks), summarizeAgentCounts(health)),
+          setActiveWorkspace(apiProductToWorkspaceStats(detail, tc, ac));
+        } else {
+          setActiveWorkspace((prev) =>
+            prev && prev.id === workspace.id ? { ...prev, taskCounts: tc, agentCounts: ac } : prev,
           );
         }
         setTasks(apiTasks.map(apiTaskToTask));
@@ -289,7 +346,9 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
 
   const createTaskForProduct = useCallback(
     async (ideaId: string, spec: string) => {
-      if (!activeWorkspace) return;
+      if (!activeWorkspace) {
+        throw new Error('No active workspace');
+      }
       await client.createTask({ idea_id: ideaId.trim(), spec: spec.trim() });
       await refreshActiveBoard();
     },

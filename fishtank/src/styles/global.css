@@ -378,6 +378,175 @@ button:disabled {
   color: var(--mc-accent);
 }
 
+/* Projects fleet view (`/p/:id/projects`) */
+.ft-projects-page {
+  padding: 1rem 0 2rem;
+  max-width: 72rem;
+  margin-inline: auto;
+}
+
+.ft-projects-page__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.ft-projects-page__title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.35rem;
+}
+
+.ft-projects-page__blurb {
+  font-size: 0.875rem;
+  max-width: 42rem;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.ft-projects-page__banner {
+  margin-bottom: 1rem;
+  font-size: 0.8rem;
+}
+
+.ft-projects-page__skeleton-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .ft-projects-page__skeleton-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .ft-projects-page__skeleton-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.ft-project-card-skeleton {
+  min-height: 12.5rem;
+  border-radius: var(--ft-radius-lg);
+}
+
+.ft-project-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+  width: 100%;
+  min-height: 12.5rem;
+}
+
+.ft-project-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.ft-project-card__title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.ft-project-card__icon {
+  font-size: 1.6rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.ft-project-card__titles {
+  min-width: 0;
+}
+
+.ft-project-card__name {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.ft-project-card__subtitle {
+  font-size: 0.8rem;
+  margin: 0.2rem 0 0;
+}
+
+.ft-stage-pill {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--mc-border);
+  background: var(--mc-bg-tertiary);
+  color: var(--mc-text-secondary);
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ft-project-card__progress-block {
+  margin-bottom: 1rem;
+}
+
+.ft-project-card__progress-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.ft-project-card__progress-track {
+  height: 0.35rem;
+  border-radius: 999px;
+  background: var(--mc-bg-tertiary);
+  border: 1px solid var(--mc-border);
+  overflow: hidden;
+}
+
+.ft-project-card__progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--mc-accent), color-mix(in srgb, var(--mc-accent-cyan) 70%, var(--mc-accent)));
+  transition: width 0.25s ease;
+}
+
+.ft-project-card__meta {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+}
+
+.ft-project-card__meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.ft-project-card__meta-value {
+  font-weight: 500;
+  text-align: right;
+  min-width: 0;
+}
+
 .ft-add-card {
   border: 2px dashed var(--mc-border);
   border-radius: var(--ft-radius-lg);
@@ -556,7 +725,6 @@ button:disabled {
 
 .ft-desktop-only {
   display: none;
-  flex: 1;
   min-height: 0;
   overflow: hidden;
 }
@@ -565,6 +733,58 @@ button:disabled {
   .ft-desktop-only {
     display: flex;
     flex-direction: row;
+  }
+}
+
+/* Mission workspace shell: mobile = column; desktop = sidebar | main | feed (breakpoint matches ft-mobile-only / ft-desktop-only). */
+.ft-mc-workspace-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (min-width: 1024px) {
+  .ft-mc-workspace-body {
+    flex-direction: row;
+  }
+}
+
+.ft-mc-workspace-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ft-mc-outlet-mount {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ft-mc-sidebar-slot {
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.ft-mc-feed-slot {
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+/* Design (fishtank-ui-todos.md): three tab buttons are mobile-only; never on desktop. */
+@media (min-width: 1024px) {
+  .ft-mobile-tab-bar {
+    display: none !important;
   }
 }
 
@@ -616,6 +836,16 @@ button:disabled {
   border: 1px solid var(--mc-border);
   background: var(--mc-bg);
   font-size: 0.75rem;
+}
+
+.ft-feed-item--positive {
+  border-color: color-mix(in srgb, var(--mc-accent-green) 40%, var(--mc-border));
+  background: color-mix(in srgb, var(--mc-accent-green) 8%, var(--mc-bg));
+}
+
+.ft-feed-item--warn {
+  border-color: color-mix(in srgb, var(--mc-accent-yellow) 45%, var(--mc-border));
+  background: color-mix(in srgb, var(--mc-accent-yellow) 10%, var(--mc-bg));
 }
 
 .ft-tabs {

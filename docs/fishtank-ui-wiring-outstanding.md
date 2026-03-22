@@ -39,7 +39,7 @@ The gap doc is **backend-parity first**; the backlog header counts **~7** still-
 - **Named “tank modules”** — There are **no** `ConvoyView`, `AgentPool`, `TaskStream`, or `LiveCostTracker` components yet; treat those as **planned modules**, not half-finished files.
 - **Visualization layer** — No fish motion, convoy grouping animation, or graph view; **Mission Control** references below are **patterns to borrow**, not copied code in-tree.
 
-**Stack note:** Fishtank uses **plain CSS** (`ft-*` tokens in `src/styles/`), not Tailwind, and **no React Query**—only React context/hooks. You can add TanStack Query later if fetch caching becomes painful.
+**Stack note:** Fishtank uses **plain CSS** (`ft-*` tokens in `src/styles/`), not Tailwind, and **no React Query**—only React context/hooks. You can add TanStack Query later if fetch caching becomes painful. **Tooling:** **Bun** only for install/dev/build (`bun install`, `bun run dev`, `bun run build`)—**not npm or Node** for this UI (see [setup-guide.md](setup-guide.md)).
 
 ---
 

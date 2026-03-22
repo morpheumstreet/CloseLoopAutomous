@@ -11,16 +11,18 @@ For API details after the server is up, see [api-ref.md](api-ref.md) and `GET /a
 | Component | Purpose |
 |-----------|---------|
 | **Go 1.22+** (1.26+ matches `arms/go.mod`) | Build and run **arms** and **arms-worker** |
-| **Bun** (or Node with a TS/bundler workflow you adapt) | Run **Fishtank** dev server (`bun --hot`) |
+| **Bun** | Run **Fishtank** dev server and production build (`bun run dev` / `bun run build`) |
 | **Redis** (optional) | Autopilot schedules, Asynq queues, stall auto-nudge — **required** if you use those features |
 | **Docker** (optional) | Run arms + Redis from `arms/docker-compose.yml` |
+
+**Fishtank tooling:** This project uses **Bun** for the UI (`fishtank/package.json` scripts). **Do not use npm or Node** for Fishtank here—use `bun install`, `bun run dev`, and `bun run build` only.
 
 ---
 
 ## Repository layout
 
 - **`arms/`** — Go module: `cmd/arms` (API server), `cmd/arms-worker` (Asynq consumer)
-- **`fishtank/`** — React UI (Vite-style env via Bun)
+- **`fishtank/`** — React UI; env vars follow the `VITE_*` convention; dev/build via **Bun** (not npm/Node)
 - **`Makefile`** (repo root) — `make build` / `make run` for **arms** only
 
 ---
@@ -134,6 +136,8 @@ If `ARMS_REDIS_ADDR` is empty, the worker exits immediately (by design).
 ---
 
 ## 3. Fishtank (UI)
+
+**Use Bun only** (`bun install` / `bun run …`). Do not use **npm** or **Node** for this tree.
 
 Install dependencies and start the dev server:
 

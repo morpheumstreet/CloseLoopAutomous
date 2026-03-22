@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { ExternalLink, RefreshCw, X } from 'lucide-react';
 import { ArmsHttpError } from '../../api/armsClient';
 import { useMissionUi } from '../../context/MissionUiContext';
@@ -42,11 +42,15 @@ export function TaskDetailModal({ task, onClose }: Props) {
   const [prHead, setPrHead] = useState('');
   const [prTitle, setPrTitle] = useState('');
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setRow(task);
     setClarificationsDraft(task?.clarificationsJson ?? '');
     setActionError(null);
+    setRejectReason('');
     setPrHead(task?.pullRequestHeadBranch ?? '');
+    setPrTitle('');
+    setNudgeNote('');
+    setDispatchCost('0');
   }, [task]);
 
   async function refreshFromApi() {

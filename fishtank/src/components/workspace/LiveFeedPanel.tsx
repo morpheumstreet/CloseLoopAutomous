@@ -87,6 +87,20 @@ export function LiveFeedPanel({ variant = 'default' }: LiveFeedPanelProps) {
   );
 }
 
+function feedItemModifier(type: FeedEventType): string {
+  switch (type) {
+    case 'task_completed':
+    case 'convoy_subtask_completed':
+    case 'merge_ship_completed':
+      return 'ft-feed-item--positive';
+    case 'task_stall_nudged':
+    case 'task_execution_reassigned':
+      return 'ft-feed-item--warn';
+    default:
+      return '';
+  }
+}
+
 function matchesFilter(event: FeedEvent, filter: FeedFilter): boolean {
   if (filter === 'all') return true;
   const taskTypes: FeedEventType[] = [
@@ -122,7 +136,7 @@ function FeedItem({
   onToggleRaw: () => void;
 }) {
   return (
-    <div className="ft-feed-item">
+    <div className={`ft-feed-item ${feedItemModifier(event.type)}`}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.35rem' }}>
         <span aria-hidden style={{ flexShrink: 0 }}>
           {eventIcon(event.type)}

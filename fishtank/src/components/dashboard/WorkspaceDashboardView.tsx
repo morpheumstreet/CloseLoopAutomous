@@ -92,7 +92,7 @@ export function WorkspaceDashboardView() {
           </h2>
           <p className="ft-muted">
             Data from arms — each card is a <code className="ft-mono">GET /api/products</code> row with live task counts. Open a product for{' '}
-            <code className="ft-mono">/p/&lt;id&gt;</code> deep links.
+            <code className="ft-mono">/p/&lt;id&gt;/tasks</code> (and other modules) deep links.
           </p>
         </div>
 
@@ -109,7 +109,7 @@ export function WorkspaceDashboardView() {
         ) : (
           <div className="ft-grid-ws ft-animate-slide-in">
             {workspaces.map((w) => (
-              <WorkspaceCard key={w.id} workspace={w} onOpen={() => navigate(`/p/${encodeURIComponent(w.id)}`)} />
+              <WorkspaceCard key={w.id} workspace={w} onOpen={() => navigate(`/p/${encodeURIComponent(w.id)}/tasks`)} />
             ))}
             <button type="button" className="ft-add-card" onClick={() => setModalOpen(true)}>
               <div className="ft-add-card-icon">
@@ -126,7 +126,7 @@ export function WorkspaceDashboardView() {
         onClose={() => setModalOpen(false)}
         onCreate={async (name, workspaceId) => {
           const id = await registerProduct(name, workspaceId);
-          navigate(`/p/${encodeURIComponent(id)}`);
+          navigate(`/p/${encodeURIComponent(id)}/tasks`);
         }}
       />
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} fetchVersion={fetchVersion} armsEnv={armsEnv} productIdForSse={null} />

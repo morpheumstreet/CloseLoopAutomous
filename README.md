@@ -56,7 +56,7 @@ With persistence, set `DATABASE_PATH` (e.g. `./data/arms.db`); empty uses in-mem
 |------|------|
 | `arms/` | Go module: `cmd/arms`, `cmd/arms-worker`, `internal/{domain,ports,adapters,application,platform,config,jobs}` |
 | `docs/` | API reference, gap analysis, production notes |
-| `fishtank/` | Separate area (see that tree) |
+| `fishtank/` | React UI — run with **Bun** (`bun install` / `bun run dev`); **not npm/Node** here ([setup-guide.md](docs/setup-guide.md)) |
 | `.github/workflows/` | CI for `arms` |
 
 ## Tests

@@ -21,6 +21,7 @@ The video **“OpenClaw is 100x better with this tool (Mission Control)”** by 
 - **Main content area** — switches by selected module (Kanban, calendar, list views, etc.).
 - **Right side / overlay or integrated panel** — live activity feed (real-time agent updates).
 - **Top bar** — global stats overview, search, quick actions (new task, pause agents, ping a specific agent).
+- **Responsive shell** — on **narrow / mobile** viewports, a **three-button tab strip** (e.g. **Tasks** · **Agents** · **Activity**) switches the main region between the Kanban, the agents list, and the live feed. On **desktop**, that tab strip **must not** appear: use the **left sidebar** for module navigation, the **center** for the active module, and the **right column** for live activity (no duplicate tab UI).
 - **Core goal** — visibility + control + extensibility for autonomous agents without living in chat threads.
 
 ### 2. Key modules / sidebar navigation (each a separate view)
@@ -86,7 +87,7 @@ Use this table to trace **YouTube summary §** → **work items**. Implementatio
 - [ ] **Right / persistent activity column** — desktop: live feed column (already present); ensure it matches reference §3 feed behavior in **[B]**.
 - [ ] **Top bar** — global chrome: search, quick actions, and stats **or** clear split with sidebar stats (today stats live in sidebar + header bar; align with “top bar overview” from the video).
 - [ ] **Env & auth UX** — surface `VITE_ARMS_*` (or equivalent) in About or a small “Connection” panel: base URL, bearer/basic, copy-paste live URL with `?token=` for SSE.
-- [ ] **Mobile shell parity** — tabs or drawer so Queue, Agents, and Live Feed (and future modules) are reachable without losing §1 layout intent.
+- [ ] **Mobile shell parity** — the **three tab buttons** (Tasks / Agents / Activity) are **mobile-only** (`ft-mobile-tab-bar` in **`WorkspaceShellLayout`**): they route between `/p/:id/tasks`, `/agents`, `/feed` on small screens. **Do not show this tab strip on desktop** — desktop keeps sidebar + main + persistent live feed column per the design reference §1 responsive rule.
 - [ ] **Loading / empty states** — skeletons for board and feed; distinguish “no tasks” vs “failed to load”.
 - [ ] **Single-page dark dashboard polish** — Linear.app / Notion-like density, type, and contrast (see **[K]** theming).
 
@@ -222,7 +223,7 @@ These map to the video’s “Factory, Pipeline, Radar, Approvals, Content, Feed
 
 ## [K] Settings, accessibility, polish (reference §4 + quality)
 
-- [ ] **Local / dev hosting** — document and keep `vite` (or future) dev UX comparable to “localhost app” in reference §4.
+- [ ] **Local / dev hosting** — document and keep **Bun** dev UX (`bun run dev`) comparable to “localhost app” in reference §4; **no npm/Node** for Fishtank in this repo.
 - [ ] **Settings page** — `GET /api/settings` today is stub; show placeholder or hide until backend fills in.
 - [ ] **Accessibility** — keyboard DnD or alternative status moves; focus traps in modals; live region for feed errors.
 - [ ] **Theming** — audit contrast and `prefers-reduced-motion` for existing theme cycle; dark-first polish per §1.

@@ -17,8 +17,12 @@ export interface Workspace {
 }
 
 export interface WorkspaceStats extends Workspace {
-  taskCounts: { total: number; active: number };
+  taskCounts: { total: number; active: number; done: number };
   agentCounts: { total: number; working: number };
+  /** Product lifecycle stage from arms (`GET /api/products`). */
+  stage?: string;
+  /** Product row `updated_at` (ISO) for fallbacks when the operations log has no row. */
+  productUpdatedAt?: string;
 }
 
 export interface Agent {
@@ -71,6 +75,8 @@ export interface FeedEvent {
   type: FeedEventType;
   message: string;
   createdAt: string;
+  /** Original SSE `type` / `event` string from arms (for debounced board refresh). */
+  armsType?: string;
   /** Raw SSE JSON for dev inspector */
   raw?: Record<string, unknown>;
 }

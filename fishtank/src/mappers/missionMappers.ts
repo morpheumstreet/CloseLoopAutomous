@@ -49,10 +49,11 @@ export function apiTaskToTask(t: ApiTask): Task {
   };
 }
 
-export function summarizeTaskCounts(tasks: ApiTask[]): { total: number; active: number } {
+export function summarizeTaskCounts(tasks: ApiTask[]): { total: number; active: number; done: number } {
   const total = tasks.length;
+  const done = tasks.filter((t) => t.status === 'done').length;
   const active = tasks.filter((t) => !INACTIVE_FOR_ACTIVE_COUNT.has(t.status)).length;
-  return { total, active };
+  return { total, active, done };
 }
 
 export function summarizeAgentCounts(rows: ApiAgentHealthItem[]): { total: number; working: number } {
@@ -78,10 +79,12 @@ function iconForProduct(p: ApiProduct): string {
 
 export function apiProductToWorkspaceStats(
   p: ApiProduct,
-  taskCounts: { total: number; active: number },
+  taskCounts: { total: number; active: number; done: number },
   agentCounts: { total: number; working: number },
 ): WorkspaceStats {
   const slug = p.workspace_id.trim() || 'default';
+  const stage = p.stage?.trim();
+  const productUpdatedAt = p.updated_at?.trim();
   return {
     id: p.id,
     slug,
@@ -89,6 +92,8 @@ export function apiProductToWorkspaceStats(
     icon: iconForProduct(p),
     taskCounts,
     agentCounts,
+    ...(stage ? { stage } : {}),
+    ...(productUpdatedAt ? { productUpdatedAt } : {}),
   };
 }
 
@@ -182,13 +187,15 @@ export function ssePayloadToFeedEvent(raw: unknown, seq: number, includeRaw: boo
   if (p.event === 'hello') return null;
   const armsType = p.type ?? p.event;
   if (!armsType) return null;
+  const armsTypeStr = String(armsType);
   const ts = p.ts && typeof p.ts === 'string' ? p.ts : new Date().toISOString();
   const rawObj = includeRaw && raw && typeof raw === 'object' ? { ...(raw as Record<string, unknown>) } : undefined;
   return {
-    id: `${ts}-${seq}-${armsType}`,
-    type: mapArmsTypeToFeedType(armsType),
+    id: `${ts}-${seq}-${armsTypeStr}`,
+    type: mapArmsTypeToFeedType(armsTypeStr),
     message: formatArmsActivityMessage(p),
     createdAt: ts,
+    armsType: armsTypeStr,
     raw: rawObj,
   };
 }

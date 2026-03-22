@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Outlet, useNavigate, useParams } from 'react-router-dom';
 import { useMissionUi } from '../context/MissionUiContext';
-import { MissionWorkspacePage } from '../components/workspace/MissionWorkspacePage';
 
 function BoardSkeleton() {
   return (
@@ -66,7 +65,7 @@ function UnknownProduct({ onBack }: { onBack: () => void }) {
   );
 }
 
-/** Syncs `/p/:productId` with Mission UI state and renders the workspace shell. */
+/** Syncs `/p/:productId` with Mission UI state; child routes render `WorkspaceShellLayout` + module outlets. */
 export function ProductWorkspaceOutlet() {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
@@ -94,5 +93,5 @@ export function ProductWorkspaceOutlet() {
     return <BoardSkeleton />;
   }
 
-  return <MissionWorkspacePage />;
+  return <Outlet />;
 }
