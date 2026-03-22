@@ -219,9 +219,33 @@ func NewIdeaStore(db *sql.DB) *IdeaStore { return &IdeaStore{db: db} }
 var _ ports.IdeaRepository = (*IdeaStore)(nil)
 
 func (s *IdeaStore) Save(ctx context.Context, i *domain.Idea) error {
+	domain.NormalizeIdeaForSave(i, time.Now().UTC())
+	tagsJSON, jerr := json.Marshal(i.Tags)
+	if jerr != nil {
+		return jerr
+	}
+	if len(tagsJSON) == 0 || string(tagsJSON) == "null" {
+		tagsJSON = []byte("[]")
+	}
+	swiped := ""
+	if !i.SwipedAt.IsZero() {
+		swiped = i.SwipedAt.UTC().Format(time.RFC3339Nano)
+	}
+	updated := i.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	if i.UpdatedAt.IsZero() {
+		updated = i.CreatedAt.UTC().Format(time.RFC3339Nano)
+	}
+	taskID := string(i.LinkedTaskID)
+	rcycle := strings.TrimSpace(i.ResearchCycleID)
+	resFrom := string(i.ResurfacedFrom)
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO ideas (id, product_id, title, description, impact, feasibility, reasoning, decided, decision, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO ideas (
+  id, product_id, title, description, impact, feasibility, reasoning, decided, decision, created_at,
+  research_cycle_id, category, research_backing, impact_score, feasibility_score, complexity,
+  estimated_effort_hours, competitive_analysis, target_user_segment, revenue_potential,
+  technical_approach, risks, tags, source, source_research, status, swiped_at, task_id,
+  user_notes, resurfaced_from, resurfaced_reason, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   product_id = excluded.product_id,
   title = excluded.title,
@@ -231,21 +255,55 @@ ON CONFLICT(id) DO UPDATE SET
   reasoning = excluded.reasoning,
   decided = excluded.decided,
   decision = excluded.decision,
-  created_at = excluded.created_at
-`, string(i.ID), string(i.ProductID), i.Title, i.Description, i.Impact, i.Feasibility, i.Reasoning, boolInt(i.Decided), int(i.Decision), i.CreatedAt.Format(time.RFC3339Nano))
+  created_at = excluded.created_at,
+  research_cycle_id = excluded.research_cycle_id,
+  category = excluded.category,
+  research_backing = excluded.research_backing,
+  impact_score = excluded.impact_score,
+  feasibility_score = excluded.feasibility_score,
+  complexity = excluded.complexity,
+  estimated_effort_hours = excluded.estimated_effort_hours,
+  competitive_analysis = excluded.competitive_analysis,
+  target_user_segment = excluded.target_user_segment,
+  revenue_potential = excluded.revenue_potential,
+  technical_approach = excluded.technical_approach,
+  risks = excluded.risks,
+  tags = excluded.tags,
+  source = excluded.source,
+  source_research = excluded.source_research,
+  status = excluded.status,
+  swiped_at = excluded.swiped_at,
+  task_id = excluded.task_id,
+  user_notes = excluded.user_notes,
+  resurfaced_from = excluded.resurfaced_from,
+  resurfaced_reason = excluded.resurfaced_reason,
+  updated_at = excluded.updated_at
+`, string(i.ID), string(i.ProductID), i.Title, i.Description, i.Impact, i.Feasibility, i.Reasoning, boolInt(i.Decided), int(i.Decision), i.CreatedAt.Format(time.RFC3339Nano),
+		nullIfEmpty(rcycle), i.Category, i.ResearchBacking, i.ImpactScore, i.FeasibilityScore, i.Complexity,
+		i.EstimatedEffortHours, i.CompetitiveAnalysis, i.TargetUserSegment, i.RevenuePotential,
+		i.TechnicalApproach, i.Risks, string(tagsJSON), i.Source, i.SourceResearch, i.Status, swiped, nullIfEmpty(taskID),
+		i.UserNotes, nullIfEmpty(resFrom), i.ResurfacedReason, updated)
 	return err
 }
 
 func (s *IdeaStore) ByID(ctx context.Context, id domain.IdeaID) (*domain.Idea, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, product_id, title, description, impact, feasibility, reasoning, decided, decision, created_at
+SELECT id, product_id, title, description, impact, feasibility, reasoning, decided, decision, created_at,
+  IFNULL(research_cycle_id,''), category, research_backing, impact_score, feasibility_score, complexity,
+  estimated_effort_hours, competitive_analysis, target_user_segment, revenue_potential,
+  technical_approach, risks, tags, source, source_research, status, swiped_at, IFNULL(task_id,''),
+  user_notes, IFNULL(resurfaced_from,''), resurfaced_reason, updated_at
 FROM ideas WHERE id = ?`, string(id))
 	return scanIdea(row)
 }
 
 func (s *IdeaStore) ListByProduct(ctx context.Context, productID domain.ProductID) ([]domain.Idea, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, product_id, title, description, impact, feasibility, reasoning, decided, decision, created_at
+SELECT id, product_id, title, description, impact, feasibility, reasoning, decided, decision, created_at,
+  IFNULL(research_cycle_id,''), category, research_backing, impact_score, feasibility_score, complexity,
+  estimated_effort_hours, competitive_analysis, target_user_segment, revenue_potential,
+  technical_approach, risks, tags, source, source_research, status, swiped_at, IFNULL(task_id,''),
+  user_notes, IFNULL(resurfaced_from,''), resurfaced_reason, updated_at
 FROM ideas WHERE product_id = ? ORDER BY created_at ASC`, string(productID))
 	if err != nil {
 		return nil, err
@@ -268,28 +326,93 @@ func scanIdea(row interface{ Scan(dest ...any) error }) (*domain.Idea, error) {
 		impact, feas                             float64
 		decided                                  int
 		decision                                 int
+		rcycle, category, rback, complexity      string
+		impactSc, feasSc, effH                   sql.NullFloat64
+		compAn, seg, rev, tech, risks            string
+		tagsJ, source, srcRes, status, swiped    string
+		taskID, notes, resFrom, resReason, upd   string
 	)
-	if err := row.Scan(&id, &pid, &title, &desc, &impact, &feas, &reasoning, &decided, &decision, &created); err != nil {
+	if err := row.Scan(
+		&id, &pid, &title, &desc, &impact, &feas, &reasoning, &decided, &decision, &created,
+		&rcycle, &category, &rback, &impactSc, &feasSc, &complexity,
+		&effH, &compAn, &seg, &rev, &tech, &risks, &tagsJ, &source, &srcRes, &status, &swiped, &taskID,
+		&notes, &resFrom, &resReason, &upd,
+	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, domain.ErrNotFound
 		}
 		return nil, err
 	}
-	t, err := time.Parse(time.RFC3339Nano, created)
+	ct, err := time.Parse(time.RFC3339Nano, created)
 	if err != nil {
-		t, _ = time.Parse(time.RFC3339, created)
+		ct, _ = time.Parse(time.RFC3339, created)
+	}
+	ut, err := time.Parse(time.RFC3339Nano, upd)
+	if err != nil {
+		ut, _ = time.Parse(time.RFC3339, upd)
+	}
+	if upd == "" {
+		ut = ct
+	}
+	var st time.Time
+	if strings.TrimSpace(swiped) != "" {
+		st, _ = time.Parse(time.RFC3339Nano, swiped)
+		if st.IsZero() {
+			st, _ = time.Parse(time.RFC3339, swiped)
+		}
+	}
+	is := impact
+	fs := feas
+	if impactSc.Valid {
+		is = impactSc.Float64
+	}
+	if feasSc.Valid {
+		fs = feasSc.Float64
+	}
+	eff := 0.0
+	if effH.Valid {
+		eff = effH.Float64
+	}
+	var tags []string
+	if tagsJ != "" {
+		_ = json.Unmarshal([]byte(tagsJ), &tags)
+	}
+	if tags == nil {
+		tags = []string{}
 	}
 	return &domain.Idea{
-		ID:          domain.IdeaID(id),
-		ProductID:   domain.ProductID(pid),
-		Title:       title,
-		Description: desc,
-		Impact:      impact,
-		Feasibility: feas,
-		Reasoning:   reasoning,
-		Decided:     decided != 0,
-		Decision:    domain.SwipeDecision(decision),
-		CreatedAt:   t,
+		ID:                   domain.IdeaID(id),
+		ProductID:            domain.ProductID(pid),
+		Title:                title,
+		Description:          desc,
+		Impact:               impact,
+		Feasibility:          feas,
+		Reasoning:            reasoning,
+		Decided:              decided != 0,
+		Decision:             domain.SwipeDecision(decision),
+		CreatedAt:            ct,
+		UpdatedAt:            ut,
+		ResearchCycleID:      rcycle,
+		Category:             category,
+		ResearchBacking:      rback,
+		ImpactScore:          is,
+		FeasibilityScore:     fs,
+		Complexity:           complexity,
+		EstimatedEffortHours: eff,
+		CompetitiveAnalysis:  compAn,
+		TargetUserSegment:    seg,
+		RevenuePotential:     rev,
+		TechnicalApproach:    tech,
+		Risks:                risks,
+		Tags:                 tags,
+		Source:               source,
+		SourceResearch:       srcRes,
+		Status:               status,
+		SwipedAt:             st,
+		LinkedTaskID:         domain.TaskID(taskID),
+		UserNotes:            notes,
+		ResurfacedFrom:       domain.IdeaID(resFrom),
+		ResurfacedReason:     resReason,
 	}, nil
 }
 

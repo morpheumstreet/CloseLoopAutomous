@@ -2,7 +2,7 @@
 
 Use this as the master backlog for bringing `arms` toward Autensa/Mission Control backend parity. Check items off as you implement them.
 
-**Backlog checklist (§1–§10):** `86` done · `20` open · **~81%** complete — see **[Master backlog (all checklist items)](#master-backlog-all-checklist-items)** for the full table; _grep_ `- [x]` / `- [ ]` in this file to refresh counts after edits._
+**Backlog checklist (§1–§10):** `87` done · `19` open · **~82%** complete — see **[Master backlog (all checklist items)](#master-backlog-all-checklist-items)** for the full table; _grep_ `- [x]` / `- [ ]` in this file to refresh counts after edits._
 
 **Next priority:** ML on **`preference_models`** (learning loop) and convoy **full graph metadata + richer mail / API parity**. **Baseline done:** convoy **`dispatch-ready`** respects parent **`task_agent_health`** (blocks on stalled/error/failed/offline) and persists **`dispatch_attempts`** with a retry cap before hard **`ErrGateway`**. Optional polish: stable PR correlation keys for extreme dedupe.
 
@@ -10,7 +10,7 @@ Use this as the master backlog for bringing `arms` toward Autensa/Mission Contro
 
 **What this is:** a single checklist + design locks for **backend parity** with [mission-control](https://github.com/crshdn/mission-control): API routes, SQLite schema, OpenClaw wiring, safety/cost/workspace, realtime, and convoy/autopilot gaps. It is **not** a fishtank/UI spec; pair with [api-ref.md](api-ref.md) for HTTP details and [recomendeddesign.md](recomendeddesign.md) for the broader architecture sketch.
 
-_Re-checked against the `arms/` tree (2026-03-23): SQLite schema **v18** (`ExpectedSchemaVersion` in `internal/adapters/sqlite/migrate.go`); baseline vs “full MC” is called out so unchecked rows are not misread as “missing entirely” when a slim table or route already exists._
+_Re-checked against the `arms/` tree (2026-03-23): SQLite schema **v19** (`ExpectedSchemaVersion` in `internal/adapters/sqlite/migrate.go`); baseline vs “full MC” is called out so unchecked rows are not misread as “missing entirely” when a slim table or route already exists._
 
 _See also [recomendeddesign.md](recomendeddesign.md) (earlier “GoAutensa” outline); this file is the live parity checklist + locked target architecture._
 
@@ -150,7 +150,7 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 | 17 | 2 | Done | Partial FK cascade — `ideas`, `tasks`, `convoys`, `cost_events` reference `products` with `ON DELETE CASCADE` where declared in migrations (not equivalent to all MC safety / soft-delete behavior) |
 | 18 | 2 | Done | `products`: baseline MC-style profile — `repo_url`, `repo_branch`, `description`, `program_document`, `settings_json`, `icon_url` (migration `003_product_mc_metadata.sql`); HTTP `POST /api/products` optional fields + `PATCH /api/products/{id}`; profile text/repo hints passed through `domain.Product` into research/ideation ports (stubs use `ai.ProductContextSnippet`; real LLM adapters TBD) |
 | 19 | 2 | Done | `research_cycles` — migration **`012_research_cycles.sql`**; append on successful **`RunResearch`**; **`GET /api/products/{id}/research-cycles`** (full MC “research graph” / analytics still TBD) |
-| 20 | 2 | Open | `ideas`: full scoring/metadata as in MC (today: title, description, impact, feasibility, reasoning, swipe outcome) |
+| 20 | 2 | Done | **`ideas`** MC metadata — migration **019** (category, scores, complexity, effort, analysis fields, tags JSON, source, **`status`** + **`swiped_at`**, **`task_id`**, research cycle link, resurfacing fields, **`updated_at`**); swipe syncs status; task create → **`building`** + **`task_id`**; **`PATCH /api/ideas/{id}`** for operator edits |
 | 21 | 2 | Done | `swipe_history` — migration `007_swipe_history.sql`; SQLite + memory stores; autopilot **Append** on swipe / promote-maybe; **`GET /api/products/{id}/swipe-history`** (`?limit=`) |
 | 22 | 2 | Done | `preference_models` — migration **`014_preference_models.sql`**; **`GET` / `PUT /api/products/{id}/preference-model`** (dedicated row overrides legacy **`preference_model_json`** on product for reads); **ML / training loop** still **TBD** |
 | 23 | 2 | Done | `maybe_pool` table + list/promote API — `MaybePoolRepository`; `GET /api/products/{id}/maybe-pool`, `POST /api/ideas/{id}/promote-maybe` (baseline; aligns with §5) |
@@ -269,7 +269,7 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 
 - [x] `products`: baseline MC-style profile — `repo_url`, `repo_branch`, `description`, `program_document`, `settings_json`, `icon_url` (migration `003_product_mc_metadata.sql`); HTTP `POST /api/products` optional fields + `PATCH /api/products/{id}`; profile text/repo hints passed through `domain.Product` into research/ideation ports (stubs use `ai.ProductContextSnippet`; real LLM adapters TBD)
 - [x] `research_cycles` — migration **`012_research_cycles.sql`**; append on successful **`RunResearch`**; **`GET /api/products/{id}/research-cycles`** (full MC “research graph” / analytics still TBD)
-- [ ] `ideas`: full scoring/metadata as in MC (today: title, description, impact, feasibility, reasoning, swipe outcome)
+- [x] `ideas`: full scoring/metadata as in MC — migration **019**; **`status`** / **`swiped_at`** / **`task_id`** / research cycle / category / tags / analysis fields; **`PATCH /api/ideas/{id}`**; legacy **`impact`** / **`feasibility`** / swipe **`decided`** / **`decision`** retained
 - [x] `swipe_history` — migration `007_swipe_history.sql`; SQLite + memory stores; autopilot **Append** on swipe / promote-maybe; **`GET /api/products/{id}/swipe-history`** (`?limit=`)
 - [x] `preference_models` — migration **`014_preference_models.sql`**; **`GET` / `PUT /api/products/{id}/preference-model`** (dedicated row overrides legacy **`preference_model_json`** on product for reads); **ML / training loop** still **TBD**
 - [x] `maybe_pool` table + list/promote API — `MaybePoolRepository`; `GET /api/products/{id}/maybe-pool`, `POST /api/ideas/{id}/promote-maybe` (baseline; aligns with §5)
@@ -403,7 +403,7 @@ Flat index of every §1–§10 row below. **Workflow:** update `- [ ]` / `- [x]`
 
 | Area            | Rough priority for a vertical slice                         |
 |-----------------|--------------------------------------------------------------|
-| SQLite + core tables | Unblocks everything else (current **v18** migrations)     |
+| SQLite + core tables | Unblocks everything else (current **v19** migrations)     |
 | HTTP + auth + tasks/products | Makes the service usable from a UI or CLI            |
 | Real OpenClaw WS   | Closes the execution-plane gap                            |
 | Webhooks           | Completes the async completion loop                       |

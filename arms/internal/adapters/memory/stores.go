@@ -119,7 +119,9 @@ func NewIdeaStore() *IdeaStore {
 func (s *IdeaStore) Save(_ context.Context, i *domain.Idea) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	domain.NormalizeIdeaForSave(i, time.Now().UTC())
 	cp := *i
+	cp.Tags = append([]string(nil), i.Tags...)
 	s.data[i.ID] = &cp
 	return nil
 }
@@ -132,6 +134,7 @@ func (s *IdeaStore) ByID(_ context.Context, id domain.IdeaID) (*domain.Idea, err
 		return nil, domain.ErrNotFound
 	}
 	cp := *i
+	cp.Tags = append([]string(nil), i.Tags...)
 	return &cp, nil
 }
 
@@ -141,7 +144,9 @@ func (s *IdeaStore) ListByProduct(_ context.Context, productID domain.ProductID)
 	var out []domain.Idea
 	for _, i := range s.data {
 		if i.ProductID == productID {
-			out = append(out, *i)
+			cp := *i
+			cp.Tags = append([]string(nil), i.Tags...)
+			out = append(out, cp)
 		}
 	}
 	return out, nil

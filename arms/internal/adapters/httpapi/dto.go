@@ -123,6 +123,39 @@ type swipeReq struct {
 	Decision string `json:"decision"`
 }
 
+// patchIdeaReq updates MC-style metadata (optional fields; at least one required).
+type patchIdeaReq struct {
+	Title                *string   `json:"title,omitempty"`
+	Description          *string   `json:"description,omitempty"`
+	Reasoning            *string   `json:"reasoning,omitempty"`
+	Category             *string   `json:"category,omitempty"`
+	ResearchBacking      *string   `json:"research_backing,omitempty"`
+	ImpactScore          *float64  `json:"impact_score,omitempty"`
+	FeasibilityScore     *float64  `json:"feasibility_score,omitempty"`
+	Complexity           *string   `json:"complexity,omitempty"`
+	EstimatedEffortHours *float64  `json:"estimated_effort_hours,omitempty"`
+	CompetitiveAnalysis  *string   `json:"competitive_analysis,omitempty"`
+	TargetUserSegment    *string   `json:"target_user_segment,omitempty"`
+	RevenuePotential     *string   `json:"revenue_potential,omitempty"`
+	TechnicalApproach    *string   `json:"technical_approach,omitempty"`
+	Risks                *string   `json:"risks,omitempty"`
+	Tags                 *[]string `json:"tags,omitempty"`
+	Source               *string   `json:"source,omitempty"`
+	SourceResearch       *string   `json:"source_research,omitempty"`
+	UserNotes            *string   `json:"user_notes,omitempty"`
+}
+
+func (r *patchIdeaReq) anySet() bool {
+	if r == nil {
+		return false
+	}
+	return r.Title != nil || r.Description != nil || r.Reasoning != nil ||
+		r.Category != nil || r.ResearchBacking != nil || r.ImpactScore != nil || r.FeasibilityScore != nil ||
+		r.Complexity != nil || r.EstimatedEffortHours != nil || r.CompetitiveAnalysis != nil ||
+		r.TargetUserSegment != nil || r.RevenuePotential != nil || r.TechnicalApproach != nil ||
+		r.Risks != nil || r.Tags != nil || r.Source != nil || r.SourceResearch != nil || r.UserNotes != nil
+}
+
 func parseSwipe(s string) (domain.SwipeDecision, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "pass":

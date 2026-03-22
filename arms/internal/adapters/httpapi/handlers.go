@@ -295,6 +295,52 @@ func (h *Handlers) swipe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ideaToJSON(idea))
 }
 
+func (h *Handlers) patchIdea(w http.ResponseWriter, r *http.Request) {
+	var req patchIdeaReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if !req.anySet() {
+		writeError(w, http.StatusBadRequest, "validation", "at least one field is required")
+		return
+	}
+	id := domain.IdeaID(r.PathValue("id"))
+	patch := autopilot.IdeaMetadataPatch{
+		Title:                req.Title,
+		Description:          req.Description,
+		Reasoning:            req.Reasoning,
+		Category:             req.Category,
+		ResearchBacking:      req.ResearchBacking,
+		ImpactScore:          req.ImpactScore,
+		FeasibilityScore:     req.FeasibilityScore,
+		Complexity:           req.Complexity,
+		EstimatedEffortHours: req.EstimatedEffortHours,
+		CompetitiveAnalysis:  req.CompetitiveAnalysis,
+		TargetUserSegment:    req.TargetUserSegment,
+		RevenuePotential:     req.RevenuePotential,
+		TechnicalApproach:    req.TechnicalApproach,
+		Risks:                req.Risks,
+		Tags:                 req.Tags,
+		Source:               req.Source,
+		SourceResearch:       req.SourceResearch,
+		UserNotes:            req.UserNotes,
+	}
+	if err := h.Autopilot.PatchIdeaMetadata(r.Context(), id, patch); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	idea, err := h.Autopilot.Ideas.ByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, ideaToJSON(idea))
+}
+
 func (h *Handlers) listSwipeHistory(w http.ResponseWriter, r *http.Request) {
 	pid := domain.ProductID(r.PathValue("id"))
 	if _, err := h.Autopilot.Products.ByID(r.Context(), pid); err != nil {
@@ -1854,18 +1900,53 @@ func productToJSON(p *domain.Product) map[string]any {
 }
 
 func ideaToJSON(i *domain.Idea) map[string]any {
-	return map[string]any{
-		"id":          string(i.ID),
-		"product_id":  string(i.ProductID),
-		"title":       i.Title,
-		"description": i.Description,
-		"impact":      i.Impact,
-		"feasibility": i.Feasibility,
-		"reasoning":   i.Reasoning,
-		"decided":     i.Decided,
-		"decision":    swipeString(i.Decision),
-		"created_at":  i.CreatedAt.Format(time.RFC3339Nano),
+	m := map[string]any{
+		"id":                   string(i.ID),
+		"product_id":           string(i.ProductID),
+		"title":                i.Title,
+		"description":          i.Description,
+		"impact":               i.Impact,
+		"feasibility":          i.Feasibility,
+		"impact_score":         i.ImpactScore,
+		"feasibility_score":    i.FeasibilityScore,
+		"reasoning":            i.Reasoning,
+		"research_backing":     i.ResearchBacking,
+		"category":             i.Category,
+		"complexity":           i.Complexity,
+		"estimated_effort_hours": i.EstimatedEffortHours,
+		"competitive_analysis":   i.CompetitiveAnalysis,
+		"target_user_segment":    i.TargetUserSegment,
+		"revenue_potential":      i.RevenuePotential,
+		"technical_approach":     i.TechnicalApproach,
+		"risks":                  i.Risks,
+		"tags":                   i.Tags,
+		"source":                 i.Source,
+		"source_research":        i.SourceResearch,
+		"status":                 i.Status,
+		"decided":                i.Decided,
+		"decision":               swipeString(i.Decision),
+		"user_notes":             i.UserNotes,
+		"created_at": i.CreatedAt.UTC().Format(time.RFC3339Nano),
 	}
+	if !i.UpdatedAt.IsZero() {
+		m["updated_at"] = i.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	} else {
+		m["updated_at"] = i.CreatedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if i.ResearchCycleID != "" {
+		m["research_cycle_id"] = i.ResearchCycleID
+	}
+	if !i.SwipedAt.IsZero() {
+		m["swiped_at"] = i.SwipedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if i.LinkedTaskID != "" {
+		m["task_id"] = string(i.LinkedTaskID)
+	}
+	if i.ResurfacedFrom != "" {
+		m["resurfaced_from"] = string(i.ResurfacedFrom)
+		m["resurfaced_reason"] = i.ResurfacedReason
+	}
+	return m
 }
 
 func swipeString(d domain.SwipeDecision) string {

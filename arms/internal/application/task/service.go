@@ -52,6 +52,12 @@ func (s *Service) CreateFromApprovedIdea(ctx context.Context, ideaID domain.Idea
 	if err := s.Tasks.Save(ctx, t); err != nil {
 		return nil, err
 	}
+	idea.LinkedTaskID = t.ID
+	idea.Status = domain.IdeaStatusBuilding
+	idea.UpdatedAt = now
+	if err := s.Ideas.Save(ctx, idea); err != nil {
+		return nil, err
+	}
 	return t, nil
 }
 

@@ -226,10 +226,63 @@ components:
         description: { type: string }
         impact: { type: number }
         feasibility: { type: number }
+        impact_score: { type: number }
+        feasibility_score: { type: number }
         reasoning: { type: string }
+        research_backing: { type: string }
+        category:
+          type: string
+          description: MC category (feature, improvement, ux, performance, …)
+        complexity: { type: string, description: S, M, L, or XL }
+        estimated_effort_hours: { type: number }
+        competitive_analysis: { type: string }
+        target_user_segment: { type: string }
+        revenue_potential: { type: string }
+        technical_approach: { type: string }
+        risks: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        source: { type: string, enum: [research, manual, resurfaced, feedback] }
+        source_research: { type: string }
+        status:
+          type: string
+          enum: [pending, approved, rejected, maybe, building, built, shipped]
         decided: { type: boolean }
         decision: { type: string, enum: [pass, maybe, yes, now, ""] }
+        user_notes: { type: string }
+        research_cycle_id: { type: string }
+        swiped_at: { type: string, format: date-time }
+        task_id: { type: string, description: Linked Kanban task when created }
+        resurfaced_from: { type: string }
+        resurfaced_reason: { type: string }
         created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    PatchIdeaRequest:
+      type: object
+      description: At least one property required
+      properties:
+        title: { type: string }
+        description: { type: string }
+        reasoning: { type: string }
+        category: { type: string }
+        research_backing: { type: string }
+        impact_score: { type: number }
+        feasibility_score: { type: number }
+        complexity: { type: string }
+        estimated_effort_hours: { type: number }
+        competitive_analysis: { type: string }
+        target_user_segment: { type: string }
+        revenue_potential: { type: string }
+        technical_approach: { type: string }
+        risks: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        source: { type: string }
+        source_research: { type: string }
+        user_notes: { type: string }
 
     Task:
       type: object
@@ -774,6 +827,29 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ConvoysListResponse" }
+
+  /api/ideas/{id}:
+    patch:
+      tags: [Ideas]
+      summary: Update idea metadata (Mission Control–style fields)
+      parameters:
+        - $ref: "#/components/parameters/ideaId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PatchIdeaRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Idea" }
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /api/ideas/{id}/swipe:
     post:

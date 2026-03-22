@@ -66,16 +66,42 @@ func (s *Service) RunIdeation(ctx context.Context, productID domain.ProductID) e
 		return err
 	}
 	now := s.Clock.Now()
+	var cycleID string
+	if s.ResearchCycles != nil {
+		if hist, herr := s.ResearchCycles.ListByProduct(ctx, productID, 1); herr == nil && len(hist) > 0 {
+			cycleID = hist[0].ID
+		}
+	}
 	for _, d := range drafts {
+		rb := strings.TrimSpace(d.ResearchBacking)
+		if rb == "" {
+			rb = d.Reasoning
+		}
+		tags := append([]string(nil), d.Tags...)
 		idea := domain.Idea{
-			ID:          s.Identities.NewIdeaID(),
-			ProductID:   productID,
-			Title:       d.Title,
-			Description: d.Description,
-			Impact:      d.Impact,
-			Feasibility: d.Feasibility,
-			Reasoning:   d.Reasoning,
-			CreatedAt:   now,
+			ID:                   s.Identities.NewIdeaID(),
+			ProductID:            productID,
+			Title:                d.Title,
+			Description:          d.Description,
+			Impact:               d.Impact,
+			Feasibility:          d.Feasibility,
+			Reasoning:            d.Reasoning,
+			CreatedAt:            now,
+			UpdatedAt:            now,
+			ResearchCycleID:      cycleID,
+			Category:             domain.NormalizeIdeaCategory(d.Category),
+			ResearchBacking:      rb,
+			Complexity:           domain.NormalizeIdeaComplexity(d.Complexity),
+			EstimatedEffortHours: d.EstimatedEffortHours,
+			CompetitiveAnalysis:  d.CompetitiveAnalysis,
+			TargetUserSegment:    d.TargetUserSegment,
+			RevenuePotential:     d.RevenuePotential,
+			TechnicalApproach:    d.TechnicalApproach,
+			Risks:                d.Risks,
+			Tags:                 tags,
+			Source:               domain.NormalizeIdeaSource("research"),
+			SourceResearch:       d.SourceResearch,
+			Status:               domain.IdeaStatusPending,
 		}
 		if err := s.Ideas.Save(ctx, &idea); err != nil {
 			return err
@@ -109,6 +135,7 @@ func (s *Service) SubmitSwipe(ctx context.Context, ideaID domain.IdeaID, decisio
 
 	idea.Decided = true
 	idea.Decision = decision
+	domain.SyncIdeaStatusFromSwipe(idea, decision, now)
 	if err := s.Ideas.Save(ctx, idea); err != nil {
 		return err
 	}
@@ -176,6 +203,8 @@ func (s *Service) PromoteMaybe(ctx context.Context, ideaID domain.IdeaID) error 
 	}
 	now := s.Clock.Now()
 	idea.Decision = domain.DecisionYes
+	idea.Status = domain.IdeaStatusApproved
+	idea.UpdatedAt = now
 	if err := s.Ideas.Save(ctx, idea); err != nil {
 		return err
 	}

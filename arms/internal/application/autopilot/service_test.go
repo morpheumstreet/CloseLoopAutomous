@@ -13,6 +13,35 @@ import (
 	"github.com/closeloopautomous/arms/internal/domain"
 )
 
+func TestRunIdeationLinksLatestResearchCycle(t *testing.T) {
+	ctx := context.Background()
+	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}
+	ids := &identity.Sequential{}
+	products := memory.NewProductStore()
+	ideas := memory.NewIdeaStore()
+	rc := memory.NewResearchCycleStore()
+	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
+	svc := &Service{
+		Products:       products,
+		Ideas:          ideas,
+		ResearchCycles: rc,
+		Research:       ai.ResearchStub{},
+		Ideation:       ai.IdeationStub{},
+		Clock:          clock,
+		Identities:     ids,
+	}
+	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
+	_ = svc.RunResearch(ctx, p.ID)
+	_ = svc.RunIdeation(ctx, p.ID)
+	list, _ := ideas.ListByProduct(ctx, p.ID)
+	if len(list) != 1 {
+		t.Fatalf("ideas: %d", len(list))
+	}
+	if list[0].ResearchCycleID == "" {
+		t.Fatal("expected research_cycle_id on new idea")
+	}
+}
+
 func TestSubmitSwipeMaybePoolAndPromote(t *testing.T) {
 	ctx := context.Background()
 	clock := timeadapter.Fixed{T: time.Unix(1700000000, 0)}

@@ -37,7 +37,7 @@ func currentVersion(ctx context.Context, db *sql.DB) (int, error) {
 }
 
 // ExpectedSchemaVersion is the highest migration number in migrations/*.sql (bump when adding files).
-const ExpectedSchemaVersion = 18
+const ExpectedSchemaVersion = 19
 
 // Migrate applies pending embedded migrations in lexical order (001_, 002_, …).
 func Migrate(ctx context.Context, db *sql.DB) error {

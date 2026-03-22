@@ -33,6 +33,7 @@ func routeCatalog() []RouteEntry {
 		{"GET", "/api/products/{id}/merge-queue", "List pending merge-queue rows (FIFO): head_task_id, pending_count, per-row queue_position, is_head; ?limit= default 50, max 500"},
 		{"GET", "/api/products/{id}/agent-health", "List task agent heartbeats for product (?limit= default 100, max 500)"},
 		{"GET", "/api/products/{id}/stalled-tasks", "Tasks expecting agent heartbeats with none or stale heartbeat (?stale_sec= overrides default)"},
+		{"PATCH", "/api/ideas/{id}", "Update idea MC metadata (category, scores, tags, notes, …); at least one field"},
 		{"POST", "/api/ideas/{id}/swipe", "Submit swipe decision"},
 		{"POST", "/api/ideas/{id}/promote-maybe", "Promote a maybe idea to yes (and advance product from swipe when applicable)"},
 		{"POST", "/api/tasks", "Create task from approved idea (Kanban planning)"},

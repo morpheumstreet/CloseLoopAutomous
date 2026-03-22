@@ -117,6 +117,10 @@ func TestKanbanDispatchAndCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ideaAfter, _ := ideas.ByID(ctx, list[0].ID)
+	if ideaAfter.Status != domain.IdeaStatusBuilding || ideaAfter.LinkedTaskID != tt.ID {
+		t.Fatalf("idea workflow after task create: status=%q task_id=%q want building + %q", ideaAfter.Status, ideaAfter.LinkedTaskID, tt.ID)
+	}
 	if tt.Status != domain.StatusPlanning || tt.PlanApproved {
 		t.Fatalf("create: %+v", tt)
 	}

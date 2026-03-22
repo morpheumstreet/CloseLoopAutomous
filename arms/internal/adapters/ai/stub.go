@@ -33,11 +33,18 @@ func (IdeationStub) GenerateIdeas(_ context.Context, product domain.Product, res
 	}
 	return []domain.IdeaDraft{
 		{
-			Title:       title,
-			Description: "Generated from research",
-			Impact:      0.8,
-			Feasibility: 0.7,
-			Reasoning:   reasoning,
+			Title:                title,
+			Description:          "Generated from research",
+			Impact:               0.8,
+			Feasibility:          0.7,
+			Reasoning:            reasoning,
+			Category:             "feature",
+			Complexity:           "M",
+			EstimatedEffortHours: 8,
+			Tags:                 []string{"stub", "ideation"},
+			TechnicalApproach:    "Iterate in planning task after approval",
+			Risks:                "Stub data only until real LLM ideation is wired",
+			SourceResearch:       "Uses product research_summary + program hints",
 		},
 	}, nil
 }

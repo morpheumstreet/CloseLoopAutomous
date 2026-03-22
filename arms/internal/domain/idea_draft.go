@@ -7,4 +7,16 @@ type IdeaDraft struct {
 	Impact      float64
 	Feasibility float64
 	Reasoning   string
+
+	Category            string
+	ResearchBacking     string
+	Complexity          string
+	EstimatedEffortHours float64
+	CompetitiveAnalysis string
+	TargetUserSegment   string
+	RevenuePotential    string
+	TechnicalApproach   string
+	Risks               string
+	Tags                []string
+	SourceResearch      string
 }

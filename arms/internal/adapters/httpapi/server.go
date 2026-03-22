@@ -37,6 +37,7 @@ func NewRouter(cfg Config, h *Handlers) http.Handler {
 	sub.Handle("GET /api/products/{id}/merge-queue", http.HandlerFunc(h.listProductMergeQueue))
 	sub.Handle("GET /api/products/{id}/agent-health", http.HandlerFunc(h.listProductAgentHealth))
 	sub.Handle("GET /api/products/{id}/stalled-tasks", http.HandlerFunc(h.listStalledTasks))
+	sub.Handle("PATCH /api/ideas/{id}", http.HandlerFunc(h.patchIdea))
 	sub.Handle("POST /api/ideas/{id}/swipe", http.HandlerFunc(h.swipe))
 	sub.Handle("POST /api/ideas/{id}/promote-maybe", http.HandlerFunc(h.promoteMaybe))
 	sub.Handle("POST /api/tasks", http.HandlerFunc(h.createTask))
