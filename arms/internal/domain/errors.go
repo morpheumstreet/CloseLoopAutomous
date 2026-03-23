@@ -13,6 +13,8 @@ var (
 	ErrInvalidTransition = errors.New("invalid state transition")
 	ErrBudgetExceeded    = errors.New("budget cap exceeded")
 	ErrGateway           = errors.New("gateway error")
+	// ErrNoDispatchTarget means the task has no execution agent binding to resolve URL/session (register agent + endpoint first).
+	ErrNoDispatchTarget = errors.New("no dispatch target: bind an execution agent with gateway endpoint and session_key")
 	ErrShipping          = errors.New("shipping error")
 	// ErrShippingNonRetryable marks forge failures that should not be retried (e.g. bad auth). Often joined with ErrShipping.
 	ErrShippingNonRetryable = errors.New("shipping error: non-retryable")

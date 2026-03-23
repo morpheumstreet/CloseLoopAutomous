@@ -220,15 +220,44 @@ type dispatchReq struct {
 }
 
 type registerAgentReq struct {
-	DisplayName string `json:"display_name"`
-	ProductID   string `json:"product_id,omitempty"`
-	Source      string `json:"source,omitempty"`
-	ExternalRef string `json:"external_ref,omitempty"`
+	DisplayName         string `json:"display_name"`
+	ProductID           string `json:"product_id,omitempty"`
+	Source              string `json:"source,omitempty"`
+	ExternalRef         string `json:"external_ref,omitempty"`
+	GatewayEndpointID   string `json:"gateway_endpoint_id"`
+	SessionKey          string `json:"session_key,omitempty"`
 }
 
 func (r *registerAgentReq) validate() error {
 	if strings.TrimSpace(r.DisplayName) == "" {
 		return fmt.Errorf("display_name is required")
+	}
+	if strings.TrimSpace(r.GatewayEndpointID) == "" {
+		return fmt.Errorf("gateway_endpoint_id is required")
+	}
+	return nil
+}
+
+type createGatewayEndpointReq struct {
+	DisplayName  string `json:"display_name"`
+	Driver       string `json:"driver"`
+	GatewayURL   string `json:"gateway_url"`
+	GatewayToken string `json:"gateway_token,omitempty"`
+	DeviceID     string `json:"device_id,omitempty"`
+	TimeoutSec   int    `json:"timeout_sec,omitempty"`
+	ProductID    string `json:"product_id,omitempty"`
+}
+
+func (r *createGatewayEndpointReq) validate() error {
+	if strings.TrimSpace(r.Driver) == "" {
+		return fmt.Errorf("driver is required")
+	}
+	drv := domain.NormalizeGatewayDriver(r.Driver)
+	if drv == "" {
+		return fmt.Errorf("driver must be stub, openclaw_ws, nullclaw_ws, nullclaw_a2a, picoclaw_ws, or zeroclaw_ws")
+	}
+	if drv != domain.GatewayDriverStub && strings.TrimSpace(r.GatewayURL) == "" {
+		return fmt.Errorf("gateway_url is required for driver %s", drv)
 	}
 	return nil
 }

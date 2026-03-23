@@ -8,7 +8,7 @@ import (
 
 // AgentGateway is the execution plane: arms pushes work to an external agent runtime and receives
 // completion via webhooks or operator APIs. Implementations include in-process stubs, OpenClaw-class
-// WebSocket gateways, and adapters for other runtimes (e.g. NullClaw when wire-compatible).
+// WebSocket gateways (including ZeroClaw), NullClaw HTTP A2A (/a2a), and other runtime adapters.
 type AgentGateway interface {
 	DispatchTask(ctx context.Context, task domain.Task) (externalRef string, err error)
 	DispatchSubtask(ctx context.Context, parent domain.Task, sub domain.Subtask) (externalRef string, err error)

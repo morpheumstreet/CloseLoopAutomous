@@ -59,3 +59,4 @@ func (s *stubIDs) NewExecutionAgentID() string    { s.n++; return "ag" }
 func (s *stubIDs) NewMailboxMessageID() string    { s.n++; return "mb" }
 func (s *stubIDs) NewProductFeedbackID() string   { s.n++; return "fb" }
 func (s *stubIDs) NewTaskChatMessageID() string    { s.n++; return "tchat" }
+func (s *stubIDs) NewGatewayEndpointID() string     { s.n++; return "gw" }

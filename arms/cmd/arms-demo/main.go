@@ -38,7 +38,7 @@ func main() {
 	checkpoints := memory.NewCheckpointStore()
 	maybePool := memory.NewMaybePoolStore()
 	knowledge := memory.NewKnowledgeStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 
 	knowSvc := &knowledgeapp.Service{
 		Products:          products,

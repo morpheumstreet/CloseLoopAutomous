@@ -22,19 +22,20 @@ func (s *ExecutionAgentStore) Save(ctx context.Context, a *domain.ExecutionAgent
 		pid.Valid = true
 	}
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO execution_agents (id, display_name, product_id, source, external_ref, created_at)
-VALUES (?, ?, ?, ?, ?, ?)`,
-		a.ID, a.DisplayName, pid, a.Source, a.ExternalRef, a.CreatedAt.UTC().Format(time.RFC3339Nano))
+INSERT INTO execution_agents (id, display_name, product_id, source, external_ref, endpoint_id, session_key, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.DisplayName, pid, a.Source, a.ExternalRef, a.EndpointID, a.SessionKey, a.CreatedAt.UTC().Format(time.RFC3339Nano))
 	return err
 }
 
 func (s *ExecutionAgentStore) ByID(ctx context.Context, id string) (*domain.ExecutionAgent, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, display_name, product_id, source, external_ref, created_at FROM execution_agents WHERE id = ?`, id)
+SELECT id, display_name, product_id, source, external_ref, endpoint_id, session_key, created_at FROM execution_agents WHERE id = ?`, id)
 	var a domain.ExecutionAgent
 	var pid sql.NullString
+	var eid sql.NullString
 	var cat string
-	if err := row.Scan(&a.ID, &a.DisplayName, &pid, &a.Source, &a.ExternalRef, &cat); err != nil {
+	if err := row.Scan(&a.ID, &a.DisplayName, &pid, &a.Source, &a.ExternalRef, &eid, &a.SessionKey, &cat); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, domain.ErrNotFound
 		}
@@ -42,6 +43,9 @@ SELECT id, display_name, product_id, source, external_ref, created_at FROM execu
 	}
 	if pid.Valid {
 		a.ProductID = domain.ProductID(pid.String)
+	}
+	if eid.Valid {
+		a.EndpointID = eid.String
 	}
 	t, err := time.Parse(time.RFC3339Nano, cat)
 	if err != nil {
@@ -59,7 +63,7 @@ func (s *ExecutionAgentStore) List(ctx context.Context, limit int) ([]domain.Exe
 		limit = 500
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, display_name, product_id, source, external_ref, created_at FROM execution_agents
+SELECT id, display_name, product_id, source, external_ref, endpoint_id, session_key, created_at FROM execution_agents
 ORDER BY created_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -77,7 +81,7 @@ func (s *ExecutionAgentStore) ListByProduct(ctx context.Context, productID domai
 	}
 	pid := string(productID)
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, display_name, product_id, source, external_ref, created_at FROM execution_agents
+SELECT id, display_name, product_id, source, external_ref, endpoint_id, session_key, created_at FROM execution_agents
 WHERE product_id IS NULL OR product_id = ?
 ORDER BY created_at ASC LIMIT ?`, pid, limit)
 	if err != nil {
@@ -92,12 +96,16 @@ func scanExecutionAgents(rows *sql.Rows) ([]domain.ExecutionAgent, error) {
 	for rows.Next() {
 		var a domain.ExecutionAgent
 		var pid sql.NullString
+		var eid sql.NullString
 		var cat string
-		if err := rows.Scan(&a.ID, &a.DisplayName, &pid, &a.Source, &a.ExternalRef, &cat); err != nil {
+		if err := rows.Scan(&a.ID, &a.DisplayName, &pid, &a.Source, &a.ExternalRef, &eid, &a.SessionKey, &cat); err != nil {
 			return nil, err
 		}
 		if pid.Valid {
 			a.ProductID = domain.ProductID(pid.String)
+		}
+		if eid.Valid {
+			a.EndpointID = eid.String
 		}
 		t, err := time.Parse(time.RFC3339Nano, cat)
 		if err != nil {

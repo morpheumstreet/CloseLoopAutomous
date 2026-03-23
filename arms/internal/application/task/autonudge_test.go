@@ -27,7 +27,7 @@ func TestAutoNudgeStallIfDue(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	hub := livefeed.NewHub()
 	agentHealth := memory.NewAgentHealthStore()
 

@@ -90,7 +90,7 @@ func TestKanbanDispatchAndCheckpoint(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	auto := &autopilot.Service{
@@ -160,7 +160,7 @@ func TestReturnToPlanningFromInboxAndAssigned(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	auto := &autopilot.Service{
@@ -222,7 +222,7 @@ func TestReturnToPlanningBlockedAfterDispatch(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	auto := &autopilot.Service{
@@ -277,7 +277,7 @@ func TestNudgeStallAndCompleteWithLiveActivityMemory(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	hub := livefeed.NewHub()
 	agentHealth := memory.NewAgentHealthStore()
 
@@ -371,7 +371,7 @@ func TestPostExecFullAutoOpensPROnCompleteWhenHeadSet(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	prPub := &fakePRPublisher{}
 	mergeRec := &mergeShipRecorder{tasks: tasks, wantPRNumberBeforeMerge: 99}
 
@@ -440,7 +440,7 @@ func TestPostExecSemiAutoOpensPRBeforePolicyMerge(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	prPub := &fakePRPublisher{}
 	mergeRec := &mergeShipRecorder{tasks: tasks, wantPRNumberBeforeMerge: 99}
 
@@ -505,7 +505,7 @@ func TestPostExecSupervisedDoesNotAutoMerge(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	prPub := &fakePRPublisher{}
 	mergeRec := &mergeShipRecorder{}
 
@@ -571,7 +571,7 @@ func TestPostExecSkipsPROpenWhenURLAlreadySet(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	prPub := &fakePRPublisher{}
 	mergeRec := &mergeShipRecorder{tasks: tasks, wantPRNumberBeforeMerge: 42}
 
@@ -638,7 +638,7 @@ func TestAutoPROnConvoyActiveToReviewFullAuto(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	prPub := &fakePRPublisher{}
 
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
@@ -724,7 +724,7 @@ func TestOpenPullRequestNilShip(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	p, err := (&product.Service{Products: products, Clock: clock, IDs: ids}).Register(ctx, product.RegistrationInput{
 		Name: "p", WorkspaceID: "w", RepoURL: "https://github.com/acme/demo",
 	})
@@ -758,7 +758,7 @@ func TestCreateFromSpecWithNewIdea(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	p, err := (&product.Service{Products: products, Clock: clock, IDs: ids}).Register(ctx, product.RegistrationInput{
 		Name: "p", WorkspaceID: "w",
 	})
@@ -806,7 +806,7 @@ func TestCreateFromSpecWithNewIdea_preferredID(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	p, err := (&product.Service{Products: products, Clock: clock, IDs: ids}).Register(ctx, product.RegistrationInput{
 		Name: "p", WorkspaceID: "w",
 	})
@@ -841,7 +841,7 @@ func TestCreateFromSpecWithNewIdea_preferredIDConflict(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	p, err := (&product.Service{Products: products, Clock: clock, IDs: ids}).Register(ctx, product.RegistrationInput{
 		Name: "p", WorkspaceID: "w",
 	})

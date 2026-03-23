@@ -75,6 +75,7 @@ func NewInMemoryApp(cfg config.Config, b Build) *App {
 	swipes := memory.NewSwipeHistoryStore()
 	researchCycles := memory.NewResearchCycleStore()
 	execAgents := memory.NewExecutionAgentStore()
+	gatewayEndpoints := memory.NewGatewayEndpointStore()
 	agentMail := memory.NewAgentMailboxStore()
 	hub := livefeed.NewHub()
 	agentHealth := memory.NewAgentHealthStore()
@@ -88,7 +89,7 @@ func NewInMemoryApp(cfg config.Config, b Build) *App {
 	if strings.EqualFold(strings.TrimSpace(cfg.KnowledgeBackend), "chromem") {
 		slog.Default().Warn("ARMS_KNOWLEDGE_BACKEND=chromem is ignored when DATABASE_PATH is empty (in-memory mode); using in-memory knowledge store")
 	}
-	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, agentMail, agentHealth, pref, ops, sched, cmail, productFb, taskChat, knowledge, false, hub, hub, nil, sqlite.ExpectedSchemaVersion, b)
+	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, gatewayEndpoints, agentMail, agentHealth, pref, ops, sched, cmail, productFb, taskChat, knowledge, false, hub, hub, nil, sqlite.ExpectedSchemaVersion, b)
 	return &App{Handlers: h, Products: products, Ideas: ideas, Tasks: tasks, ProductSchedules: sched, db: nil, cleanup: cleanup}
 }
 
@@ -107,6 +108,7 @@ func buildHandlers(
 	swipes ports.SwipeHistoryRepository,
 	researchCycles ports.ResearchCycleRepository,
 	execAgents ports.ExecutionAgentRegistry,
+	gatewayEndpoints ports.GatewayEndpointRegistry,
 	agentMail ports.AgentMailboxRepository,
 	agentHealth ports.AgentHealthRepository,
 	preferenceModels ports.PreferenceModelRepository,
@@ -137,7 +139,10 @@ func buildHandlers(
 	if !cfg.KnowledgeDisableDispatchInjection {
 		knowHook = knowSvc.DispatchHook()
 	}
-	agentGW, gwCleanup := gw.NewFromConfig(cfg, knowHook)
+	if err := gw.EnsureDefaultStubEndpoint(context.Background(), gatewayEndpoints, clock); err != nil {
+		slog.Error("arms gateway endpoint seed", "err", err)
+	}
+	agentGW, gwCleanup := gw.NewRoutingGateway(gatewayEndpoints, execAgents, knowHook, cfg.GatewayDispatchTimeout)
 
 	budgetPolicy := &budget.Composite{
 		Costs:             costs,
@@ -187,10 +192,11 @@ func buildHandlers(
 		Identities:     ids,
 	}
 	agentSvc := &agent.Service{
-		Registry: execAgents,
-		Mailbox:  agentMail,
-		Clock:    clock,
-		IDs:      ids,
+		Registry:  execAgents,
+		Endpoints: gatewayEndpoints,
+		Mailbox:   agentMail,
+		Clock:     clock,
+		IDs:       ids,
 	}
 	ship := shipping.NewPullRequestPublisher(shipping.PublisherSettings{
 		PRBackend:  cfg.GitHubPRBackend,
@@ -303,6 +309,8 @@ func buildHandlers(
 		Task:                  taskSvc,
 		Convoy:                convoySvc,
 		Agent:                 agentSvc,
+		GatewayEndpoints:      gatewayEndpoints,
+		IDs:                   ids,
 		Cost:                  costSvc,
 		Feedback:              feedbackSvc,
 		TaskChat:              taskChatSvc,

@@ -21,20 +21,12 @@ func buildConfig(file map[string]string) Config {
 	dbPath := strings.TrimSpace(s.getenv("DATABASE_PATH"))
 	backup := strings.EqualFold(s.getenv("ARMS_DB_BACKUP"), "1") ||
 		strings.EqualFold(s.getenv("ARMS_DB_BACKUP"), "true")
-	agDriver := strings.TrimSpace(s.getenv("ARMS_AGENT_GATEWAY_DRIVER"))
-	ocURL := strings.TrimSpace(s.getenv("OPENCLAW_GATEWAY_URL"))
-	ocTok := strings.TrimSpace(s.getenv("OPENCLAW_GATEWAY_TOKEN"))
-	ncURL := strings.TrimSpace(s.getenv("NULLCLAW_GATEWAY_URL"))
-	ncTok := strings.TrimSpace(s.getenv("NULLCLAW_GATEWAY_TOKEN"))
-	ncSess := strings.TrimSpace(s.getenv("ARMS_NULLCLAW_SESSION_KEY"))
 	dt := 30 * time.Second
 	if v := strings.TrimSpace(s.getenv("OPENCLAW_DISPATCH_TIMEOUT_SEC")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			dt = time.Duration(n) * time.Second
 		}
 	}
-	device := strings.TrimSpace(s.getenv("ARMS_DEVICE_ID"))
-	sessionKey := strings.TrimSpace(s.getenv("ARMS_OPENCLAW_SESSION_KEY"))
 	logJSON := strings.EqualFold(s.getenv("ARMS_LOG_JSON"), "1") ||
 		strings.EqualFold(s.getenv("ARMS_LOG_JSON"), "true")
 	accessLog := true
@@ -182,15 +174,7 @@ func buildConfig(file map[string]string) Config {
 		AllowLocalhost:                    allow,
 		DatabasePath:                      dbPath,
 		DatabaseBackupBeforeMigrate:       backup,
-		AgentGatewayDriver:                agDriver,
-		OpenClawGatewayURL:                ocURL,
-		OpenClawGatewayToken:              ocTok,
-		OpenClawDispatchTimeout:           dt,
-		ArmsDeviceID:                      device,
-		OpenClawSessionKey:                sessionKey,
-		NullClawGatewayURL:                ncURL,
-		NullClawGatewayToken:              ncTok,
-		NullClawSessionKey:                ncSess,
+		GatewayDispatchTimeout:            dt,
 		LogJSON:                           logJSON,
 		AccessLog:                         accessLog,
 		AutopilotTickSec:                  autopilotTick,

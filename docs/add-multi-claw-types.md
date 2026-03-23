@@ -1,79 +1,103 @@
-**Supports Needed to Add NullClaw Compatibility to Autensa / Mission Control**
+# Multi-claw gateway types in **arms**
 
-NullClaw is **not** a drop-in replacement for OpenClaw.  
-It uses the **same config schema + identity format** (and has a built-in `nullclaw migrate openclaw` command), but its **communication protocol is completely different**:
+**arms** (this repo) routes task dispatch to several external agent runtimes. Each runtime speaks a different wire protocol. The server does **not** assume a single “OpenClaw-only” stack: execution agents bind to **persisted gateway profiles** (driver + URL + auth), and [`RoutingGateway`](../arms/internal/adapters/gateway/routing_gateway.go) picks the right client.
 
-- OpenClaw → custom WebSocket on **port 18789** with proprietary messages (`node.invoke`, `sessions_send`, etc.)
-- NullClaw → **Google A2A v0.3.0** (JSON-RPC 2.0 over HTTP `/a2a`) + **WebChannel WebSocket** on **port 32123** (`/ws`) with `webchannel_v1.json` envelope
+This document summarizes **why** the protocols differ, **what arms implements today**, and **what may still be worth building** if you need deeper parity (streaming, pairing, health, and so on).
 
-This is the **core incompatibility**.  
-Mission Control was built exclusively for OpenClaw’s protocol, so you must add the items below.
+---
 
-### 1. Runtime Abstraction Layer (MUST-HAVE — Foundation)
-- Create `src/lib/runtimes/` folder
-- Define interface `RuntimeAdapter` with methods:
-  - `connect()`
-  - `dispatchTask(task, options)`
-  - `streamProgress(taskId)`
-  - `sendChatMessage(...)`
-  - `getAgentHealth()`
-  - `sendWebhookAck(...)`
-  - `disconnect()`
-- Refactor existing OpenClaw code into `OpenClawAdapter`
-- Add new `NullClawAdapter`
-- Add UI setting: `runtime_type: "openclaw" | "nullclaw"` (with auto-detection)
+## Why NullClaw is not a drop-in OpenClaw client
 
-### 2. Configuration & Discovery Changes
-- Add new environment / settings variables:
-  - `NULLCLAW_HTTP_URL` (default: `http://127.0.0.1:3000`)
-  - `NULLCLAW_WS_URL` (default: `ws://127.0.0.1:32123/ws`)
-  - `NULLCLAW_A2A_ENABLED` (boolean)
-  - `NULLCLAW_AUTH_MODE` (`token` | `pairing`)
-- Add migration button in Settings → “Migrate from OpenClaw” that:
-  - Runs `nullclaw migrate openclaw` via shell
-  - Imports memory/config
-  - Switches runtime flag automatically
-- Support NullClaw’s stricter defaults (`workspace_only: true`, no `0.0.0.0` bind without flag)
+NullClaw is **not** a byte-compatible replacement for OpenClaw on the wire. It can align on **config / identity** concepts (and upstream offers migration tooling), but the **default gateway path is different**:
 
-### 3. Protocol Translation / Adapter Logic (Biggest Code Work)
-Implement mapping in `NullClawAdapter`:
+| Aspect | OpenClaw-class (incl. ZeroClaw) | Stock NullClaw (HTTP A2A) |
+|--------|----------------------------------|----------------------------|
+| Primary transport | WebSocket JSON-RPC (e.g. `connect`, `chat.send`) | JSON-RPC 2.0 **HTTP POST** to `…/a2a` (`message/send`, A2A-shaped) |
+| Typical ports / paths | Custom WS (e.g. 18789-style URLs you configure) | HTTP gateway origin; client appends `/a2a` unless the URL already ends with `/a2a` |
+| Extra channels | WS events for progress / chat | Optional WebChannel WS, `/health`, pairing flows — **not all are used by arms today** |
 
-| Mission Control Action          | OpenClaw (current)       | NullClaw Equivalent (new)                     | Notes |
-|---------------------------------|--------------------------|-----------------------------------------------|-------|
-| Task dispatch                   | WS `node.invoke`         | A2A `message/send` or `tasks/*`               | JSON-RPC 2.0 |
-| Progress / streaming            | WS events                | A2A `message/stream` + WebChannel WS          | Use `/ws` + webchannel_v1 envelope |
-| Agent health / presence         | WS heartbeat             | A2A `tasks/get` + `/health` endpoint          | Partial |
-| Inter-agent mailbox / chat      | WS `sessions_send`       | A2A `message/send`                            | Full support |
-| Checkpoints & recovery          | Custom WS checkpoints    | Memory snapshots (via A2A or local)           | May need custom extension |
-| Completion webhook              | POST to Mission Control  | Use existing `/webhook` endpoint (already supported) | Good match |
-| Convoy / DAG coordination       | Custom WS                | A2A `tasks/*` + resubscribe                   | Partial — may lose full auto-nudge |
+So “add NullClaw” in arms means **a dedicated HTTP client** (and separate driver string), not reusing the OpenClaw WebSocket stack.
 
-### 4. Authentication & Security Adjustments
-- Support NullClaw’s **pairing flow** (default) + static token
-- Add `/pair` endpoint handling (one-time code exchange)
-- Handle `access_token` in WebChannel payloads
-- Optional: E2E encryption support (X25519) if used
+---
 
-### 5. Webhook & Real-Time Layer Updates
-- Keep existing `/api/webhooks/agent-completion` (NullClaw already sends to `/webhook`)
-- Add fallback SSE bridge for A2A streaming → Mission Control live feed
-- Update agent-health sidebar to poll `/health` + A2A `tasks/list`
+## What arms implements (current shape)
 
-### 6. Optional / Nice-to-Have Enhancements
-- Prometheus / OpenTelemetry exporter passthrough (NullClaw supports OTel natively)
-- Convoy Mode compatibility layer (if A2A `tasks/resubscribe` is not enough)
-- Per-runtime feature flags (e.g. disable advanced checkpoints if NullClaw doesn’t expose them)
-- UI badge “Running on NullClaw (Zig)” with binary size / RAM stats
+### Port: `AgentGateway`
 
-### Effort Estimate
-- **Minimal viable support** (basic task dispatch + progress): ~2–4 days for an experienced dev
-- **Full feature parity** (Convoy, checkpoints, health, cost tracking): 1–2 weeks
-- **Production-ready abstraction**: 2–3 weeks (recommended if you plan to support more claws later)
+[`ports.AgentGateway`](../arms/internal/ports/gateway.go) is the execution-plane abstraction:
 
-### Recommended First Steps
-1. Add the `RuntimeAdapter` interface + config toggle (do this first)
-2. Implement `NullClawAdapter` skeleton using A2A JSON-RPC
-3. Test with `nullclaw migrate openclaw` + simple “Hello World” task
-4. Gradually map the rest
+- `DispatchTask(ctx, task) (externalRef, error)`
+- `DispatchSubtask(ctx, parent, sub) (externalRef, error)`
 
-Would you like me to sketch the actual TypeScript code for the `RuntimeAdapter` interface + `NullClawAdapter` skeleton right now? Or focus on one specific part (e.g. just the WebSocket translation)?
+Implementations are wired in [`platform/wiring.go`](../arms/internal/platform/wiring.go) (high level): remote drivers go through **`RoutingGateway`** + a pooled client; the in-process stub handles `stub`.
+
+### Routing: agent → endpoint → driver
+
+1. Each **task** has a `CurrentExecutionAgentID`.
+2. [`TargetResolver`](../arms/internal/adapters/gateway/target_resolver.go) loads the **execution agent**, then its **`gateway_endpoint_id`**, then the **gateway endpoint** row (driver, URL, token, device id, timeout).
+3. Non-stub remote drivers require a non-empty **`session_key`** on the execution agent (same idea as “which session to send to” on the remote gateway).
+
+### Persisted profiles (no gateway URLs in env)
+
+Gateway connection profiles live in SQLite (migration `030_gateway_endpoints.sql`) and are managed over HTTP:
+
+- `GET /api/gateway-endpoints` — list profiles  
+- `POST /api/gateway-endpoints` — create `{ driver, gateway_url, … }`  
+- Execution agents: `POST /api/agents` with `gateway_endpoint_id` and `session_key` (see comments in [`config/arms.toml`](../config/arms.toml)).
+
+Default RPC timeout when `timeout_sec` is `0` is controlled by config (e.g. `OPENCLAW_DISPATCH_TIMEOUT_SEC` in TOML / env).
+
+### Canonical **driver** strings
+
+Defined in [`domain/gateway_endpoint.go`](../arms/internal/domain/gateway_endpoint.go). [`NormalizeGatewayDriver`](../arms/internal/domain/gateway_endpoint.go) accepts several aliases (e.g. `nullclaw_http` → `nullclaw_a2a`).
+
+| Driver constant | Meaning |
+|-----------------|--------|
+| `stub` | In-process [`SimulationMockClaw`](../arms/internal/adapters/gateway/simulation_mock_claw.go) |
+| `openclaw_ws` | OpenClaw WebSocket client ([`openclaw`](../arms/internal/adapters/gateway/openclaw/)) |
+| `nullclaw_ws` | **Legacy** OpenClaw-shaped WebSocket RPC (not stock NullClaw HTTP); kept for compatibility |
+| `nullclaw_a2a` | NullClaw HTTP **POST /a2a** ([`nullclaw.Client`](../arms/internal/adapters/gateway/nullclaw/client.go)) |
+| `picoclaw_ws` | Pico Protocol WebSocket `message.send` + `session_id` ([`picoclaw`](../arms/internal/adapters/gateway/picoclaw/)) |
+| `zeroclaw_ws` | ZeroClaw: OpenClaw-compatible WS sequence via [`zeroclaw`](../arms/internal/adapters/gateway/zeroclaw/) (wraps shared OpenClaw wire helpers) |
+
+[`clientPool`](../arms/internal/adapters/gateway/pool.go) reuses clients per `(driver, url, token, device_id, timeout)` and dispatches to the matching implementation.
+
+### Knowledge hook
+
+OpenClaw, ZeroClaw, PicoClaw, and NullClaw HTTP clients can all attach **knowledge snippets** to dispatch payloads when a `KnowledgeForDispatch` callback is configured (same hook path as OpenClaw dispatch).
+
+---
+
+## Adapter packages (where to look in code)
+
+| Package | Role |
+|---------|------|
+| [`arms/internal/adapters/gateway/routing_gateway.go`](../arms/internal/adapters/gateway/routing_gateway.go) | `AgentGateway` facade: resolve target, route to stub or pool |
+| [`arms/internal/adapters/gateway/pool.go`](../arms/internal/adapters/gateway/pool.go) | Client pooling + driver switch for task/subtask dispatch |
+| [`arms/internal/adapters/gateway/openclaw/`](../arms/internal/adapters/gateway/openclaw/) | OpenClaw WS RPC + markdown/query helpers |
+| [`arms/internal/adapters/gateway/nullclaw/`](../arms/internal/adapters/gateway/nullclaw/) | NullClaw A2A HTTP JSON-RPC |
+| [`arms/internal/adapters/gateway/picoclaw/`](../arms/internal/adapters/gateway/picoclaw/) | PicoClaw Pico Protocol WS |
+| [`arms/internal/adapters/gateway/zeroclaw/`](../arms/internal/adapters/gateway/zeroclaw/) | ZeroClaw WS (OpenClaw-class) |
+| [`arms/internal/adapters/sqlite/gateway_endpoints.go`](../arms/internal/adapters/sqlite/gateway_endpoints.go) | Persistence for profiles |
+
+---
+
+## Possible follow-ups (not a commitment)
+
+The older “Mission Control / TypeScript runtime adapter” checklist mapped many **UI and product** concerns. For **arms** specifically, partial or future enhancements might include:
+
+- **Richer NullClaw integration**: WebChannel streaming, pairing (`/pair`), stricter upstream defaults, or health polling — today dispatch centers on **HTTP `/a2a`**.
+- **Per-driver capabilities**: feature flags if a driver lacks checkpoints, convoy nudges, or other OpenClaw-only behaviors.
+- **Observability**: passthrough metrics/traces if you standardize on OTel across runtimes.
+
+Effort for those items depends on whether arms must **observe** live progress on the gateway vs **only** dispatch + rely on **webhooks** and DB state (which is already the common pattern for completion).
+
+---
+
+## Quick operational recipe
+
+1. Create a gateway profile: `POST /api/gateway-endpoints` with the right `driver` and `gateway_url` (for `nullclaw_a2a`, use the HTTP **origin**; the client adds `/a2a` when needed).  
+2. Create an execution agent: `POST /api/agents` with `gateway_endpoint_id` and `session_key` appropriate for that runtime.  
+3. Assign work so tasks use that execution agent; **arms** resolves the endpoint and uses the matching client.
+
+For local defaults and examples, see [`config/arms.toml`](../config/arms.toml).

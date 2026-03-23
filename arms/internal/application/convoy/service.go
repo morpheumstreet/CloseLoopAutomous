@@ -2,6 +2,7 @@ package convoy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -167,6 +168,9 @@ func (s *Service) DispatchReady(ctx context.Context, convoyID domain.ConvoyID, e
 		}
 		ref, err := s.Gateway.DispatchSubtask(ctx, *parent, *st)
 		if err != nil {
+			if errors.Is(err, domain.ErrNoDispatchTarget) {
+				return dispatched, err
+			}
 			st.DispatchAttempts++
 			if saveErr := s.Convoys.Save(ctx, c); saveErr != nil {
 				return dispatched, saveErr

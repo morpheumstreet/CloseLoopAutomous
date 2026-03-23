@@ -13,8 +13,8 @@ func TestLoadFromEnvDefaults(t *testing.T) {
 	if c.ListenAddr != ":8080" {
 		t.Fatalf("ListenAddr %q", c.ListenAddr)
 	}
-	if c.OpenClawDispatchTimeout != 30*time.Second {
-		t.Fatalf("timeout %v", c.OpenClawDispatchTimeout)
+	if c.GatewayDispatchTimeout != 30*time.Second {
+		t.Fatalf("timeout %v", c.GatewayDispatchTimeout)
 	}
 	if !c.AccessLog || c.LogJSON {
 		t.Fatalf("default log flags %+v", c)
@@ -28,7 +28,7 @@ func TestLoadFromEnvOverrides(t *testing.T) {
 	t.Setenv("ARMS_LOG_JSON", "1")
 	t.Setenv("ARMS_ACCESS_LOG", "0")
 	c := LoadFromEnv()
-	if c.ListenAddr != ":9999" || c.OpenClawDispatchTimeout != 60*time.Second || !c.DatabaseBackupBeforeMigrate {
+	if c.ListenAddr != ":9999" || c.GatewayDispatchTimeout != 60*time.Second || !c.DatabaseBackupBeforeMigrate {
 		t.Fatalf("%+v", c)
 	}
 	if !c.LogJSON || c.AccessLog {

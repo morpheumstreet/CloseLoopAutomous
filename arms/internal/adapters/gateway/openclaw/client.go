@@ -19,8 +19,8 @@ import (
 )
 
 // Options configure the WebSocket gateway client for OpenClaw-class protocols
-// (RequestFrame / ResponseFrame, chat.send). The same client is used for NullClaw when its gateway
-// remains compatible; see https://github.com/nullclaw/nullclaw gateway documentation.
+// (connect.challenge / connect, chat.send). Driver zeroclaw_ws uses the zeroclaw package Client, which wraps this type.
+// Stock NullClaw uses HTTP /a2a instead; see package nullclaw (Client) and driver nullclaw_a2a.
 type Options struct {
 	URL      string
 	Token    string
@@ -281,9 +281,14 @@ func (c *Client) rpcLocked(ctx context.Context, method string, params map[string
 }
 
 func (c *Client) DispatchTask(ctx context.Context, task domain.Task) (string, error) {
-	sk := strings.TrimSpace(c.opts.SessionKey)
+	return c.DispatchTaskWithSession(ctx, task, strings.TrimSpace(c.opts.SessionKey))
+}
+
+// DispatchTaskWithSession sends chat.send with the given sessionKey (per logical agent on the gateway).
+func (c *Client) DispatchTaskWithSession(ctx context.Context, task domain.Task, sessionKey string) (string, error) {
+	sk := strings.TrimSpace(sessionKey)
 	if sk == "" {
-		return "", errors.New("openclaw: set ARMS_OPENCLAW_SESSION_KEY to the gateway sessionKey used for chat.send")
+		return "", errors.New("openclaw: sessionKey required for chat.send")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -295,12 +300,12 @@ func (c *Client) DispatchTask(ctx context.Context, task domain.Task) (string, er
 		return "", err
 	}
 
-	kb := c.knowledgeMarkdown(callCtx, task.ProductID, dispatchKnowledgeQueryFromTask(task))
+	kb := c.knowledgeMarkdown(callCtx, task.ProductID, KnowledgeQueryFromTask(task))
 	msg := TaskDispatchMarkdown(task, kb)
 	params := map[string]any{
-		"sessionKey":      sk,
-		"message":         msg,
-		"idempotencyKey":  fmt.Sprintf("arms-dispatch-%s-%d", task.ID, time.Now().UnixNano()),
+		"sessionKey":     sk,
+		"message":        msg,
+		"idempotencyKey": fmt.Sprintf("arms-dispatch-%s-%d", task.ID, time.Now().UnixNano()),
 	}
 	payload, err := c.rpcLocked(callCtx, "chat.send", params)
 	if err != nil {
@@ -311,9 +316,14 @@ func (c *Client) DispatchTask(ctx context.Context, task domain.Task) (string, er
 }
 
 func (c *Client) DispatchSubtask(ctx context.Context, parent domain.Task, sub domain.Subtask) (string, error) {
-	sk := strings.TrimSpace(c.opts.SessionKey)
+	return c.DispatchSubtaskWithSession(ctx, parent, sub, strings.TrimSpace(c.opts.SessionKey))
+}
+
+// DispatchSubtaskWithSession sends chat.send for a convoy subtask with the given sessionKey.
+func (c *Client) DispatchSubtaskWithSession(ctx context.Context, parent domain.Task, sub domain.Subtask, sessionKey string) (string, error) {
+	sk := strings.TrimSpace(sessionKey)
 	if sk == "" {
-		return "", errors.New("openclaw: set ARMS_OPENCLAW_SESSION_KEY to the gateway sessionKey used for chat.send")
+		return "", errors.New("openclaw: sessionKey required for chat.send")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -325,7 +335,7 @@ func (c *Client) DispatchSubtask(ctx context.Context, parent domain.Task, sub do
 		return "", err
 	}
 
-	kb := c.knowledgeMarkdown(callCtx, parent.ProductID, dispatchKnowledgeQueryFromSubtask(parent, sub))
+	kb := c.knowledgeMarkdown(callCtx, parent.ProductID, KnowledgeQueryFromSubtask(parent, sub))
 	msg := SubtaskDispatchMarkdown(parent.ID, sub, kb)
 	params := map[string]any{
 		"sessionKey":     sk,

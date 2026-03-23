@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -115,8 +116,12 @@ func (s *Service) redispatchStalledTask(ctx context.Context, taskID domain.TaskI
 	if err := s.Budget.AssertWithinBudget(ctx, t.ProductID, 0); err != nil {
 		return err
 	}
+	t.CurrentExecutionAgentID = newAgentID
 	ref, err := s.Gateway.DispatchTask(ctx, *t)
 	if err != nil {
+		if errors.Is(err, domain.ErrNoDispatchTarget) {
+			return err
+		}
 		return fmt.Errorf("%w: %v", domain.ErrGateway, err)
 	}
 	now := s.Clock.Now()
@@ -128,7 +133,6 @@ func (s *Service) redispatchStalledTask(ctx context.Context, taskID domain.TaskI
 	} else {
 		reason = line
 	}
-	t.CurrentExecutionAgentID = newAgentID
 	t.ExternalRef = ref
 	t.StatusReason = reason
 	t.UpdatedAt = now

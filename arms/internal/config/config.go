@@ -15,16 +15,8 @@ import (
 //   - ARMS_ALLOW_SAME_ORIGIN — "1" or "true" to allow same-origin browser calls without Bearer when token is set
 //   - DATABASE_PATH — SQLite file path; empty uses in-memory stores
 //   - ARMS_DB_BACKUP — "1" or "true" to VACUUM INTO backup before migrate
-//   - ARMS_AGENT_GATEWAY_DRIVER — auto (default), stub, openclaw_ws, nullclaw_ws (aliases: openclaw, nullclaw)
-//   - OPENCLAW_GATEWAY_URL — WebSocket gateway URL; empty uses stub when driver is auto
-//   - OPENCLAW_GATEWAY_TOKEN — Bearer token on WS handshake
-//   - OPENCLAW_DISPATCH_TIMEOUT_SEC — dispatch RPC timeout seconds (default 30)
-//   - ARMS_DEVICE_ID — optional X-Arms-Device-Id on WS handshake
-//   - ARMS_OPENCLAW_SESSION_KEY — sessionKey for chat.send dispatch
-//   - NULLCLAW_GATEWAY_URL — optional; when driver is nullclaw_ws, overrides OPENCLAW_GATEWAY_URL
-//   - NULLCLAW_GATEWAY_TOKEN — optional; when driver is nullclaw_ws, overrides OPENCLAW_GATEWAY_TOKEN
-//   - ARMS_NULLCLAW_SESSION_KEY — optional; when driver is nullclaw_ws, overrides ARMS_OPENCLAW_SESSION_KEY
-//   - ARMS_OPENCLAW_LIVE_CONTRACT — "1"/"true"/"yes" with OPENCLAW_GATEWAY_URL + ARMS_OPENCLAW_SESSION_KEY runs integration live gateway tests (#105); see internal/integration/openclaw_live_contract_test.go
+//   - OPENCLAW_DISPATCH_TIMEOUT_SEC — default per-RPC timeout when a gateway_endpoints row has timeout_sec = 0 (default 30)
+//   - ARMS_OPENCLAW_LIVE_CONTRACT — "1"/"true"/"yes" with gateway URL + session in env runs integration live gateway tests (#105); see internal/integration/openclaw_live_contract_test.go
 //   - ARMS_LOG_JSON — "1" or "true" for JSON logs to stdout (default text)
 //   - ARMS_ACCESS_LOG — "0", "false", "off", "no" disables per-request access logging (default on)
 //   - ARMS_USE_ASYNQ_SCHEDULER — deprecated no-op (still parsed for compatibility). When ARMS_REDIS_ADDR is set, cmd/arms always uses Asynq as the scheduling plane; a warning is logged if this env is set.
@@ -82,15 +74,7 @@ type Config struct {
 	AllowLocalhost                    bool
 	DatabasePath                      string
 	DatabaseBackupBeforeMigrate       bool
-	AgentGatewayDriver                string
-	OpenClawGatewayURL                string
-	OpenClawGatewayToken              string
-	OpenClawDispatchTimeout           time.Duration
-	ArmsDeviceID                      string
-	OpenClawSessionKey                string
-	NullClawGatewayURL                string
-	NullClawGatewayToken              string
-	NullClawSessionKey                string
+	GatewayDispatchTimeout            time.Duration
 	LogJSON                           bool
 	AccessLog                         bool
 	AutopilotTickSec                  int

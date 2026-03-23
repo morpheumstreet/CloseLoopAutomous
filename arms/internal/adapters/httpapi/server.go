@@ -103,6 +103,8 @@ func NewRouter(cfg Config, h *Handlers) http.Handler {
 	sub.Handle("POST /api/costs", http.HandlerFunc(h.recordCost))
 	sub.Handle("POST /api/workspace/ports", http.HandlerFunc(h.allocateWorkspacePort))
 	sub.Handle("DELETE /api/workspace/ports/{port}", http.HandlerFunc(h.releaseWorkspacePort))
+	sub.Handle("GET /api/gateway-endpoints", http.HandlerFunc(h.listGatewayEndpoints))
+	sub.Handle("POST /api/gateway-endpoints", http.HandlerFunc(h.createGatewayEndpoint))
 	sub.Handle("GET /api/agents", http.HandlerFunc(h.listAgents))
 	sub.Handle("POST /api/agents", http.HandlerFunc(h.registerExecutionAgent))
 	sub.Handle("GET /api/agents/{id}/mailbox", http.HandlerFunc(h.listAgentMailbox))

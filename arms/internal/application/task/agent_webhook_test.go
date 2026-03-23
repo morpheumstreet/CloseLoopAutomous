@@ -20,7 +20,7 @@ func TestApplyAgentWebhookOutcomeAdvanceToTesting(t *testing.T) {
 	ids := &identity.Sequential{}
 	products := memory.NewProductStore()
 	tasks := memory.NewTaskStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	p, err := prodSvc.Register(ctx, product.RegistrationInput{
 		Name: "p", WorkspaceID: "w", AutomationTier: "full_auto",
@@ -56,7 +56,7 @@ func TestApplyAgentWebhookOutcomeSupervisedFallsBackToDone(t *testing.T) {
 	ids := &identity.Sequential{}
 	products := memory.NewProductStore()
 	tasks := memory.NewTaskStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	p, err := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
 	if err != nil {

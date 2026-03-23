@@ -22,7 +22,7 @@ func TestAutoStallReassignPicksAlternateAgent(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	agentHealth := memory.NewAgentHealthStore()
 	execAgents := memory.NewExecutionAgentStore()
 
@@ -101,7 +101,7 @@ func TestAutoStallReassignSingleAgentFallsBackToNudge(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	costs := memory.NewCostStore()
 	checkpoints := memory.NewCheckpointStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	agentHealth := memory.NewAgentHealthStore()
 	execAgents := memory.NewExecutionAgentStore()
 

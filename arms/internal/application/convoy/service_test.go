@@ -25,7 +25,7 @@ func TestGetAndListByProduct(t *testing.T) {
 	products := memory.NewProductStore()
 	tasks := memory.NewTaskStore()
 	convoys := memory.NewConvoyStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
@@ -84,7 +84,7 @@ func TestDispatchReady_WaitsForDependencyCompletion(t *testing.T) {
 	products := memory.NewProductStore()
 	tasks := memory.NewTaskStore()
 	convoys := memory.NewConvoyStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
@@ -144,7 +144,7 @@ func TestDispatchReady_PublishesLiveActivity(t *testing.T) {
 	products := memory.NewProductStore()
 	tasks := memory.NewTaskStore()
 	convoys := memory.NewConvoyStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	pub := &recordPub{}
 
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
@@ -188,7 +188,7 @@ func TestCreateConvoyRejectsDependencyCycle(t *testing.T) {
 	products := memory.NewProductStore()
 	tasks := memory.NewTaskStore()
 	convoys := memory.NewConvoyStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
 	tt := &domain.Task{
@@ -209,9 +209,9 @@ func TestCreateConvoyRejectsDependencyCycle(t *testing.T) {
 	}
 }
 
-// subtaskFailGW fails DispatchSubtask per subtask id for a fixed number of calls, then delegates to Stub.
+// subtaskFailGW fails DispatchSubtask per subtask id for a fixed number of calls, then delegates to SimulationMockClaw.
 type subtaskFailGW struct {
-	inner *gw.Stub
+	inner *gw.SimulationMockClaw
 	left  map[domain.SubtaskID]int
 }
 
@@ -236,7 +236,7 @@ func TestDispatchReady_RetriesGatewayThenSucceeds(t *testing.T) {
 	products := memory.NewProductStore()
 	tasks := memory.NewTaskStore()
 	convoys := memory.NewConvoyStore()
-	gateway := &subtaskFailGW{inner: &gw.Stub{}, left: map[domain.SubtaskID]int{"s1": 2}}
+	gateway := &subtaskFailGW{inner: &gw.SimulationMockClaw{}, left: map[domain.SubtaskID]int{"s1": 2}}
 
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
@@ -275,7 +275,7 @@ func TestDispatchReady_GatewayExhausted(t *testing.T) {
 	products := memory.NewProductStore()
 	tasks := memory.NewTaskStore()
 	convoys := memory.NewConvoyStore()
-	gateway := &subtaskFailGW{inner: &gw.Stub{}, left: map[domain.SubtaskID]int{"s1": 99}}
+	gateway := &subtaskFailGW{inner: &gw.SimulationMockClaw{}, left: map[domain.SubtaskID]int{"s1": 99}}
 
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
@@ -317,7 +317,7 @@ func TestDispatchReady_ParentHealthBlocks(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	convoys := memory.NewConvoyStore()
 	health := memory.NewAgentHealthStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
@@ -365,7 +365,7 @@ func TestCreateAssignsDagLayersAndMetadata(t *testing.T) {
 	products := memory.NewProductStore()
 	tasks := memory.NewTaskStore()
 	convoys := memory.NewConvoyStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
 	tt := &domain.Task{
@@ -417,7 +417,7 @@ func TestPostMailKindAndRecipient(t *testing.T) {
 	tasks := memory.NewTaskStore()
 	convoys := memory.NewConvoyStore()
 	mail := memory.NewConvoyMailStore()
-	gateway := &gw.Stub{}
+	gateway := &gw.SimulationMockClaw{}
 	prodSvc := &product.Service{Products: products, Clock: clock, IDs: ids}
 	p, _ := prodSvc.Register(ctx, product.RegistrationInput{Name: "p", WorkspaceID: "w"})
 	tt := &domain.Task{

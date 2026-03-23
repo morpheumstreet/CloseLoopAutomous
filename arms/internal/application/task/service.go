@@ -366,14 +366,17 @@ func (s *Service) Dispatch(ctx context.Context, taskID domain.TaskID, estimatedC
 	if err := s.Budget.AssertWithinBudget(ctx, t.ProductID, estimatedCost); err != nil {
 		return err
 	}
-	ref, err := s.Gateway.DispatchTask(ctx, *t)
-	if err != nil {
-		return fmt.Errorf("%w: %v", domain.ErrGateway, err)
-	}
 	if s.ExecAgents != nil && strings.TrimSpace(t.CurrentExecutionAgentID) == "" {
 		if aid, aerr := s.pickLeastLoadedExecutionAgent(ctx, t.ProductID, ""); aerr == nil && aid != "" {
 			t.CurrentExecutionAgentID = aid
 		}
+	}
+	ref, err := s.Gateway.DispatchTask(ctx, *t)
+	if err != nil {
+		if errors.Is(err, domain.ErrNoDispatchTarget) {
+			return err
+		}
+		return fmt.Errorf("%w: %v", domain.ErrGateway, err)
 	}
 	t.Status = domain.StatusInProgress
 	t.ExternalRef = ref

@@ -15,16 +15,33 @@ var ErrRegistryDisabled = errors.New("agent registry not configured")
 
 // Service is the execution-agent registry + mailbox (not task heartbeats).
 type Service struct {
-	Registry ports.ExecutionAgentRegistry
-	Mailbox  ports.AgentMailboxRepository
-	Clock    ports.Clock
-	IDs      ports.IdentityGenerator
+	Registry   ports.ExecutionAgentRegistry
+	Endpoints  ports.GatewayEndpointRegistry // required for Register (validates gateway_endpoint_id)
+	Mailbox    ports.AgentMailboxRepository
+	Clock      ports.Clock
+	IDs        ports.IdentityGenerator
 }
 
-// Register creates or updates a logical agent slot.
-func (s *Service) Register(ctx context.Context, displayName string, productID domain.ProductID, source, externalRef string) (*domain.ExecutionAgent, error) {
+// Register creates a logical agent slot bound to a persisted gateway endpoint and session_key.
+func (s *Service) Register(ctx context.Context, displayName string, productID domain.ProductID, source, externalRef, gatewayEndpointID, sessionKey string) (*domain.ExecutionAgent, error) {
 	if s == nil || s.Registry == nil {
 		return nil, ErrRegistryDisabled
+	}
+	if s.Endpoints == nil {
+		return nil, ErrRegistryDisabled
+	}
+	eid := strings.TrimSpace(gatewayEndpointID)
+	if eid == "" {
+		return nil, fmt.Errorf("%w: gateway_endpoint_id is required", domain.ErrInvalidInput)
+	}
+	ep, err := s.Endpoints.ByID(ctx, eid)
+	if err != nil {
+		return nil, err
+	}
+	drv := domain.NormalizeGatewayDriver(ep.Driver)
+	sk := strings.TrimSpace(sessionKey)
+	if drv != domain.GatewayDriverStub && sk == "" {
+		return nil, fmt.Errorf("%w: session_key is required for driver %s", domain.ErrInvalidInput, drv)
 	}
 	id := s.IDs.NewExecutionAgentID()
 	src := strings.TrimSpace(source)
@@ -37,6 +54,8 @@ func (s *Service) Register(ctx context.Context, displayName string, productID do
 		ProductID:   productID,
 		Source:      src,
 		ExternalRef: strings.TrimSpace(externalRef),
+		EndpointID:  ep.ID,
+		SessionKey:  sk,
 		CreatedAt:   s.Clock.Now(),
 	}
 	if err := s.Registry.Save(ctx, a); err != nil {

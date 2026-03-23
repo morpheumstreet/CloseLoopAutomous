@@ -65,6 +65,8 @@ type Handlers struct {
 	BuildCommit  string
 	// ExpectedSchemaVersion is the embedded SQLite migration ceiling (see sqlite.ExpectedSchemaVersion).
 	ExpectedSchemaVersion int
+	GatewayEndpoints      ports.GatewayEndpointRegistry
+	IDs                   ports.IdentityGenerator
 }
 
 func (h *Handlers) maybeReconcileAutopilotSchedule(ctx context.Context) {
@@ -1184,12 +1186,63 @@ func (h *Handlers) registerExecutionAgent(w http.ResponseWriter, r *http.Request
 		return
 	}
 	pid := domain.ProductID(strings.TrimSpace(req.ProductID))
-	a, err := h.Agent.Register(r.Context(), req.DisplayName, pid, req.Source, req.ExternalRef)
+	a, err := h.Agent.Register(r.Context(), req.DisplayName, pid, req.Source, req.ExternalRef, req.GatewayEndpointID, req.SessionKey)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, executionAgentToJSON(a))
+}
+
+func (h *Handlers) listGatewayEndpoints(w http.ResponseWriter, r *http.Request) {
+	if h.GatewayEndpoints == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "gateway endpoints not available")
+		return
+	}
+	list, err := h.GatewayEndpoints.List(r.Context(), 500)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	out := make([]any, 0, len(list))
+	for i := range list {
+		out = append(out, gatewayEndpointToJSON(&list[i]))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"gateway_endpoints": out})
+}
+
+func (h *Handlers) createGatewayEndpoint(w http.ResponseWriter, r *http.Request) {
+	if h.GatewayEndpoints == nil || h.IDs == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "gateway endpoints not available")
+		return
+	}
+	var req createGatewayEndpointReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if err := req.validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	drv := domain.NormalizeGatewayDriver(req.Driver)
+	pid := domain.ProductID(strings.TrimSpace(req.ProductID))
+	e := &domain.GatewayEndpoint{
+		ID:           h.IDs.NewGatewayEndpointID(),
+		DisplayName:  strings.TrimSpace(req.DisplayName),
+		Driver:       drv,
+		GatewayURL:   strings.TrimSpace(req.GatewayURL),
+		GatewayToken: strings.TrimSpace(req.GatewayToken),
+		DeviceID:     strings.TrimSpace(req.DeviceID),
+		TimeoutSec:   req.TimeoutSec,
+		ProductID:    pid,
+		CreatedAt:    time.Now().UTC(),
+	}
+	if err := h.GatewayEndpoints.Save(r.Context(), e); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, gatewayEndpointToJSON(e))
 }
 
 func (h *Handlers) listAgentMailbox(w http.ResponseWriter, r *http.Request) {
@@ -2811,10 +2864,24 @@ func convoyToJSON(c *domain.Convoy) map[string]any {
 func executionAgentToJSON(a *domain.ExecutionAgent) map[string]any {
 	m := map[string]any{
 		"id": a.ID, "display_name": a.DisplayName, "source": a.Source,
-		"external_ref": a.ExternalRef, "created_at": a.CreatedAt.UTC().Format(time.RFC3339Nano),
+		"external_ref": a.ExternalRef, "gateway_endpoint_id": a.EndpointID, "session_key": a.SessionKey,
+		"created_at": a.CreatedAt.UTC().Format(time.RFC3339Nano),
 	}
 	if a.ProductID != "" {
 		m["product_id"] = string(a.ProductID)
+	}
+	return m
+}
+
+func gatewayEndpointToJSON(e *domain.GatewayEndpoint) map[string]any {
+	m := map[string]any{
+		"id": e.ID, "display_name": e.DisplayName, "driver": e.Driver,
+		"gateway_url": e.GatewayURL, "gateway_token": e.GatewayToken,
+		"device_id": e.DeviceID, "timeout_sec": e.TimeoutSec,
+		"created_at": e.CreatedAt.UTC().Format(time.RFC3339Nano),
+	}
+	if e.ProductID != "" {
+		m["product_id"] = string(e.ProductID)
 	}
 	return m
 }

@@ -19,7 +19,7 @@ func testTaskService(t *testing.T, clock timeadapter.Fixed) (*Service, *memory.T
 	tasks := memory.NewTaskStore()
 	svc := &Service{
 		Tasks: tasks, Products: products, Ideas: memory.NewIdeaStore(),
-		Gateway: &gw.Stub{}, Budget: &budget.Static{Cap: 100, Costs: memory.NewCostStore()},
+		Gateway: &gw.SimulationMockClaw{}, Budget: &budget.Static{Cap: 100, Costs: memory.NewCostStore()},
 		Checkpt: memory.NewCheckpointStore(), Clock: clock, IDs: &identity.Sequential{},
 	}
 	return svc, tasks, products

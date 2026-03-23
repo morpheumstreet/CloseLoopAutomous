@@ -151,14 +151,7 @@ func main() {
 	} else {
 		slog.Info("arms persistence", "mode", "in-memory", "hint", "set DATABASE_PATH for SQLite")
 	}
-	if cfg.OpenClawGatewayURL != "" {
-		if cfg.OpenClawSessionKey == "" {
-			slog.Warn("openclaw gateway url set but session key empty — dispatch will fail until ARMS_OPENCLAW_SESSION_KEY is set")
-		}
-		slog.Info("arms gateway", "kind", "openclaw_ws", "dispatch_timeout", cfg.OpenClawDispatchTimeout.String())
-	} else {
-		slog.Info("arms gateway", "kind", "stub")
-	}
+	slog.Info("arms gateway", "dispatch_default_timeout", cfg.GatewayDispatchTimeout.String(), "hint", "POST /api/gateway-endpoints + POST /api/agents with gateway_endpoint_id and session_key")
 	authMode := "disabled"
 	switch {
 	case cfg.MCAPIToken != "" && len(cfg.ACLUsers) > 0:

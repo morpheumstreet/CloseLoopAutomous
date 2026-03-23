@@ -1,0 +1,27 @@
+package domain
+
+import "testing"
+
+func TestNormalizeGatewayDriver_PicoClaw(t *testing.T) {
+	for _, in := range []string{"picoclaw_ws", "PicoClaw", "pico-claw"} {
+		if got := NormalizeGatewayDriver(in); got != GatewayDriverPicoClawWS {
+			t.Fatalf("%q -> %q want %s", in, got, GatewayDriverPicoClawWS)
+		}
+	}
+}
+
+func TestNormalizeGatewayDriver_NullClawA2A(t *testing.T) {
+	for _, in := range []string{"nullclaw_a2a", "nullclaw-http", "NULLCLAW_HTTP"} {
+		if got := NormalizeGatewayDriver(in); got != GatewayDriverNullClawA2A {
+			t.Fatalf("%q -> %q want %s", in, got, GatewayDriverNullClawA2A)
+		}
+	}
+}
+
+func TestNormalizeGatewayDriver_ZeroClaw(t *testing.T) {
+	for _, in := range []string{"zeroclaw_ws", "ZeroClaw", "zero-claw"} {
+		if got := NormalizeGatewayDriver(in); got != GatewayDriverZeroClawWS {
+			t.Fatalf("%q -> %q want %s", in, got, GatewayDriverZeroClawWS)
+		}
+	}
+}

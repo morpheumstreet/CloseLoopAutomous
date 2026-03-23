@@ -1,4 +1,4 @@
-package openclaw
+package picoclaw
 
 import (
 	"strings"
@@ -7,8 +7,7 @@ import (
 	"github.com/closeloopautomous/arms/internal/domain"
 )
 
-// KnowledgeQueryFromTask builds the retrieval query string for knowledge injection during dispatch.
-func KnowledgeQueryFromTask(t domain.Task) string {
+func knowledgeQueryFromTask(t domain.Task) string {
 	var b strings.Builder
 	if strings.TrimSpace(string(t.IdeaID)) != "" {
 		b.WriteString(string(t.IdeaID))
@@ -25,8 +24,7 @@ func KnowledgeQueryFromTask(t domain.Task) string {
 	return strings.TrimSpace(b.String())
 }
 
-// KnowledgeQueryFromSubtask builds the retrieval query for a convoy subtask dispatch.
-func KnowledgeQueryFromSubtask(parent domain.Task, sub domain.Subtask) string {
+func knowledgeQueryFromSubtask(parent domain.Task, sub domain.Subtask) string {
 	var b strings.Builder
 	if strings.TrimSpace(sub.AgentRole) != "" {
 		b.WriteString(sub.AgentRole)

@@ -15,4 +15,5 @@ type IdentityGenerator interface {
 	NewMailboxMessageID() string
 	NewProductFeedbackID() string
 	NewTaskChatMessageID() string
+	NewGatewayEndpointID() string
 }
