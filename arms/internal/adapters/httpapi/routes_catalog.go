@@ -93,7 +93,7 @@ func routeCatalog() []RouteEntry {
 		{"POST", "/api/convoy/{id}/dispatch-ready", "MC alias: same as POST /api/convoys/{id}/dispatch-ready"},
 		{"POST", "/api/costs", "Record cost event"},
 		{"GET", "/api/gateway-endpoints", "List gateway connection profiles (gateway_token always empty; has_gateway_token when a token is stored)"},
-		{"POST", "/api/gateway-endpoints", "Create gateway profile {driver: stub|openclaw_ws|nemoclaw_ws|nullclaw_ws|nullclaw_a2a|picoclaw_ws|zeroclaw_ws|clawlet_ws|ironclaw_ws|mimiclaw_ws|nanobot_cli|inkos_cli|zclaw_relay_http|mistermorph_http|copaw_http, gateway_url, optional display_name, gateway_token, device_id, timeout_sec, product_id}"},
+		{"POST", "/api/gateway-endpoints", "Create gateway profile {driver: stub|openclaw_ws|nemoclaw_ws|nullclaw_ws|nullclaw_a2a|picoclaw_ws|zeroclaw_ws|clawlet_ws|ironclaw_ws|mimiclaw_ws|nanobot_cli|inkos_cli|zclaw_relay_http|mistermorph_http|copaw_http|metaclaw_http, gateway_url, optional display_name, gateway_token, device_id, timeout_sec, product_id}"},
 		{"PATCH", "/api/gateway-endpoints/{id}", "Update gateway profile (partial body; same field names as POST; omit gateway_token to leave unchanged)"},
 		{"DELETE", "/api/gateway-endpoints/{id}", "Remove gateway profile (409 if any execution agent references it)"},
 		{"GET", "/api/agents", "registry[] execution agents + items[] recent task heartbeats (stub:true on items only when agent health disabled)"},

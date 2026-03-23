@@ -258,7 +258,7 @@ func (r *createGatewayEndpointReq) validate() error {
 
 func validateGatewayEndpointFields(normalizedDriver, gatewayURL string) error {
 	if normalizedDriver == "" {
-		return fmt.Errorf("driver must be stub, openclaw_ws, nemoclaw_ws, nullclaw_ws, nullclaw_a2a, picoclaw_ws, zeroclaw_ws, clawlet_ws, ironclaw_ws, mimiclaw_ws, nanobot_cli, nanobot, inkos_cli, inkos, zclaw_relay_http, mistermorph_http, or copaw_http (aliases: zclaw, mistermorph, copaw, ironclaw, nemoclaw, …)")
+		return fmt.Errorf("driver must be stub, openclaw_ws, nemoclaw_ws, nullclaw_ws, nullclaw_a2a, picoclaw_ws, zeroclaw_ws, clawlet_ws, ironclaw_ws, mimiclaw_ws, nanobot_cli, nanobot, inkos_cli, inkos, zclaw_relay_http, mistermorph_http, copaw_http, or metaclaw_http (aliases: zclaw, mistermorph, copaw, metaclaw, meta, ironclaw, nemoclaw, …)")
 	}
 	if normalizedDriver != domain.GatewayDriverStub && normalizedDriver != domain.GatewayDriverNanobotCLI && normalizedDriver != domain.GatewayDriverInkOSCLI && strings.TrimSpace(gatewayURL) == "" {
 		return fmt.Errorf("gateway_url is required for driver %s", normalizedDriver)

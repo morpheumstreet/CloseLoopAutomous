@@ -35,7 +35,8 @@ func isPooledRemoteDriver(d string) bool {
 		domain.GatewayDriverInkOSCLI,
 		domain.GatewayDriverZClawRelayHTTP,
 		domain.GatewayDriverMisterMorphHTTP,
-		domain.GatewayDriverCoPawHTTP:
+		domain.GatewayDriverCoPawHTTP,
+		domain.GatewayDriverMetaClawHTTP:
 		return true
 	default:
 		return false

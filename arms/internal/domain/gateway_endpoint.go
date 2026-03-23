@@ -35,6 +35,8 @@ const (
 	GatewayDriverMisterMorphHTTP = "mistermorph_http"
 	// GatewayDriverCoPawHTTP is AgentScope CoPaw: JSON-RPC 2.0 POST …/console/api (chat.send). device_id = workspace; session_key = chat/session id.
 	GatewayDriverCoPawHTTP = "copaw_http"
+	// GatewayDriverMetaClawHTTP is MetaClaw (or any OpenAI-compatible proxy): POST …/v1/chat/completions. device_id = optional model; session_key = OpenAI user (trace).
+	GatewayDriverMetaClawHTTP = "metaclaw_http"
 )
 
 // GatewayEndpoint is a persisted remote execution plane (URL + auth + driver).
@@ -94,6 +96,8 @@ func NormalizeGatewayDriver(s string) string {
 		return GatewayDriverMisterMorphHTTP
 	case "copaw", "copaw_http", "copaw-http", "agentscope-copaw", "agentscope_copaw":
 		return GatewayDriverCoPawHTTP
+	case "meta", "metaclaw", "metaclaw_http", "metaclaw-http", "meta_claw", "meta-claw", "metaclaw_openai", "metaclaw-openai":
+		return GatewayDriverMetaClawHTTP
 	default:
 		return ""
 	}

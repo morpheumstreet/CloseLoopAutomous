@@ -234,6 +234,7 @@ const GATEWAY_DRIVER_OPTIONS = [
   ['inkos_cli', 'inkos_cli'],
   ['mistermorph_http', 'mistermorph_http'],
   ['copaw_http', 'copaw_http'],
+  ['metaclaw_http', 'metaclaw_http'],
 ] as const;
 
 function GatewayEndpointsPanel({ client, defaultProductId }: { client: ArmsClient; defaultProductId?: string }) {

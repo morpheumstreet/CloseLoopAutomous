@@ -89,3 +89,11 @@ func TestNormalizeGatewayDriver_CoPawHTTP(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeGatewayDriver_MetaClawHTTP(t *testing.T) {
+	for _, in := range []string{"metaclaw_http", "MetaClaw", "meta", "metaclaw-openai", "METACLAW_OPENAI"} {
+		if got := NormalizeGatewayDriver(in); got != GatewayDriverMetaClawHTTP {
+			t.Fatalf("%q -> %q want %s", in, got, GatewayDriverMetaClawHTTP)
+		}
+	}
+}
