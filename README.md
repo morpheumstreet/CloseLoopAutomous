@@ -1,65 +1,118 @@
 # CloseLoopAutomous
 
-Self-iterating autonomous **mission / product control** backend—conceptually aligned with [Autensa / Mission Control](https://github.com/crshdn/mission-control), implemented as a **single Go service** with hexagonal architecture.
+**Mission and product control for autonomous, self-iterating workflows**—plan products, triage ideas, run Kanban tasks through agents, ship with PRs and merge queues, and watch it all move on a live event stream. The stack pairs a production-minded **Go** API (**arms**) with an optional **Fishtank** browser UI, in the spirit of [Autensa / Mission Control](https://github.com/crshdn/mission-control) but delivered as a focused service you can run locally or in Docker.
 
-## What’s here (backend: `arms/`)
+---
 
-Most capability lives under **`arms/`** (not always obvious from a shallow GitHub tree view):
+## What you get
 
-| Layer | Contents |
+### Product and idea lifecycle
+
+- **Products** with mission/vision, automation tier (`supervised` → `full_auto`), cadences for research and ideation, merge policy, and cost caps.
+- **Research and ideation** phases that feed structured **ideas** with rich metadata (scores, complexity, tags, sources).
+- **Swipe / preference flow** (`pass`, `maybe`, `yes`, `now`), a **maybe pool** with batch re-evaluation, **customer feedback** capture, and a **preference model** you can edit or recompute from swipe history.
+- **TF-IDF tag suggestions** (no LLM) for ideas and product-scoped corpus context.
+
+### Execution: tasks, convoys, and agents
+
+- **Kanban tasks** tied to approved ideas—planning, dispatch, checkpoints, restore, and completion—with **budget checks** before spend.
+- **Convoys**: DAG-style subtasks, mail between subtasks, wave dispatch with shared budget rules, plus **Mission Control–compatible** convoy routes on tasks.
+- **Agent registry** and **gateway endpoints** in the database: plug in **OpenClaw-class WebSockets**, **PicoClaw**, **ZeroClaw**, **Clawlet**, **IronClaw**, **Nanobot CLI**, **MimiClaw**, **zclaw relay**, **NullClaw A2A**, and more (see [`config/arms.toml`](config/arms.toml) comments).
+- Optional **Redis + arms-worker** for scheduled product ticks, autopilot, and **stall nudge / reassignment** automation.
+
+### Shipping and operations
+
+- **Pull requests** from tasks via GitHub REST or **`gh pr create`**, with GitHub.com and Enterprise-friendly configuration.
+- **Serialized merge queue** with lease semantics; backends include **noop**, **GitHub merge**, or **local git**.
+- **HMAC webhooks** for **agent completion** and **CI completion** so external runners can advance the board or finish convoy subtasks.
+- **Server-Sent Events** (`/api/live/events`) for dispatch, costs, checkpoints, PRs, merge ship, convoy activity, and more—with **outbox + relay** when using SQLite for restart-safe delivery.
+
+### Knowledge, costs, and observability
+
+- **Knowledge** indexing with configurable backends (e.g. **FTS5**, optional **chromem** / embeddings) for dispatch-time snippets and ingestion controls.
+- **Cost recording** and **per-product breakdowns** (by agent, model, time range) aligned with the same composite budget rules as dispatch.
+- **Operations log** for auditing product, task, merge-queue, and related actions.
+- **Operator endpoints**: health, version, fleet summary, and **host metrics** (CPU, memory, disk).
+
+### User interface
+
+- **Fishtank** (React + Vite) surfaces missions, docs, tasks, and system views—run with **Bun** for dev and production builds.
+
+---
+
+## At a glance
+
+| Piece | Location |
 |--------|-----------|
-| **HTTP API** | Products, ideas, Kanban tasks, convoys, costs, agents, merge queue, preference model, operations log, webhooks, SSE — see [`docs/api-ref.md`](docs/api-ref.md) |
-| **Domain** | `Product`, `Idea`, `Task` (MC-style statuses), `Convoy`, costs, autopilot tier enums — `arms/internal/domain/` |
-| **Persistence** | SQLite + versioned migrations through **016** (`arms/internal/adapters/sqlite/migrations/`), optional in-memory mode |
-| **Execution** | OpenClaw WebSocket client (`arms/internal/adapters/gateway/openclaw/`), gateway stub for tests |
-| **Realtime** | `GET /api/live/events` (SSE); **`event_outbox`** + relay when using SQLite; in-memory hub otherwise |
-| **Shipping** | `PullRequestPublisher` — REST (`go-github` + `ARMS_GITHUB_TOKEN`) or **`gh pr create`** (`ARMS_GITHUB_PR_BACKEND=gh`) |
+| HTTP API + domain | [`arms/`](arms/) (`cmd/arms`, hexagonal `internal/`) |
+| Background worker | [`arms/cmd/arms-worker`](arms/cmd/arms-worker) |
+| UI | [`fishtank/`](fishtank/) |
+| Example config | [`config/arms.toml`](config/arms.toml) |
 
-Parity and roadmap: [`docs/arms-mission-control-gap-todos.md`](docs/arms-mission-control-gap-todos.md).  
-OpenAPI: [`docs/openapi/arms-openapi.yaml`](docs/openapi/arms-openapi.yaml).
+**Status:** APIs and behavior evolve; parity and roadmap notes live in [`docs/arms-mission-control-gap-todos.md`](docs/arms-mission-control-gap-todos.md). For deployment hardening, see [`docs/arms-production-hardening.md`](docs/arms-production-hardening.md).
 
-## Quick start
+---
 
-**Run the API** (from repo root):
+## Appendix A — Technical reference
+
+| Document | Contents |
+|----------|-----------|
+| [`docs/design/overview.md`](docs/design/overview.md) | High-level design |
+| [`docs/design/part2.md`](docs/design/part2.md), [`docs/design/ui-design.md`](docs/design/ui-design.md) | Deeper design / UI notes |
+| [`docs/recomendeddesign.md`](docs/recomendeddesign.md) | Recommended design notes |
+| [`docs/add-multi-claw-types.md`](docs/add-multi-claw-types.md) | Multi-gateway / claw driver notes |
+| [`docs/fishtank-ui-wiring-outstanding.md`](docs/fishtank-ui-wiring-outstanding.md), [`docs/fishtank-ui-todos.md`](docs/fishtank-ui-todos.md) | UI wiring backlog |
+| [`arms/internal/domain/`](arms/internal/domain/) | Domain types (products, tasks, convoys, enums) |
+| [`arms/internal/adapters/sqlite/migrations/`](arms/internal/adapters/sqlite/migrations/) | Versioned SQLite schema |
+
+**Repository layout**
+
+| Path | Role |
+|------|------|
+| `arms/` | Go module: API server, worker, ports, adapters, jobs |
+| `docs/` | API reference, setup, production, gaps, design |
+| `fishtank/` | React UI (Bun-only scripts) |
+| `.github/workflows/` | CI for `arms` |
+
+---
+
+## Appendix B — API reference
+
+| Resource | Location |
+|----------|-----------|
+| Human-readable route tables and semantics | [`docs/api-ref.md`](docs/api-ref.md) |
+| OpenAPI 3.1 | [`docs/openapi/arms-openapi.yaml`](docs/openapi/arms-openapi.yaml) |
+| Live route inventory | `GET /api/docs/routes` on a running server (same catalog as `internal/adapters/httpapi/routes_catalog.go`) |
+
+**Auth:** Bearer token when `MC_API_TOKEN` is set; optional same-origin relaxation. Webhooks use **HMAC** (`WEBHOOK_SECRET`). SSE accepts Bearer header or `?token=` when auth is enabled.
+
+---
+
+## Appendix C — Setup guide
+
+End-to-end instructions (Go, Bun, optional Redis/Docker, env vars, Fishtank) are in **[`docs/setup-guide.md`](docs/setup-guide.md)**.
+
+**Minimal API run** (from repo root):
 
 ```bash
 cd arms
 go run ./cmd/arms
 ```
 
-**Docker** (SQLite volume + optional Redis for Asynq-backed autopilot when you set **`ARMS_REDIS_ADDR`** and run **`cmd/arms-worker`** alongside **`cmd/arms`**):
+**Docker** (SQLite volume; add Redis and `arms-worker` when using Asynq-backed schedules/autopilot—see setup guide):
 
 ```bash
 docker compose -f arms/docker-compose.yml up --build
 ```
 
-Service listens on **`http://localhost:8080`** by default (`ARMS_LISTEN`).
-
-**Smoke checks:**
+Default listen address: **`http://localhost:8080`** (`ARMS_LISTEN`). Quick checks:
 
 ```bash
 curl -s http://localhost:8080/api/health
 curl -s http://localhost:8080/api/docs/routes
 ```
 
-**SSE** (use `?token=…` if `MC_API_TOKEN` is set):
-
-```bash
-curl -N http://localhost:8080/api/live/events
-```
-
-With persistence, set `DATABASE_PATH` (e.g. `./data/arms.db`); empty uses in-memory stores. Optional **`ARMS_BUDGET_DEFAULT_CAP`** (default `100`, use `0` to disable) applies when no per-product `cost_caps` row exists. **GitHub PRs** (`POST /api/tasks/{id}/pull-request`): either set **`ARMS_GITHUB_TOKEN`** (or `GITHUB_TOKEN`) for the REST API, or set **`ARMS_GITHUB_PR_BACKEND=gh`** and use the [GitHub CLI](https://cli.github.com/) (`gh auth login`); optional **`ARMS_GH_BIN`**, **`ARMS_GITHUB_HOST`** (Enterprise). See [`docs/api-ref.md`](docs/api-ref.md).
-
-## Repo layout
-
-| Path | Role |
-|------|------|
-| `arms/` | Go module: `cmd/arms`, `cmd/arms-worker`, `internal/{domain,ports,adapters,application,platform,config,jobs}` |
-| `docs/` | API reference, gap analysis, production notes |
-| `fishtank/` | React UI — run with **Bun** (`bun install` / `bun run dev`); **not npm/Node** here ([setup-guide.md](docs/setup-guide.md)) |
-| `.github/workflows/` | CI for `arms` |
-
-## Tests
+**Tests** (`arms/`):
 
 ```bash
 cd arms
@@ -67,6 +120,8 @@ go test ./...
 go test -tags=integration ./internal/integration/...
 ```
 
-## License / status
+---
 
-Work in progress; behavior and APIs evolve with the gap checklist. For deployment hardening, see [`docs/arms-production-hardening.md`](docs/arms-production-hardening.md).
+## Appendix D — License
+
+This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE) in the repository root (**SPDX:** `MIT`).
