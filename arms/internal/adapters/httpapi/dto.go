@@ -9,11 +9,11 @@ import (
 )
 
 type createProductReq struct {
-	Name            string `json:"name"`
-	WorkspaceID     string `json:"workspace_id"`
-	RepoURL         string `json:"repo_url,omitempty"`
-	RepoClonePath   string `json:"repo_clone_path,omitempty"`
-	RepoBranch      string `json:"repo_branch,omitempty"`
+	Name             string `json:"name"`
+	WorkspaceID      string `json:"workspace_id"`
+	RepoURL          string `json:"repo_url,omitempty"`
+	RepoClonePath    string `json:"repo_clone_path,omitempty"`
+	RepoBranch       string `json:"repo_branch,omitempty"`
 	Description      string `json:"description,omitempty"`
 	ProgramDocument  string `json:"program_document,omitempty"`
 	MissionStatement string `json:"mission_statement,omitempty"`
@@ -45,17 +45,17 @@ func (r *createProductReq) validate() error {
 }
 
 type patchProductReq struct {
-	Name            *string `json:"name,omitempty"`
-	RepoURL         *string `json:"repo_url,omitempty"`
-	RepoClonePath   *string `json:"repo_clone_path,omitempty"`
-	RepoBranch      *string `json:"repo_branch,omitempty"`
-	Description       *string `json:"description,omitempty"`
-	ProgramDocument   *string `json:"program_document,omitempty"`
-	MissionStatement  *string `json:"mission_statement,omitempty"`
-	VisionStatement   *string `json:"vision_statement,omitempty"`
-	SettingsJSON      *string `json:"settings_json,omitempty"`
-	IconURL           *string `json:"icon_url,omitempty"`
-	MergePolicyJSON   *string `json:"merge_policy_json,omitempty"`
+	Name             *string `json:"name,omitempty"`
+	RepoURL          *string `json:"repo_url,omitempty"`
+	RepoClonePath    *string `json:"repo_clone_path,omitempty"`
+	RepoBranch       *string `json:"repo_branch,omitempty"`
+	Description      *string `json:"description,omitempty"`
+	ProgramDocument  *string `json:"program_document,omitempty"`
+	MissionStatement *string `json:"mission_statement,omitempty"`
+	VisionStatement  *string `json:"vision_statement,omitempty"`
+	SettingsJSON     *string `json:"settings_json,omitempty"`
+	IconURL          *string `json:"icon_url,omitempty"`
+	MergePolicyJSON  *string `json:"merge_policy_json,omitempty"`
 
 	ResearchCadenceSec  *int    `json:"research_cadence_sec,omitempty"`
 	IdeationCadenceSec  *int    `json:"ideation_cadence_sec,omitempty"`
@@ -220,12 +220,12 @@ type dispatchReq struct {
 }
 
 type registerAgentReq struct {
-	DisplayName         string `json:"display_name"`
-	ProductID           string `json:"product_id,omitempty"`
-	Source              string `json:"source,omitempty"`
-	ExternalRef         string `json:"external_ref,omitempty"`
-	GatewayEndpointID   string `json:"gateway_endpoint_id"`
-	SessionKey          string `json:"session_key,omitempty"`
+	DisplayName       string `json:"display_name"`
+	ProductID         string `json:"product_id,omitempty"`
+	Source            string `json:"source,omitempty"`
+	ExternalRef       string `json:"external_ref,omitempty"`
+	GatewayEndpointID string `json:"gateway_endpoint_id"`
+	SessionKey        string `json:"session_key,omitempty"`
 }
 
 func (r *registerAgentReq) validate() error {
@@ -258,7 +258,7 @@ func (r *createGatewayEndpointReq) validate() error {
 
 func validateGatewayEndpointFields(normalizedDriver, gatewayURL string) error {
 	if normalizedDriver == "" {
-		return fmt.Errorf("driver must be stub, openclaw_ws, nullclaw_ws, nullclaw_a2a, picoclaw_ws, zeroclaw_ws, mimiclaw_ws, nanobot_cli, nanobot, or zclaw_relay_http (aliases: zclaw, zclaw_relay, …)")
+		return fmt.Errorf("driver must be stub, openclaw_ws, nullclaw_ws, nullclaw_a2a, picoclaw_ws, zeroclaw_ws, clawlet_ws, ironclaw_ws, mimiclaw_ws, nanobot_cli, nanobot, zclaw_relay_http, or mistermorph_http (aliases: zclaw, mistermorph, ironclaw, …)")
 	}
 	if normalizedDriver != domain.GatewayDriverStub && normalizedDriver != domain.GatewayDriverNanobotCLI && strings.TrimSpace(gatewayURL) == "" {
 		return fmt.Errorf("gateway_url is required for driver %s", normalizedDriver)

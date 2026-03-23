@@ -19,7 +19,7 @@ import (
 )
 
 // Options configure the WebSocket gateway client for OpenClaw-class protocols
-// (connect.challenge / connect, chat.send). Driver zeroclaw_ws uses the zeroclaw package Client, which wraps this type.
+// (connect.challenge / connect, chat.send). Drivers zeroclaw_ws, clawlet_ws, and ironclaw_ws use thin wrappers around this type.
 // Stock NullClaw uses HTTP /a2a instead; see package nullclaw (Client) and driver nullclaw_a2a.
 type Options struct {
 	URL      string

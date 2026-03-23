@@ -7,8 +7,8 @@ import (
 
 // Gateway driver values stored on gateway_endpoints.driver and used for dispatch routing.
 const (
-	GatewayDriverStub        = "stub"
-	GatewayDriverOpenClawWS  = "openclaw_ws"
+	GatewayDriverStub       = "stub"
+	GatewayDriverOpenClawWS = "openclaw_ws"
 	// GatewayDriverNullClawWS is the legacy OpenClaw-shaped WebSocket RPC (not stock NullClaw HTTP).
 	GatewayDriverNullClawWS = "nullclaw_ws"
 	// GatewayDriverNullClawA2A is NullClaw's HTTP gateway: JSON-RPC 2.0 POST …/a2a (message/send).
@@ -17,12 +17,18 @@ const (
 	GatewayDriverPicoClawWS = "picoclaw_ws"
 	// GatewayDriverZeroClawWS is the OpenClaw-compatible WebSocket RPC used by ZeroClaw (connect + chat.send).
 	GatewayDriverZeroClawWS = "zeroclaw_ws"
+	// GatewayDriverClawletWS is the OpenClaw-compatible WebSocket RPC used by Clawlet (same wire as openclaw_ws / zeroclaw_ws).
+	GatewayDriverClawletWS = "clawlet_ws"
+	// GatewayDriverIronClawWS is the OpenClaw-compatible WebSocket RPC used by IronClaw (Rust-native OpenClaw-class gateway).
+	GatewayDriverIronClawWS = "ironclaw_ws"
 	// GatewayDriverMimiClawWS is the JSON WebSocket protocol used by MimiClaw (type message + chat_id on port 18789).
 	GatewayDriverMimiClawWS = "mimiclaw_ws"
 	// GatewayDriverNanobotCLI runs HKUDS nanobot via `nanobot agent -m` (subprocess); not an OpenClaw WebSocket gateway.
 	GatewayDriverNanobotCLI = "nanobot_cli"
 	// GatewayDriverZClawRelayHTTP is the zclaw hosted web relay: JSON POST …/api/chat (see tnm/zclaw scripts/web_relay.py).
 	GatewayDriverZClawRelayHTTP = "zclaw_relay_http"
+	// GatewayDriverMisterMorphHTTP is the MisterMorph daemon/runtime task API: POST …/tasks + GET …/tasks/{id} (Bearer auth).
+	GatewayDriverMisterMorphHTTP = "mistermorph_http"
 )
 
 // GatewayEndpoint is a persisted remote execution plane (URL + auth + driver).
@@ -64,12 +70,18 @@ func NormalizeGatewayDriver(s string) string {
 		return GatewayDriverPicoClawWS
 	case "zeroclaw", "zeroclaw_ws", "zeroclaw-ws", "zero_claw", "zero-claw":
 		return GatewayDriverZeroClawWS
+	case "clawlet", "clawlet_ws", "clawlet-ws":
+		return GatewayDriverClawletWS
+	case "ironclaw", "ironclaw_ws", "ironclaw-ws", "iron_claw", "iron-claw":
+		return GatewayDriverIronClawWS
 	case "mimiclaw", "mimiclaw_ws", "mimiclaw-ws", "mimi_claw", "mimi-claw":
 		return GatewayDriverMimiClawWS
 	case "nanobot", "nanobot_cli", "nanobot-cli":
 		return GatewayDriverNanobotCLI
 	case "zclaw", "zclaw_relay", "zclaw-relay", "zclaw_relay_http", "zclaw-relay-http", "zclaw_http", "zclaw-http":
 		return GatewayDriverZClawRelayHTTP
+	case "mistermorph", "mistermorph_http", "mistermorph-http", "mister_morph", "mister-morph":
+		return GatewayDriverMisterMorphHTTP
 	default:
 		return ""
 	}

@@ -225,6 +225,8 @@ const GATEWAY_DRIVER_OPTIONS = [
   ['nullclaw_a2a', 'nullclaw_a2a'],
   ['picoclaw_ws', 'picoclaw_ws'],
   ['zeroclaw_ws', 'zeroclaw_ws'],
+  ['clawlet_ws', 'clawlet_ws'],
+  ['ironclaw_ws', 'ironclaw_ws'],
   ['mimiclaw_ws', 'mimiclaw_ws'],
   ['zclaw_relay_http', 'zclaw_relay_http'],
 ] as const;

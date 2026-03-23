@@ -26,6 +26,22 @@ func TestNormalizeGatewayDriver_ZeroClaw(t *testing.T) {
 	}
 }
 
+func TestNormalizeGatewayDriver_Clawlet(t *testing.T) {
+	for _, in := range []string{"clawlet_ws", "Clawlet", "clawlet-ws"} {
+		if got := NormalizeGatewayDriver(in); got != GatewayDriverClawletWS {
+			t.Fatalf("%q -> %q want %s", in, got, GatewayDriverClawletWS)
+		}
+	}
+}
+
+func TestNormalizeGatewayDriver_IronClaw(t *testing.T) {
+	for _, in := range []string{"ironclaw_ws", "IronClaw", "iron-claw", "iron_claw"} {
+		if got := NormalizeGatewayDriver(in); got != GatewayDriverIronClawWS {
+			t.Fatalf("%q -> %q want %s", in, got, GatewayDriverIronClawWS)
+		}
+	}
+}
+
 func TestNormalizeGatewayDriver_MimiClaw(t *testing.T) {
 	for _, in := range []string{"mimiclaw_ws", "MimiClaw", "mimi-claw"} {
 		if got := NormalizeGatewayDriver(in); got != GatewayDriverMimiClawWS {

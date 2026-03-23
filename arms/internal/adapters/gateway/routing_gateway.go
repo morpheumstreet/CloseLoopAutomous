@@ -26,9 +26,12 @@ func isPooledRemoteDriver(d string) bool {
 		domain.GatewayDriverNullClawA2A,
 		domain.GatewayDriverPicoClawWS,
 		domain.GatewayDriverZeroClawWS,
+		domain.GatewayDriverClawletWS,
+		domain.GatewayDriverIronClawWS,
 		domain.GatewayDriverMimiClawWS,
 		domain.GatewayDriverNanobotCLI,
-		domain.GatewayDriverZClawRelayHTTP:
+		domain.GatewayDriverZClawRelayHTTP,
+		domain.GatewayDriverMisterMorphHTTP:
 		return true
 	default:
 		return false
