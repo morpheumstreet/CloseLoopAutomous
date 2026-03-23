@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   Activity,
@@ -9,14 +9,17 @@ import {
   Lightbulb,
   MemoryStick,
   Network,
+  Plus,
   Radio,
   RefreshCw,
   Server,
   Settings,
 } from 'lucide-react';
 import { ArmsClient, ArmsHttpError, buildLiveEventsUrl, buildLiveEventsUrlTemplate } from '../api/armsClient';
-import type { ApiGatewayEndpoint, ApiHostMetrics, ApiVersion, PatchGatewayEndpointBody } from '../api/armsTypes';
+import type { ApiGatewayEndpoint, ApiHostMetrics, ApiVersion } from '../api/armsTypes';
 import { ThemeCycleButton } from '../components/shell/ThemeCycleButton';
+import { CreateGatewayEndpointModal } from '../components/system/CreateGatewayEndpointModal';
+import { EditGatewayEndpointModal } from '../components/system/EditGatewayEndpointModal';
 import { useMissionUi } from '../context/MissionUiContext';
 import { IDEATION_BUCKETS, IDEATION_SOP_NUMBERS, type IdeationBucketValue } from '../lib/ideaCategories';
 import {
@@ -218,49 +221,15 @@ function IdeationBucketsSettingsPanel() {
   );
 }
 
-const GATEWAY_DRIVER_OPTIONS = [
-  ['stub', 'stub'],
-  ['openclaw_ws', 'openclaw_ws'],
-  ['nemoclaw_ws', 'nemoclaw_ws'],
-  ['nullclaw_ws', 'nullclaw_ws'],
-  ['nullclaw_a2a', 'nullclaw_a2a'],
-  ['picoclaw_ws', 'picoclaw_ws'],
-  ['zeroclaw_ws', 'zeroclaw_ws'],
-  ['clawlet_ws', 'clawlet_ws'],
-  ['ironclaw_ws', 'ironclaw_ws'],
-  ['mimiclaw_ws', 'mimiclaw_ws'],
-  ['zclaw_relay_http', 'zclaw_relay_http'],
-  ['nanobot_cli', 'nanobot_cli'],
-  ['inkos_cli', 'inkos_cli'],
-  ['mistermorph_http', 'mistermorph_http'],
-  ['copaw_http', 'copaw_http'],
-  ['metaclaw_http', 'metaclaw_http'],
-] as const;
-
 function GatewayEndpointsPanel({ client, defaultProductId }: { client: ArmsClient; defaultProductId?: string }) {
   const [rows, setRows] = useState<ApiGatewayEndpoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-
-  const [cName, setCName] = useState('');
-  const [cDriver, setCDriver] = useState<string>('openclaw_ws');
-  const [cUrl, setCUrl] = useState('');
-  const [cToken, setCToken] = useState('');
-  const [cDevice, setCDevice] = useState('');
-  const [cTimeout, setCTimeout] = useState('');
-  const [cProduct, setCProduct] = useState(defaultProductId ?? '');
+  const [createModalOpen, setCreateModalOpen] = useState(false);
 
   const [editTarget, setEditTarget] = useState<ApiGatewayEndpoint | null>(null);
-  const [eName, setEName] = useState('');
-  const [eDriver, setEDriver] = useState('');
-  const [eUrl, setEUrl] = useState('');
-  const [eDevice, setEDevice] = useState('');
-  const [eTimeout, setETimeout] = useState('');
-  const [eProduct, setEProduct] = useState('');
-  const [eNewToken, setENewToken] = useState('');
-  const [eClearToken, setEClearToken] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -284,89 +253,9 @@ function GatewayEndpointsPanel({ client, defaultProductId }: { client: ArmsClien
     void load();
   }, [load]);
 
-  useEffect(() => {
-    setCProduct(defaultProductId ?? '');
-  }, [defaultProductId]);
-
   function openEdit(row: ApiGatewayEndpoint) {
     setEditTarget(row);
-    setEName(row.display_name);
-    setEDriver(row.driver);
-    setEUrl(row.gateway_url);
-    setEDevice(row.device_id);
-    setETimeout(String(row.timeout_sec ?? 0));
-    setEProduct(row.product_id ?? '');
-    setENewToken('');
-    setEClearToken(false);
     setNote(null);
-  }
-
-  function closeEdit() {
-    setEditTarget(null);
-  }
-
-  async function onCreate(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setNote(null);
-    setError(null);
-    const timeoutSec = parseInt(cTimeout.trim(), 10);
-    try {
-      await client.createGatewayEndpoint({
-        display_name: cName.trim() || undefined,
-        driver: cDriver,
-        gateway_url: cUrl.trim() || undefined,
-        gateway_token: cToken.trim() || undefined,
-        device_id: cDevice.trim() || undefined,
-        timeout_sec: Number.isFinite(timeoutSec) ? timeoutSec : undefined,
-        product_id: cProduct.trim() || undefined,
-      });
-      setNote('Gateway endpoint created.');
-      setCName('');
-      setCUrl('');
-      setCToken('');
-      setCDevice('');
-      setCTimeout('');
-      await load();
-    } catch (err) {
-      setNote(err instanceof ArmsHttpError ? err.message : 'Create failed.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onSaveEdit(e: FormEvent) {
-    e.preventDefault();
-    if (!editTarget) return;
-    setBusy(true);
-    setNote(null);
-    setError(null);
-    const ts = parseInt(eTimeout.trim(), 10);
-    const timeoutSec = Number.isFinite(ts) ? ts : editTarget.timeout_sec;
-    const body: PatchGatewayEndpointBody = {};
-    if (eName.trim() !== editTarget.display_name) body.display_name = eName.trim();
-    if (eDriver !== editTarget.driver) body.driver = eDriver;
-    if (eUrl.trim() !== editTarget.gateway_url) body.gateway_url = eUrl.trim();
-    if (eDevice.trim() !== editTarget.device_id) body.device_id = eDevice.trim();
-    if (timeoutSec !== editTarget.timeout_sec) body.timeout_sec = timeoutSec;
-    const prevPid = editTarget.product_id ?? '';
-    if (eProduct.trim() !== prevPid) body.product_id = eProduct.trim();
-    if (eClearToken) body.gateway_token = '';
-    else if (eNewToken.trim() !== '') body.gateway_token = eNewToken.trim();
-    try {
-      if (Object.keys(body).length === 0) {
-        setNote('No changes to save.');
-      } else {
-        await client.patchGatewayEndpoint(editTarget.id, body);
-        setNote('Saved.');
-        closeEdit();
-        await load();
-      }
-    } catch (err) {
-      setNote(err instanceof ArmsHttpError ? err.message : 'Update failed.');
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function onDelete(id: string) {
@@ -377,7 +266,7 @@ function GatewayEndpointsPanel({ client, defaultProductId }: { client: ArmsClien
     try {
       await client.deleteGatewayEndpoint(id);
       setNote('Deleted.');
-      if (editTarget?.id === id) closeEdit();
+      if (editTarget?.id === id) setEditTarget(null);
       await load();
     } catch (err) {
       setNote(err instanceof ArmsHttpError ? err.message : 'Delete failed.');
@@ -403,10 +292,22 @@ function GatewayEndpointsPanel({ client, defaultProductId }: { client: ArmsClien
             Gateway endpoints (database)
           </h2>
         </div>
-        <button type="button" className="ft-btn-ghost" style={{ fontSize: '0.75rem' }} disabled={loading || busy} onClick={() => void load()}>
-          <RefreshCw size={14} className={loading ? 'ft-spin' : ''} aria-hidden />
-          Refresh
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="ft-btn-primary"
+            style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+            disabled={loading || busy}
+            onClick={() => setCreateModalOpen(true)}
+          >
+            <Plus size={14} aria-hidden />
+            Add endpoint
+          </button>
+          <button type="button" className="ft-btn-ghost" style={{ fontSize: '0.75rem' }} disabled={loading || busy} onClick={() => void load()}>
+            <RefreshCw size={14} className={loading ? 'ft-spin' : ''} aria-hidden />
+            Refresh
+          </button>
+        </div>
       </div>
       <p className="ft-muted" style={{ margin: '0.5rem 0 0.75rem', fontSize: '0.8rem', lineHeight: 1.5 }}>
         Manual dispatch profiles stored in arms (<code className="ft-mono">gateway_endpoints</code>). Register execution agents with{' '}
@@ -484,149 +385,29 @@ function GatewayEndpointsPanel({ client, defaultProductId }: { client: ArmsClien
         {!loading && rows.length === 0 ? <p className="ft-muted" style={{ margin: '0.5rem 0 0', fontSize: '0.8rem' }}>No rows yet.</p> : null}
       </div>
 
-      <h3 className="ft-field-label" style={{ margin: '0 0 0.5rem', fontSize: '0.65rem', letterSpacing: '0.04em' }}>
-        Add endpoint
-      </h3>
-      <form onSubmit={(ev) => void onCreate(ev)} style={{ display: 'grid', gap: '0.5rem', maxWidth: '36rem' }}>
-        <label className="ft-field" style={{ margin: 0 }}>
-          <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-            Display name
-          </span>
-          <input className="ft-input ft-input--sm" value={cName} onChange={(ev) => setCName(ev.target.value)} disabled={busy} placeholder="Optional" />
-        </label>
-        <label className="ft-field" style={{ margin: 0 }}>
-          <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-            Driver
-          </span>
-          <select className="ft-input ft-input--sm" value={cDriver} onChange={(ev) => setCDriver(ev.target.value)} disabled={busy}>
-            {GATEWAY_DRIVER_OPTIONS.map(([v, label]) => (
-              <option key={v} value={v}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="ft-field" style={{ margin: 0 }}>
-          <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-            Gateway URL
-          </span>
-          <input className="ft-input ft-input--sm" value={cUrl} onChange={(ev) => setCUrl(ev.target.value)} disabled={busy} placeholder="wss://… (not required for stub)" />
-        </label>
-        <label className="ft-field" style={{ margin: 0 }}>
-          <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-            Gateway token
-          </span>
-          <input className="ft-input ft-input--sm" value={cToken} onChange={(ev) => setCToken(ev.target.value)} disabled={busy} placeholder="Optional" autoComplete="off" />
-        </label>
-        <label className="ft-field" style={{ margin: 0 }}>
-          <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-            Device id
-          </span>
-          <input className="ft-input ft-input--sm" value={cDevice} onChange={(ev) => setCDevice(ev.target.value)} disabled={busy} placeholder="Optional" />
-        </label>
-        <label className="ft-field" style={{ margin: 0 }}>
-          <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-            Timeout (sec, 0 = server default)
-          </span>
-          <input className="ft-input ft-input--sm" value={cTimeout} onChange={(ev) => setCTimeout(ev.target.value)} disabled={busy} placeholder="0" inputMode="numeric" />
-        </label>
-        <label className="ft-field" style={{ margin: 0 }}>
-          <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-            Product id (optional scope)
-          </span>
-          <input className="ft-input ft-input--sm" value={cProduct} onChange={(ev) => setCProduct(ev.target.value)} disabled={busy} placeholder="Workspace / product UUID" />
-        </label>
-        <div>
-          <button type="submit" className="ft-btn-primary" style={{ fontSize: '0.78rem' }} disabled={busy}>
-            Create gateway endpoint
-          </button>
-        </div>
-      </form>
+      <CreateGatewayEndpointModal
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        client={client}
+        defaultProductId={defaultProductId}
+        onCreated={async () => {
+          setNote('Gateway endpoint created.');
+          setError(null);
+          await load();
+        }}
+      />
 
-      {editTarget ? (
-        <div
-          style={{
-            marginTop: '1.25rem',
-            padding: '0.85rem',
-            borderRadius: 'var(--ft-radius-sm)',
-            border: '1px solid var(--mc-border)',
-            background: 'var(--mc-bg-tertiary)',
-          }}
-        >
-          <h3 className="ft-field-label" style={{ margin: '0 0 0.5rem', fontSize: '0.65rem', letterSpacing: '0.04em' }}>
-            Edit <span className="ft-mono">{editTarget.id}</span>
-          </h3>
-          <form onSubmit={(ev) => void onSaveEdit(ev)} style={{ display: 'grid', gap: '0.5rem', maxWidth: '36rem' }}>
-            <label className="ft-field" style={{ margin: 0 }}>
-              <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-                Display name
-              </span>
-              <input className="ft-input ft-input--sm" value={eName} onChange={(ev) => setEName(ev.target.value)} disabled={busy} />
-            </label>
-            <label className="ft-field" style={{ margin: 0 }}>
-              <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-                Driver
-              </span>
-              <select className="ft-input ft-input--sm" value={eDriver} onChange={(ev) => setEDriver(ev.target.value)} disabled={busy}>
-                {GATEWAY_DRIVER_OPTIONS.map(([v, label]) => (
-                  <option key={v} value={v}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="ft-field" style={{ margin: 0 }}>
-              <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-                Gateway URL
-              </span>
-              <input className="ft-input ft-input--sm" value={eUrl} onChange={(ev) => setEUrl(ev.target.value)} disabled={busy} />
-            </label>
-            <label className="ft-field" style={{ margin: 0 }}>
-              <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-                New gateway token
-              </span>
-              <input
-                className="ft-input ft-input--sm"
-                value={eNewToken}
-                onChange={(ev) => setENewToken(ev.target.value)}
-                disabled={busy || eClearToken}
-                placeholder="Leave blank to keep current"
-                autoComplete="off"
-              />
-            </label>
-            <label className="ft-field" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <input type="checkbox" checked={eClearToken} onChange={(ev) => setEClearToken(ev.target.checked)} disabled={busy} />
-              <span style={{ fontSize: '0.78rem' }}>Clear stored token</span>
-            </label>
-            <label className="ft-field" style={{ margin: 0 }}>
-              <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-                Device id
-              </span>
-              <input className="ft-input ft-input--sm" value={eDevice} onChange={(ev) => setEDevice(ev.target.value)} disabled={busy} />
-            </label>
-            <label className="ft-field" style={{ margin: 0 }}>
-              <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-                Timeout (sec)
-              </span>
-              <input className="ft-input ft-input--sm" value={eTimeout} onChange={(ev) => setETimeout(ev.target.value)} disabled={busy} inputMode="numeric" />
-            </label>
-            <label className="ft-field" style={{ margin: 0 }}>
-              <span className="ft-field-label" style={{ fontSize: '0.65rem' }}>
-                Product id
-              </span>
-              <input className="ft-input ft-input--sm" value={eProduct} onChange={(ev) => setEProduct(ev.target.value)} disabled={busy} placeholder="Empty = global" />
-            </label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <button type="submit" className="ft-btn-primary" style={{ fontSize: '0.78rem' }} disabled={busy}>
-                Save changes
-              </button>
-              <button type="button" className="ft-btn-ghost" style={{ fontSize: '0.78rem' }} disabled={busy} onClick={closeEdit}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
+      <EditGatewayEndpointModal
+        open={editTarget !== null}
+        endpoint={editTarget}
+        onClose={() => setEditTarget(null)}
+        client={client}
+        onSaved={async () => {
+          setNote('Saved.');
+          setError(null);
+          await load();
+        }}
+      />
     </section>
   );
 }

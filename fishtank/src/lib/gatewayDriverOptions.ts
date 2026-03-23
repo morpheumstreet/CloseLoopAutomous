@@ -1,0 +1,18 @@
+export const GATEWAY_DRIVER_OPTIONS = [
+  ['stub', 'stub'],
+  ['openclaw_ws', 'openclaw_ws'],
+  ['nemoclaw_ws', 'nemoclaw_ws'],
+  ['nullclaw_ws', 'nullclaw_ws'],
+  ['nullclaw_a2a', 'nullclaw_a2a'],
+  ['picoclaw_ws', 'picoclaw_ws'],
+  ['zeroclaw_ws', 'zeroclaw_ws'],
+  ['clawlet_ws', 'clawlet_ws'],
+  ['ironclaw_ws', 'ironclaw_ws'],
+  ['mimiclaw_ws', 'mimiclaw_ws'],
+  ['zclaw_relay_http', 'zclaw_relay_http'],
+  ['nanobot_cli', 'nanobot_cli'],
+  ['inkos_cli', 'inkos_cli'],
+  ['mistermorph_http', 'mistermorph_http'],
+  ['copaw_http', 'copaw_http'],
+  ['metaclaw_http', 'metaclaw_http'],
+] as const;
