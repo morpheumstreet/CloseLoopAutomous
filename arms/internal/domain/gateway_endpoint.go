@@ -17,6 +17,10 @@ const (
 	GatewayDriverPicoClawWS = "picoclaw_ws"
 	// GatewayDriverZeroClawWS is the OpenClaw-compatible WebSocket RPC used by ZeroClaw (connect + chat.send).
 	GatewayDriverZeroClawWS = "zeroclaw_ws"
+	// GatewayDriverMimiClawWS is the JSON WebSocket protocol used by MimiClaw (type message + chat_id on port 18789).
+	GatewayDriverMimiClawWS = "mimiclaw_ws"
+	// GatewayDriverNanobotCLI runs HKUDS nanobot via `nanobot agent -m` (subprocess); not an OpenClaw WebSocket gateway.
+	GatewayDriverNanobotCLI = "nanobot_cli"
 )
 
 // GatewayEndpoint is a persisted remote execution plane (URL + auth + driver).
@@ -58,6 +62,10 @@ func NormalizeGatewayDriver(s string) string {
 		return GatewayDriverPicoClawWS
 	case "zeroclaw", "zeroclaw_ws", "zeroclaw-ws", "zero_claw", "zero-claw":
 		return GatewayDriverZeroClawWS
+	case "mimiclaw", "mimiclaw_ws", "mimiclaw-ws", "mimi_claw", "mimi-claw":
+		return GatewayDriverMimiClawWS
+	case "nanobot", "nanobot_cli", "nanobot-cli":
+		return GatewayDriverNanobotCLI
 	default:
 		return ""
 	}

@@ -225,6 +225,7 @@ const GATEWAY_DRIVER_OPTIONS = [
   ['nullclaw_a2a', 'nullclaw_a2a'],
   ['picoclaw_ws', 'picoclaw_ws'],
   ['zeroclaw_ws', 'zeroclaw_ws'],
+  ['mimiclaw_ws', 'mimiclaw_ws'],
 ] as const;
 
 function GatewayEndpointsPanel({ client, defaultProductId }: { client: ArmsClient; defaultProductId?: string }) {

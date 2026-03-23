@@ -25,3 +25,11 @@ func TestNormalizeGatewayDriver_ZeroClaw(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeGatewayDriver_MimiClaw(t *testing.T) {
+	for _, in := range []string{"mimiclaw_ws", "MimiClaw", "mimi-claw"} {
+		if got := NormalizeGatewayDriver(in); got != GatewayDriverMimiClawWS {
+			t.Fatalf("%q -> %q want %s", in, got, GatewayDriverMimiClawWS)
+		}
+	}
+}

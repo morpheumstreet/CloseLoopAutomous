@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/closeloopautomous/arms/internal/adapters/gateway/mimiclaw"
 	"github.com/closeloopautomous/arms/internal/adapters/gateway/nullclaw"
 	"github.com/closeloopautomous/arms/internal/adapters/gateway/openclaw"
 	"github.com/closeloopautomous/arms/internal/adapters/gateway/picoclaw"
@@ -19,6 +20,7 @@ type clientPool struct {
 	openclaw       map[string]*openclaw.Client
 	zeroclaw       map[string]*zeroclaw.Client
 	picoclaw       map[string]*picoclaw.Client
+	mimiclaw       map[string]*mimiclaw.Client
 	nullclawHTTP   map[string]*nullclaw.Client
 	knowledge      func(context.Context, domain.ProductID, string) (string, error)
 	defaultTimeout time.Duration
@@ -29,6 +31,7 @@ func newClientPool(knowledge func(context.Context, domain.ProductID, string) (st
 		openclaw:       make(map[string]*openclaw.Client),
 		zeroclaw:       make(map[string]*zeroclaw.Client),
 		picoclaw:       make(map[string]*picoclaw.Client),
+		mimiclaw:       make(map[string]*mimiclaw.Client),
 		nullclawHTTP:   make(map[string]*nullclaw.Client),
 		knowledge:      knowledge,
 		defaultTimeout: defaultTimeout,
@@ -122,6 +125,30 @@ func (p *clientPool) picoclawClientFor(target domain.DispatchTarget) *picoclaw.C
 	return c
 }
 
+func (p *clientPool) mimiclawClientFor(target domain.DispatchTarget) *mimiclaw.Client {
+	to := target.Timeout
+	if to <= 0 {
+		to = p.defaultTimeout
+	}
+	if to <= 0 {
+		to = 30 * time.Second
+	}
+	k := p.key(target)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if c, ok := p.mimiclaw[k]; ok {
+		return c
+	}
+	c := mimiclaw.New(mimiclaw.Options{
+		URL:                  target.GatewayURL,
+		Token:                target.GatewayToken,
+		Timeout:              to,
+		KnowledgeForDispatch: p.knowledge,
+	})
+	p.mimiclaw[k] = c
+	return c
+}
+
 func (p *clientPool) nullclawClientFor(target domain.DispatchTarget) *nullclaw.Client {
 	to := target.Timeout
 	if to <= 0 {
@@ -150,6 +177,8 @@ func (p *clientPool) dispatchTask(ctx context.Context, target domain.DispatchTar
 	switch target.Driver {
 	case domain.GatewayDriverPicoClawWS:
 		return p.picoclawClientFor(target).DispatchTaskWithSession(ctx, task, target.SessionKey)
+	case domain.GatewayDriverMimiClawWS:
+		return p.mimiclawClientFor(target).DispatchTaskWithSession(ctx, task, target.SessionKey)
 	case domain.GatewayDriverNullClawA2A:
 		return p.nullclawClientFor(target).DispatchTaskWithSession(ctx, task, target.SessionKey)
 	case domain.GatewayDriverZeroClawWS:
@@ -163,6 +192,8 @@ func (p *clientPool) dispatchSubtask(ctx context.Context, target domain.Dispatch
 	switch target.Driver {
 	case domain.GatewayDriverPicoClawWS:
 		return p.picoclawClientFor(target).DispatchSubtaskWithSession(ctx, parent, sub, target.SessionKey)
+	case domain.GatewayDriverMimiClawWS:
+		return p.mimiclawClientFor(target).DispatchSubtaskWithSession(ctx, parent, sub, target.SessionKey)
 	case domain.GatewayDriverNullClawA2A:
 		return p.nullclawClientFor(target).DispatchSubtaskWithSession(ctx, parent, sub, target.SessionKey)
 	case domain.GatewayDriverZeroClawWS:
@@ -184,11 +215,15 @@ func (p *clientPool) close() {
 	for _, c := range p.picoclaw {
 		_ = c.Close()
 	}
+	for _, c := range p.mimiclaw {
+		_ = c.Close()
+	}
 	for _, c := range p.nullclawHTTP {
 		_ = c.Close()
 	}
 	p.openclaw = make(map[string]*openclaw.Client)
 	p.zeroclaw = make(map[string]*zeroclaw.Client)
 	p.picoclaw = make(map[string]*picoclaw.Client)
+	p.mimiclaw = make(map[string]*mimiclaw.Client)
 	p.nullclawHTTP = make(map[string]*nullclaw.Client)
 }
