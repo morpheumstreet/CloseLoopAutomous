@@ -17,8 +17,33 @@
 
 - **Kanban tasks** tied to approved ideas—planning, dispatch, checkpoints, restore, and completion—with **budget checks** before spend.
 - **Convoys**: DAG-style subtasks, mail between subtasks, wave dispatch with shared budget rules, plus **Mission Control–compatible** convoy routes on tasks.
-- **Agent registry** and **gateway endpoints** in the database: plug in **OpenClaw-class WebSockets**, **PicoClaw**, **ZeroClaw**, **Clawlet**, **IronClaw**, **Nanobot CLI**, **MimiClaw**, **zclaw relay**, **NullClaw A2A**, and more (see [`config/arms.toml`](config/arms.toml) comments).
+- **Agent registry** and **gateway endpoints** in the database: each endpoint uses a **`driver`** string to select the integration below; field semantics (URL, token, `device_id`, `session_key`) match [`config/arms.toml`](config/arms.toml) and the domain constants in [`arms/internal/domain/gateway_endpoint.go`](arms/internal/domain/gateway_endpoint.go).
 - Optional **Redis + arms-worker** for scheduled product ticks, autopilot, and **stall nudge / reassignment** automation.
+
+### Supported gateway drivers (“claws”)
+
+These are the **`gateway_endpoints.driver`** values **arms** recognizes today (aliases such as `openclaw` → `openclaw_ws` are normalized in code).
+
+| Driver | Agent / runtime | How dispatch runs |
+|--------|-----------------|-------------------|
+| `stub` | Built-in stub | In-process no-op (seed endpoint `gw-stub`); for tests and dry runs. |
+| `openclaw_ws` | [OpenClaw](https://github.com/openclaw/openclaw) | WebSocket RPC (`connect`, `chat.send`)—the reference OpenClaw-class wire. |
+| `nemoclaw_ws` | NemoClaw / NVIDIA OpenShell | Same WebSocket shape as OpenClaw; optional `nemoclaw <sandbox> start` before dial (`ARMS_NEMOCLAW_*`). |
+| `nullclaw_ws` | NullClaw (legacy) | OpenClaw-shaped WebSocket (not stock NullClaw HTTP). |
+| `nullclaw_a2a` | [NullClaw](https://github.com/nullclaw/nullclaw) | HTTP JSON-RPC 2.0 `POST …/a2a` (`message/send`, Google A2A-style). |
+| `picoclaw_ws` | [PicoClaw](https://github.com/sipeed/picoclaw) | Pico Protocol WebSocket (`message.send` + `session_id`). |
+| `zeroclaw_ws` | [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) | OpenClaw-compatible WebSocket (`connect` + `chat.send`). |
+| `clawlet_ws` | [Clawlet](https://github.com/mosaxiv/clawlet) | OpenClaw-class WebSocket when a compatible control listener is configured. |
+| `ironclaw_ws` | IronClaw | Rust OpenClaw-class WebSocket gateway. |
+| `mimiclaw_ws` | [MimiClaw](https://github.com/memovai/mimiclaw) | JSON WebSocket (e.g. device on port 18789; `session_key` = `chat_id`). |
+| `nanobot_cli` | [Nanobot](https://github.com/HKUDS/nanobot) | Subprocess: `nanobot agent -m` (not the nanobot channel gateway). |
+| `inkos_cli` | [InkOS](https://github.com/Narcooo/inkos) | Subprocess: `inkos write next … --json`. |
+| `zclaw_relay_http` | [zclaw](https://github.com/tnm/zclaw) | HTTP `POST …/api/chat` via the web relay. |
+| `mistermorph_http` | [MisterMorph](https://github.com/quailyquaily/mistermorph) | HTTP task API: `POST …/tasks`, poll `GET …/tasks/{id}` (Bearer auth). |
+| `copaw_http` | [CoPaw](https://github.com/agentscope-ai/CoPaw) (AgentScope) | JSON-RPC `POST …/console/api` (`chat.send`); `device_id` = workspace. |
+| `metaclaw_http` | MetaClaw (or any OpenAI-compatible proxy) | `POST …/v1/chat/completions`; optional model via `device_id`. |
+
+For per-driver URL/token/session notes and env toggles, see the comments in [`config/arms.toml`](config/arms.toml).
 
 ### Shipping and operations
 
