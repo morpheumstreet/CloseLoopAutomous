@@ -1206,7 +1206,7 @@ func (h *Handlers) listGatewayEndpoints(w http.ResponseWriter, r *http.Request) 
 	}
 	out := make([]any, 0, len(list))
 	for i := range list {
-		out = append(out, gatewayEndpointToJSON(&list[i]))
+		out = append(out, gatewayEndpointToJSONMasked(&list[i]))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"gateway_endpoints": out})
 }
@@ -1242,7 +1242,105 @@ func (h *Handlers) createGatewayEndpoint(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, gatewayEndpointToJSON(e))
+	writeJSON(w, http.StatusCreated, gatewayEndpointToJSONMasked(e))
+}
+
+func (h *Handlers) patchGatewayEndpoint(w http.ResponseWriter, r *http.Request) {
+	if h.GatewayEndpoints == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "gateway endpoints not available")
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "validation", "id is required")
+		return
+	}
+	var req patchGatewayEndpointReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if req.empty() {
+		writeError(w, http.StatusBadRequest, "validation", "at least one field is required")
+		return
+	}
+	cur, err := h.GatewayEndpoints.ByID(r.Context(), id)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	next := *cur
+	if req.DisplayName != nil {
+		next.DisplayName = strings.TrimSpace(*req.DisplayName)
+	}
+	if req.Driver != nil {
+		if strings.TrimSpace(*req.Driver) == "" {
+			writeError(w, http.StatusBadRequest, "validation", "driver cannot be empty")
+			return
+		}
+		next.Driver = domain.NormalizeGatewayDriver(*req.Driver)
+	}
+	if req.GatewayURL != nil {
+		next.GatewayURL = strings.TrimSpace(*req.GatewayURL)
+	}
+	if req.GatewayToken != nil {
+		next.GatewayToken = strings.TrimSpace(*req.GatewayToken)
+	}
+	if req.DeviceID != nil {
+		next.DeviceID = strings.TrimSpace(*req.DeviceID)
+	}
+	if req.TimeoutSec != nil {
+		next.TimeoutSec = *req.TimeoutSec
+	}
+	if req.ProductID != nil {
+		next.ProductID = domain.ProductID(strings.TrimSpace(*req.ProductID))
+	}
+	if err := validateGatewayEndpointFields(next.Driver, next.GatewayURL); err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	if err := h.GatewayEndpoints.Update(r.Context(), &next); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, gatewayEndpointToJSONMasked(&next))
+}
+
+func (h *Handlers) deleteGatewayEndpoint(w http.ResponseWriter, r *http.Request) {
+	if h.GatewayEndpoints == nil || h.Agent == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "gateway endpoints not available")
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "validation", "id is required")
+		return
+	}
+	agents, err := h.Agent.List(r.Context(), 500)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	for i := range agents {
+		if strings.TrimSpace(agents[i].EndpointID) == id {
+			writeError(w, http.StatusConflict, "in_use", fmt.Sprintf("execution agent %q is bound to this gateway endpoint", agents[i].ID))
+			return
+		}
+	}
+	if err := h.GatewayEndpoints.Delete(r.Context(), id); err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handlers) listAgentMailbox(w http.ResponseWriter, r *http.Request) {
@@ -2873,10 +2971,11 @@ func executionAgentToJSON(a *domain.ExecutionAgent) map[string]any {
 	return m
 }
 
-func gatewayEndpointToJSON(e *domain.GatewayEndpoint) map[string]any {
+func gatewayEndpointToJSONMasked(e *domain.GatewayEndpoint) map[string]any {
+	hasTok := strings.TrimSpace(e.GatewayToken) != ""
 	m := map[string]any{
 		"id": e.ID, "display_name": e.DisplayName, "driver": e.Driver,
-		"gateway_url": e.GatewayURL, "gateway_token": e.GatewayToken,
+		"gateway_url": e.GatewayURL, "gateway_token": "", "has_gateway_token": hasTok,
 		"device_id": e.DeviceID, "timeout_sec": e.TimeoutSec,
 		"created_at": e.CreatedAt.UTC().Format(time.RFC3339Nano),
 	}

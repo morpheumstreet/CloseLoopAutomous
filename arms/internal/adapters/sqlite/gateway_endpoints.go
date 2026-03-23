@@ -69,6 +69,44 @@ FROM gateway_endpoints ORDER BY created_at DESC LIMIT ?`, limit)
 	return scanGatewayEndpoints(rows)
 }
 
+func (s *GatewayEndpointStore) Update(ctx context.Context, e *domain.GatewayEndpoint) error {
+	pid := sql.NullString{}
+	if e.ProductID != "" {
+		pid.String = string(e.ProductID)
+		pid.Valid = true
+	}
+	res, err := s.db.ExecContext(ctx, `
+UPDATE gateway_endpoints SET display_name=?, driver=?, gateway_url=?, gateway_token=?, device_id=?, timeout_sec=?, product_id=?
+WHERE id=?`,
+		e.DisplayName, e.Driver, e.GatewayURL, e.GatewayToken, e.DeviceID, e.TimeoutSec, pid, e.ID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (s *GatewayEndpointStore) Delete(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM gateway_endpoints WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 func scanGatewayEndpoints(rows *sql.Rows) ([]domain.GatewayEndpoint, error) {
 	var out []domain.GatewayEndpoint
 	for rows.Next() {

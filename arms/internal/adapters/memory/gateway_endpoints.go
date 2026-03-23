@@ -55,3 +55,24 @@ func (s *GatewayEndpointStore) List(_ context.Context, limit int) ([]domain.Gate
 	}
 	return out, nil
 }
+
+func (s *GatewayEndpointStore) Update(_ context.Context, e *domain.GatewayEndpoint) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.byID[e.ID]; !ok {
+		return domain.ErrNotFound
+	}
+	cp := *e
+	s.byID[e.ID] = &cp
+	return nil
+}
+
+func (s *GatewayEndpointStore) Delete(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.byID[id]; !ok {
+		return domain.ErrNotFound
+	}
+	delete(s.byID, id)
+	return nil
+}

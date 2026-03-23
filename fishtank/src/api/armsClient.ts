@@ -3,6 +3,7 @@ import type {
   ApiAgentHealthItem,
   ApiConvoy,
   ApiConvoyDispatchWaveResponse,
+  ApiGatewayEndpoint,
   ApiIdea,
   ApiKnowledgeEntry,
   ApiSuggestIdeaIdResponse,
@@ -17,6 +18,8 @@ import type {
   ApiTfidfSuggestTagsResponse,
   ApiVersion,
   ApiHostMetrics,
+  CreateGatewayEndpointBody,
+  PatchGatewayEndpointBody,
   PatchProductBody,
   PatchProductScheduleBody,
 } from './armsTypes';
@@ -78,6 +81,26 @@ export class ArmsClient {
   /** CPU, RAM, and root disk for the host process (short CPU sample on server). */
   async hostMetrics(): Promise<ApiHostMetrics> {
     return this.getJson<ApiHostMetrics>('/api/ops/host-metrics');
+  }
+
+  async listGatewayEndpoints(): Promise<ApiGatewayEndpoint[]> {
+    const body = await this.getJson<{ gateway_endpoints?: ApiGatewayEndpoint[] }>('/api/gateway-endpoints');
+    return body.gateway_endpoints ?? [];
+  }
+
+  async createGatewayEndpoint(body: CreateGatewayEndpointBody): Promise<ApiGatewayEndpoint> {
+    return this.postJson<ApiGatewayEndpoint>('/api/gateway-endpoints', body);
+  }
+
+  async patchGatewayEndpoint(id: string, body: PatchGatewayEndpointBody): Promise<ApiGatewayEndpoint> {
+    return this.patchJson<ApiGatewayEndpoint>(`/api/gateway-endpoints/${encodeURIComponent(id)}`, body);
+  }
+
+  async deleteGatewayEndpoint(id: string): Promise<void> {
+    const res = await this.raw('DELETE', `/api/gateway-endpoints/${encodeURIComponent(id)}`);
+    if (res.status === 204) return;
+    const err = await readErrorBody(res);
+    throw new ArmsHttpError(err.message, res.status, err.code);
   }
 
   async listProducts(): Promise<ApiProduct[]> {

@@ -11,4 +11,6 @@ type GatewayEndpointRegistry interface {
 	Save(ctx context.Context, e *domain.GatewayEndpoint) error
 	ByID(ctx context.Context, id string) (*domain.GatewayEndpoint, error)
 	List(ctx context.Context, limit int) ([]domain.GatewayEndpoint, error)
+	Update(ctx context.Context, e *domain.GatewayEndpoint) error
+	Delete(ctx context.Context, id string) error
 }

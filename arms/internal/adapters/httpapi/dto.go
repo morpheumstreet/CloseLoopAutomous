@@ -253,13 +253,35 @@ func (r *createGatewayEndpointReq) validate() error {
 		return fmt.Errorf("driver is required")
 	}
 	drv := domain.NormalizeGatewayDriver(r.Driver)
-	if drv == "" {
+	return validateGatewayEndpointFields(drv, r.GatewayURL)
+}
+
+func validateGatewayEndpointFields(normalizedDriver, gatewayURL string) error {
+	if normalizedDriver == "" {
 		return fmt.Errorf("driver must be stub, openclaw_ws, nullclaw_ws, nullclaw_a2a, picoclaw_ws, or zeroclaw_ws")
 	}
-	if drv != domain.GatewayDriverStub && strings.TrimSpace(r.GatewayURL) == "" {
-		return fmt.Errorf("gateway_url is required for driver %s", drv)
+	if normalizedDriver != domain.GatewayDriverStub && strings.TrimSpace(gatewayURL) == "" {
+		return fmt.Errorf("gateway_url is required for driver %s", normalizedDriver)
 	}
 	return nil
+}
+
+type patchGatewayEndpointReq struct {
+	DisplayName  *string `json:"display_name,omitempty"`
+	Driver       *string `json:"driver,omitempty"`
+	GatewayURL   *string `json:"gateway_url,omitempty"`
+	GatewayToken *string `json:"gateway_token,omitempty"`
+	DeviceID     *string `json:"device_id,omitempty"`
+	TimeoutSec   *int    `json:"timeout_sec,omitempty"`
+	ProductID    *string `json:"product_id,omitempty"`
+}
+
+func (r *patchGatewayEndpointReq) empty() bool {
+	if r == nil {
+		return true
+	}
+	return r.DisplayName == nil && r.Driver == nil && r.GatewayURL == nil && r.GatewayToken == nil &&
+		r.DeviceID == nil && r.TimeoutSec == nil && r.ProductID == nil
 }
 
 type postAgentMailReq struct {

@@ -282,3 +282,37 @@ export type ApiMaybePoolIdea = Record<string, unknown> & {
   maybe_last_evaluated_at?: string;
   maybe_evaluation_count?: number;
 };
+
+/** `GET /api/gateway-endpoints` — persisted dispatch profiles (`gateway_token` is always empty; use `has_gateway_token`). */
+export type ApiGatewayEndpoint = {
+  id: string;
+  display_name: string;
+  driver: string;
+  gateway_url: string;
+  gateway_token: string;
+  has_gateway_token?: boolean;
+  device_id: string;
+  timeout_sec: number;
+  product_id?: string;
+  created_at: string;
+};
+
+export type CreateGatewayEndpointBody = {
+  display_name?: string;
+  driver: string;
+  gateway_url?: string;
+  gateway_token?: string;
+  device_id?: string;
+  timeout_sec?: number;
+  product_id?: string;
+};
+
+export type PatchGatewayEndpointBody = {
+  display_name?: string;
+  driver?: string;
+  gateway_url?: string;
+  gateway_token?: string;
+  device_id?: string;
+  timeout_sec?: number;
+  product_id?: string;
+};
