@@ -12,6 +12,7 @@ import (
 	"github.com/closeloopautomous/arms/internal/adapters/gateway/openclaw"
 	"github.com/closeloopautomous/arms/internal/adapters/gateway/picoclaw"
 	"github.com/closeloopautomous/arms/internal/adapters/gateway/zeroclaw"
+	"github.com/closeloopautomous/arms/internal/adapters/gateway/zclaw"
 	"github.com/closeloopautomous/arms/internal/domain"
 )
 
@@ -24,6 +25,7 @@ type clientPool struct {
 	mimiclaw       map[string]*mimiclaw.Client
 	nanobotCLI     map[string]*nanobotcli.Client
 	nullclawHTTP   map[string]*nullclaw.Client
+	zclawRelay     map[string]*zclaw.Client
 	knowledge      func(context.Context, domain.ProductID, string) (string, error)
 	defaultTimeout time.Duration
 }
@@ -36,6 +38,7 @@ func newClientPool(knowledge func(context.Context, domain.ProductID, string) (st
 		mimiclaw:       make(map[string]*mimiclaw.Client),
 		nanobotCLI:     make(map[string]*nanobotcli.Client),
 		nullclawHTTP:   make(map[string]*nullclaw.Client),
+		zclawRelay:     make(map[string]*zclaw.Client),
 		knowledge:      knowledge,
 		defaultTimeout: defaultTimeout,
 	}
@@ -176,6 +179,30 @@ func (p *clientPool) nullclawClientFor(target domain.DispatchTarget) *nullclaw.C
 	return c
 }
 
+func (p *clientPool) zclawClientFor(target domain.DispatchTarget) *zclaw.Client {
+	to := target.Timeout
+	if to <= 0 {
+		to = p.defaultTimeout
+	}
+	if to <= 0 {
+		to = 30 * time.Second
+	}
+	k := p.key(target)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if c, ok := p.zclawRelay[k]; ok {
+		return c
+	}
+	c := zclaw.New(zclaw.Options{
+		BaseURL:              target.GatewayURL,
+		Token:                target.GatewayToken,
+		Timeout:              to,
+		KnowledgeForDispatch: p.knowledge,
+	})
+	p.zclawRelay[k] = c
+	return c
+}
+
 func (p *clientPool) nanobotCLIClientFor(target domain.DispatchTarget) *nanobotcli.Client {
 	to := target.Timeout
 	if to <= 0 {
@@ -213,6 +240,8 @@ func (p *clientPool) dispatchTask(ctx context.Context, target domain.DispatchTar
 		return p.zeroclawClientFor(target).DispatchTaskWithSession(ctx, task, target.SessionKey)
 	case domain.GatewayDriverNanobotCLI:
 		return p.nanobotCLIClientFor(target).DispatchTaskWithSession(ctx, task, target.SessionKey)
+	case domain.GatewayDriverZClawRelayHTTP:
+		return p.zclawClientFor(target).DispatchTaskWithSession(ctx, task, target.SessionKey)
 	default:
 		return p.openclawClientFor(target).DispatchTaskWithSession(ctx, task, target.SessionKey)
 	}
@@ -230,6 +259,8 @@ func (p *clientPool) dispatchSubtask(ctx context.Context, target domain.Dispatch
 		return p.zeroclawClientFor(target).DispatchSubtaskWithSession(ctx, parent, sub, target.SessionKey)
 	case domain.GatewayDriverNanobotCLI:
 		return p.nanobotCLIClientFor(target).DispatchSubtaskWithSession(ctx, parent, sub, target.SessionKey)
+	case domain.GatewayDriverZClawRelayHTTP:
+		return p.zclawClientFor(target).DispatchSubtaskWithSession(ctx, parent, sub, target.SessionKey)
 	default:
 		return p.openclawClientFor(target).DispatchSubtaskWithSession(ctx, parent, sub, target.SessionKey)
 	}
@@ -256,10 +287,14 @@ func (p *clientPool) close() {
 	for _, c := range p.nullclawHTTP {
 		_ = c.Close()
 	}
+	for _, c := range p.zclawRelay {
+		_ = c.Close()
+	}
 	p.openclaw = make(map[string]*openclaw.Client)
 	p.zeroclaw = make(map[string]*zeroclaw.Client)
 	p.picoclaw = make(map[string]*picoclaw.Client)
 	p.mimiclaw = make(map[string]*mimiclaw.Client)
 	p.nanobotCLI = make(map[string]*nanobotcli.Client)
 	p.nullclawHTTP = make(map[string]*nullclaw.Client)
+	p.zclawRelay = make(map[string]*zclaw.Client)
 }

@@ -226,6 +226,7 @@ const GATEWAY_DRIVER_OPTIONS = [
   ['picoclaw_ws', 'picoclaw_ws'],
   ['zeroclaw_ws', 'zeroclaw_ws'],
   ['mimiclaw_ws', 'mimiclaw_ws'],
+  ['zclaw_relay_http', 'zclaw_relay_http'],
 ] as const;
 
 function GatewayEndpointsPanel({ client, defaultProductId }: { client: ArmsClient; defaultProductId?: string }) {

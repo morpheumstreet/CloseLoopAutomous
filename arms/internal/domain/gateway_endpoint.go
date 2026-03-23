@@ -21,6 +21,8 @@ const (
 	GatewayDriverMimiClawWS = "mimiclaw_ws"
 	// GatewayDriverNanobotCLI runs HKUDS nanobot via `nanobot agent -m` (subprocess); not an OpenClaw WebSocket gateway.
 	GatewayDriverNanobotCLI = "nanobot_cli"
+	// GatewayDriverZClawRelayHTTP is the zclaw hosted web relay: JSON POST …/api/chat (see tnm/zclaw scripts/web_relay.py).
+	GatewayDriverZClawRelayHTTP = "zclaw_relay_http"
 )
 
 // GatewayEndpoint is a persisted remote execution plane (URL + auth + driver).
@@ -66,6 +68,8 @@ func NormalizeGatewayDriver(s string) string {
 		return GatewayDriverMimiClawWS
 	case "nanobot", "nanobot_cli", "nanobot-cli":
 		return GatewayDriverNanobotCLI
+	case "zclaw", "zclaw_relay", "zclaw-relay", "zclaw_relay_http", "zclaw-relay-http", "zclaw_http", "zclaw-http":
+		return GatewayDriverZClawRelayHTTP
 	default:
 		return ""
 	}

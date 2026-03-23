@@ -59,6 +59,7 @@ Defined in [`domain/gateway_endpoint.go`](../arms/internal/domain/gateway_endpoi
 | `nullclaw_a2a` | NullClaw HTTP **POST /a2a** ([`nullclaw.Client`](../arms/internal/adapters/gateway/nullclaw/client.go)) |
 | `picoclaw_ws` | Pico Protocol WebSocket `message.send` + `session_id` ([`picoclaw`](../arms/internal/adapters/gateway/picoclaw/)) |
 | `zeroclaw_ws` | ZeroClaw: OpenClaw-compatible WS sequence via [`zeroclaw`](../arms/internal/adapters/gateway/zeroclaw/) (wraps shared OpenClaw wire helpers) |
+| `zclaw_relay_http` | [zclaw](https://github.com/tnm/zclaw) web relay: HTTP `POST …/api/chat` via [`zclaw`](../arms/internal/adapters/gateway/zclaw/) (`gateway_token` → `X-Zclaw-Key` when the relay requires `ZCLAW_WEB_API_KEY`) |
 
 [`clientPool`](../arms/internal/adapters/gateway/pool.go) reuses clients per `(driver, url, token, device_id, timeout)` and dispatches to the matching implementation.
 
@@ -78,6 +79,7 @@ OpenClaw, ZeroClaw, PicoClaw, and NullClaw HTTP clients can all attach **knowled
 | [`arms/internal/adapters/gateway/nullclaw/`](../arms/internal/adapters/gateway/nullclaw/) | NullClaw A2A HTTP JSON-RPC |
 | [`arms/internal/adapters/gateway/picoclaw/`](../arms/internal/adapters/gateway/picoclaw/) | PicoClaw Pico Protocol WS |
 | [`arms/internal/adapters/gateway/zeroclaw/`](../arms/internal/adapters/gateway/zeroclaw/) | ZeroClaw WS (OpenClaw-class) |
+| [`arms/internal/adapters/gateway/zclaw/`](../arms/internal/adapters/gateway/zclaw/) | zclaw web relay HTTP (`/api/chat`) |
 | [`arms/internal/adapters/sqlite/gateway_endpoints.go`](../arms/internal/adapters/sqlite/gateway_endpoints.go) | Persistence for profiles |
 
 ---
