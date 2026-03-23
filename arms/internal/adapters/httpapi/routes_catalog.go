@@ -95,6 +95,7 @@ func routeCatalog() []RouteEntry {
 		{"GET", "/api/gateway-endpoints", "List gateway connection profiles (gateway_token always empty; has_gateway_token when a token is stored)"},
 		{"POST", "/api/gateway-endpoints", "Create gateway profile {driver: stub|openclaw_ws|nemoclaw_ws|nullclaw_ws|nullclaw_a2a|picoclaw_ws|zeroclaw_ws|clawlet_ws|ironclaw_ws|mimiclaw_ws|nanobot_cli|inkos_cli|zclaw_relay_http|mistermorph_http|copaw_http|metaclaw_http, gateway_url, optional display_name, gateway_token, device_id, timeout_sec, product_id}"},
 		{"PATCH", "/api/gateway-endpoints/{id}", "Update gateway profile (partial body; same field names as POST; omit gateway_token to leave unchanged)"},
+		{"POST", "/api/gateway-endpoints/{id}/test-connection", "Run Mission Control connection checklist (optional JSON body { draft?: { gateway_url?, gateway_token? (omit=stored; empty=test unauthenticated), driver?, device_id?, timeout_sec? } }; returns { steps: [{ id, title, status, detail?, elapsed_ms? }] })"},
 		{"DELETE", "/api/gateway-endpoints/{id}", "Remove gateway profile (409 if any execution agent references it)"},
 		{"GET", "/api/fleet/identities", "List synthesized AgentIdentity rows (?limit= default 200, max 500); from gateway_endpoints + optional ARMS_GEOIP2_CITY"},
 		{"GET", "/api/fleet/identities/{id}", "Get one AgentIdentity by profile id (see domain.StableAgentProfileID)"},

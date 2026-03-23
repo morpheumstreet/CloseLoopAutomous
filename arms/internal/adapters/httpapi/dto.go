@@ -284,6 +284,43 @@ func (r *patchGatewayEndpointReq) empty() bool {
 		r.DeviceID == nil && r.TimeoutSec == nil && r.ProductID == nil
 }
 
+// testGatewayDraft overlays unsaved form values for POST /api/gateway-endpoints/{id}/test-connection.
+// Omit gateway_token to use the token stored for the endpoint; send "" to test without a token.
+type testGatewayDraft struct {
+	GatewayURL   *string `json:"gateway_url,omitempty"`
+	GatewayToken *string `json:"gateway_token,omitempty"`
+	Driver       *string `json:"driver,omitempty"`
+	DeviceID     *string `json:"device_id,omitempty"`
+	TimeoutSec   *int    `json:"timeout_sec,omitempty"`
+}
+
+type testGatewayConnectionReq struct {
+	Draft *testGatewayDraft `json:"draft,omitempty"`
+}
+
+func mergeGatewayTestDraft(base domain.GatewayEndpoint, d *testGatewayDraft) domain.GatewayEndpoint {
+	if d == nil {
+		return base
+	}
+	out := base
+	if d.GatewayURL != nil {
+		out.GatewayURL = strings.TrimSpace(*d.GatewayURL)
+	}
+	if d.GatewayToken != nil {
+		out.GatewayToken = strings.TrimSpace(*d.GatewayToken)
+	}
+	if d.Driver != nil {
+		out.Driver = domain.NormalizeGatewayDriver(*d.Driver)
+	}
+	if d.DeviceID != nil {
+		out.DeviceID = strings.TrimSpace(*d.DeviceID)
+	}
+	if d.TimeoutSec != nil {
+		out.TimeoutSec = *d.TimeoutSec
+	}
+	return out
+}
+
 type postAgentMailReq struct {
 	Body   string `json:"body"`
 	TaskID string `json:"task_id,omitempty"`

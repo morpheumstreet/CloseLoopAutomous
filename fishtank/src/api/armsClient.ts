@@ -23,6 +23,8 @@ import type {
   ApiHostMetrics,
   CreateGatewayEndpointBody,
   PatchGatewayEndpointBody,
+  ApiGatewayConnectionTestStep,
+  TestGatewayConnectionBody,
   PatchProductBody,
   PatchProductScheduleBody,
 } from './armsTypes';
@@ -104,6 +106,17 @@ export class ArmsClient {
     if (res.status === 204) return;
     const err = await readErrorBody(res);
     throw new ArmsHttpError(err.message, res.status, err.code);
+  }
+
+  /** Mission Control connection checklist (HTTP / WebSocket / profile rules); optional draft tests unsaved form values. */
+  async postGatewayTestConnection(
+    id: string,
+    body?: TestGatewayConnectionBody,
+  ): Promise<{ steps: ApiGatewayConnectionTestStep[] }> {
+    return this.postJson<{ steps: ApiGatewayConnectionTestStep[] }>(
+      `/api/gateway-endpoints/${encodeURIComponent(id)}/test-connection`,
+      body ?? {},
+    );
   }
 
   async listProducts(): Promise<ApiProduct[]> {

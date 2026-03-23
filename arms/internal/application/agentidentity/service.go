@@ -36,6 +36,9 @@ func (s *Service) RefreshAll(ctx context.Context) error {
 	for i := range list {
 		ep := &list[i]
 		ident := synthesize(ep, s.Geo, now)
+		pctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		enrichReachability(pctx, ep, ident)
+		cancel()
 		if err := s.Profiles.Upsert(ctx, ep.ID, ident); err != nil {
 			return err
 		}

@@ -226,4 +226,4 @@ Auth: same as existing operator routes (`MC_API_TOKEN`, `ARMS_ACL`, …).
 ## 10. Narrative guardrails
 
 - **`GET /api/ops/host-metrics`** remains **arms server host** only — not a substitute for `AgentIdentity.Metrics` from agents.
-- Identity **`Metrics` / `Version` / live `Status`** are still mostly placeholders until drivers report them; **`stub`** gateway is **`online`**, others default **`offline`** in the MVP synthesizer.
+- Identity **`Metrics` / `Version`** are still mostly placeholders until drivers report them. **`stub`** stays **`online`**. For **HTTP** drivers (`metaclaw_http`, `mistermorph_http`, `copaw_http`, `zclaw_relay_http`), refresh runs a **GET** with `Authorization: Bearer` when a token exists: **401/403/407 → `unauthorized`** (with `custom.auth_error`), **connection failure → `offline`**, **5xx → `error`**, **other 2xx–4xx → `online`**. **WebSocket** drivers are **not** probed on refresh (`custom.reachability=websocket`); **`offline`** there does **not** mean the token was rejected.

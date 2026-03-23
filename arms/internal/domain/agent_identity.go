@@ -26,10 +26,11 @@ type AgentIdentity struct {
 type AgentStatus string
 
 const (
-	StatusOnline  AgentStatus = "online"
-	StatusOffline AgentStatus = "offline"
-	StatusError   AgentStatus = "error"
-	StatusBusy    AgentStatus = "busy"
+	StatusOnline        AgentStatus = "online"
+	StatusOffline       AgentStatus = "offline"
+	StatusUnauthorized  AgentStatus = "unauthorized" // HTTP 401/403 or missing credentials when the driver expects them — not the same as offline/unreachable.
+	StatusError         AgentStatus = "error"
+	StatusBusy          AgentStatus = "busy"
 )
 
 // PlatformInfo describes host / OS context when reported or inferred.

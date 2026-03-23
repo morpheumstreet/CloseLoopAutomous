@@ -1052,6 +1052,102 @@ button:disabled {
   box-shadow: var(--mc-shadow-modal);
 }
 
+.ft-modal-panel--gateway-edit {
+  width: min(100%, 480px);
+}
+
+.ft-gateway-modal-slide-shell {
+  overflow: hidden;
+}
+
+.ft-gateway-modal-slide-track {
+  display: flex;
+  width: 200%;
+  transition: transform 0.28s ease;
+}
+
+.ft-gateway-modal-slide-pane {
+  width: 50%;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.ft-modal-actions--gateway-edit {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
+}
+
+.ft-gateway-test-step-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ft-gateway-test-step {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--mc-border);
+}
+
+.ft-gateway-test-step:last-child {
+  border-bottom: none;
+}
+
+.ft-gateway-test-step__icon {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.ft-gateway-test-step__icon--pass {
+  color: var(--mc-accent-green);
+}
+
+.ft-gateway-test-step__icon--fail {
+  color: var(--mc-accent-red);
+}
+
+.ft-gateway-test-step__icon--warn {
+  color: var(--mc-accent-yellow);
+}
+
+.ft-gateway-test-step__icon--skip {
+  color: var(--mc-text-secondary);
+}
+
+.ft-gateway-test-step__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.ft-gateway-test-step__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.ft-gateway-test-step__detail {
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+  line-height: 1.4;
+}
+
+.ft-gateway-test-step__meta {
+  font-size: 0.7rem;
+  margin-top: 0.2rem;
+}
+
+@keyframes ft-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ft-spin {
+  animation: ft-spin 0.9s linear infinite;
+}
+
 .ft-modal-head {
   display: flex;
   align-items: center;

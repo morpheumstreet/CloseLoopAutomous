@@ -373,3 +373,24 @@ export type PatchGatewayEndpointBody = {
   timeout_sec?: number;
   product_id?: string;
 };
+
+/** Overlay for `POST /api/gateway-endpoints/{id}/test-connection` — omit `gateway_token` to use the stored token. */
+export type GatewayTestConnectionDraft = {
+  gateway_url?: string;
+  gateway_token?: string;
+  driver?: string;
+  device_id?: string;
+  timeout_sec?: number;
+};
+
+export type TestGatewayConnectionBody = {
+  draft?: GatewayTestConnectionDraft;
+};
+
+export type ApiGatewayConnectionTestStep = {
+  id: string;
+  title: string;
+  status: 'pass' | 'fail' | 'skip' | 'warn';
+  detail?: string;
+  elapsed_ms?: number;
+};

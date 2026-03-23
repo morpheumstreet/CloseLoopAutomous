@@ -106,6 +106,7 @@ func NewRouter(cfg Config, h *Handlers) http.Handler {
 	sub.Handle("GET /api/gateway-endpoints", http.HandlerFunc(h.listGatewayEndpoints))
 	sub.Handle("POST /api/gateway-endpoints", http.HandlerFunc(h.createGatewayEndpoint))
 	sub.Handle("PATCH /api/gateway-endpoints/{id}", http.HandlerFunc(h.patchGatewayEndpoint))
+	sub.Handle("POST /api/gateway-endpoints/{id}/test-connection", http.HandlerFunc(h.postGatewayEndpointTestConnection))
 	sub.Handle("DELETE /api/gateway-endpoints/{id}", http.HandlerFunc(h.deleteGatewayEndpoint))
 	sub.Handle("GET /api/fleet/identities", http.HandlerFunc(h.listFleetIdentities))
 	sub.Handle("GET /api/fleet/identities/{id}", http.HandlerFunc(h.getFleetIdentity))

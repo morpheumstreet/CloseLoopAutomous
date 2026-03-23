@@ -120,7 +120,9 @@ export function AgentsPanel({ embedded = false }: AgentsPanelProps) {
         </div>
         <p className="ft-muted" style={{ fontSize: '0.65rem', padding: '0 0.5rem 0.5rem', lineHeight: 1.45, margin: 0 }}>
           Unified <code className="ft-mono">AgentIdentity</code> from gateways (Geo via optional{' '}
-          <code className="ft-mono">ARMS_GEOIP2_CITY</code>). SSE <code className="ft-mono">agent_identity_updated</code> updates this list.
+          <code className="ft-mono">ARMS_GEOIP2_CITY</code>). <strong>AUTH</strong> means HTTP 401/403 or missing token (selected drivers);{' '}
+          <strong>OFFLINE</strong> is unreachable host or WebSocket drivers (no WS probe on refresh). SSE{' '}
+          <code className="ft-mono">agent_identity_updated</code> updates this list.
         </p>
         {fleetList.length === 0 ? (
           <p className="ft-muted" style={{ fontSize: '0.75rem', padding: '0.5rem', lineHeight: 1.5 }}>
@@ -198,6 +200,7 @@ function IdentityRow({ row }: { row: ApiAgentIdentity }) {
         <div style={{ fontSize: '0.65rem' }} className="ft-muted">
           <span className="ft-mono">{row.driver}</span>
           {geoLine ? ` · ${geoLine}` : ''}
+          {authHint(row) ? ` · ${authHint(row)}` : ''}
         </div>
         {row.gateway_url ? (
           <div className="ft-truncate ft-mono" style={{ fontSize: '0.6rem', opacity: 0.75, marginTop: 2 }}>
@@ -230,12 +233,30 @@ function IdentityRow({ row }: { row: ApiAgentIdentity }) {
   );
 }
 
+function authHint(row: ApiAgentIdentity): string | null {
+  const c = row.custom;
+  if (!c || typeof c !== 'object') return null;
+  const rec = c as Record<string, unknown>;
+  if (row.status === 'unauthorized') {
+    const ae = rec.auth_error;
+    if (ae === 'missing_gateway_token') return 'no gateway token (configure in gateway profile)';
+    if (typeof ae === 'string' && ae.startsWith('http_')) return `HTTP auth: ${ae}`;
+    return 'authorization failed';
+  }
+  if (rec.reachability === 'websocket' && typeof rec.status_note === 'string') {
+    return null;
+  }
+  return null;
+}
+
 function identityStatusBadge(status: string): { label: string; className: string } {
   switch (status.toLowerCase()) {
     case 'online':
       return { label: 'ONLINE', className: 'ft-agent-badge ft-agent-badge--working' };
     case 'busy':
       return { label: 'BUSY', className: 'ft-agent-badge ft-agent-badge--working' };
+    case 'unauthorized':
+      return { label: 'AUTH', className: 'ft-agent-badge ft-agent-badge--offline' };
     case 'error':
       return { label: 'ERROR', className: 'ft-agent-badge ft-agent-badge--offline' };
     case 'offline':

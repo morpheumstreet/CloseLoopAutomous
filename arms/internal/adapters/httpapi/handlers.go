@@ -1359,6 +1359,45 @@ func (h *Handlers) deleteGatewayEndpoint(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handlers) postGatewayEndpointTestConnection(w http.ResponseWriter, r *http.Request) {
+	if h.GatewayEndpoints == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_configured", "gateway endpoints not available")
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "validation", "id is required")
+		return
+	}
+	cur, err := h.GatewayEndpoints.ByID(r.Context(), id)
+	if err != nil {
+		if mapDomainErr(w, err) {
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	b, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "read body: "+err.Error())
+		return
+	}
+	var req testGatewayConnectionReq
+	if strings.TrimSpace(string(b)) != "" {
+		if err := json.Unmarshal(b, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+	}
+	ep := mergeGatewayTestDraft(*cur, req.Draft)
+	if err := validateGatewayEndpointFields(ep.Driver, ep.GatewayURL); err != nil {
+		writeError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	steps := agentidentityapp.RunConnectionTests(r.Context(), &ep)
+	writeJSON(w, http.StatusOK, map[string]any{"steps": steps})
+}
+
 func (h *Handlers) listAgentMailbox(w http.ResponseWriter, r *http.Request) {
 	if h.Agent == nil {
 		writeError(w, http.StatusServiceUnavailable, "not_configured", "agent mailbox not available")
