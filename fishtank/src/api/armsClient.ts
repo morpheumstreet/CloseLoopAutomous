@@ -1,6 +1,9 @@
 import type { ArmsEnv } from '../config/armsEnv';
 import type {
   ApiAgentHealthItem,
+  ApiAgentIdentity,
+  ApiAgentsListResponse,
+  ApiAgentRegistryRow,
   ApiConvoy,
   ApiConvoyDispatchWaveResponse,
   ApiGatewayEndpoint,
@@ -315,6 +318,27 @@ export class ArmsClient {
     }
     const body = (await res.json()) as { items?: ApiAgentHealthItem[] };
     return body.items ?? [];
+  }
+
+  /** Execution agent registry (fleet) + recent task heartbeats. */
+  async listAgents(): Promise<{
+    registry: ApiAgentRegistryRow[];
+    items: ApiAgentHealthItem[];
+    identities: ApiAgentIdentity[];
+    stub: boolean;
+  }> {
+    const body = await this.getJson<ApiAgentsListResponse>('/api/agents');
+    return {
+      registry: body.registry ?? [],
+      items: body.items ?? [],
+      identities: body.identities ?? [],
+      stub: body.stub === true,
+    };
+  }
+
+  /** Re-synthesize agent identities from gateway endpoints (see docs/scan-agents.md). */
+  async postFleetRefresh(): Promise<void> {
+    await this.postJson<{ status?: string }>('/api/fleet/refresh', {});
   }
 
   async createProduct(body: CreateProductBody): Promise<ApiProduct> {

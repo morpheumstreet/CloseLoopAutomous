@@ -170,6 +170,7 @@ func buildConfig(file map[string]string) Config {
 			ideationLLMTimeout = time.Duration(n) * time.Second
 		}
 	}
+	geoIP2City := strings.TrimSpace(s.getenv("ARMS_GEOIP2_CITY"))
 
 	return Config{
 		ListenAddr:                        addr,
@@ -227,5 +228,6 @@ func buildConfig(file map[string]string) Config {
 		ResearchLLMTimeout:                researchLLMTimeout,
 		IdeationLLMModel:                  ideationLLMModel,
 		IdeationLLMTimeout:                ideationLLMTimeout,
+		GeoIP2CityPath:                    geoIP2City,
 	}
 }

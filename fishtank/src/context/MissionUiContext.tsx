@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { ArmsClient, type OperationsLogQuery } from '../api/armsClient';
-import type { ApiProductDetail, ApiTask, ApiVersion } from '../api/armsTypes';
+import type { ApiAgentIdentity, ApiAgentRegistryRow, ApiProductDetail, ApiTask, ApiVersion } from '../api/armsTypes';
 import type { ArmsEnv } from '../config/armsEnv';
 import { readArmsEnv } from '../config/armsEnv';
 import type { StalledTaskRow, Task, TaskStatus } from '../domain/types';
@@ -60,6 +60,14 @@ export interface MissionUiValue {
   stalledTasks: StalledTaskRow[];
   tasks: Task[];
   agents: Agent[];
+  /** `GET /api/agents` registry — all registered execution agents (not per-task heartbeats). */
+  executionAgentRegistry: ApiAgentRegistryRow[];
+  /** True when arms returned `stub` for global heartbeat items (agent health disabled). */
+  agentRegistryHealthStub: boolean;
+  /** Unified gateway agent profiles (`GET /api/agents` `identities[]`). */
+  fleetAgentIdentities: ApiAgentIdentity[];
+  /** Calls `POST /api/fleet/refresh` then reloads identities from `GET /api/agents`. */
+  refreshFleetIdentities: () => Promise<void>;
   events: FeedEvent[];
   isOnline: boolean;
   feedLive: boolean;
@@ -120,6 +128,9 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
   const [stalledTasks, setStalledTasks] = useState<StalledTaskRow[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [executionAgentRegistry, setExecutionAgentRegistry] = useState<ApiAgentRegistryRow[]>([]);
+  const [agentRegistryHealthStub, setAgentRegistryHealthStub] = useState(false);
+  const [fleetAgentIdentities, setFleetAgentIdentities] = useState<ApiAgentIdentity[]>([]);
   const [isOnline, setIsOnline] = useState(false);
   const [feedLive, setFeedLive] = useState(false);
   const [feedEpoch, setFeedEpoch] = useState(0);
@@ -131,7 +142,10 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
   const [liveEvents, dispatchLive] = useReducer(liveEventsReducer, []);
 
   const boardRefreshDebounceRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const fleetIdentitiesDebounceRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const refreshActiveBoardRef = useRef<(opts?: { silent?: boolean }) => Promise<void>>(async () => {});
+  const clientRef = useRef(client);
+  clientRef.current = client;
 
   const flushBoardRefreshTimer = useCallback(() => {
     if (boardRefreshDebounceRef.current !== null) {
@@ -155,6 +169,10 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
   useEffect(
     () => () => {
       flushBoardRefreshTimer();
+      if (fleetIdentitiesDebounceRef.current !== null) {
+        window.clearTimeout(fleetIdentitiesDebounceRef.current);
+        fleetIdentitiesDebounceRef.current = null;
+      }
     },
     [flushBoardRefreshTimer],
   );
@@ -171,6 +189,16 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
       setIsOnline(true);
       const next = await loadWorkspaceSummaries(client);
       setWorkspaces(next);
+      try {
+        const snap = await client.listAgents();
+        setExecutionAgentRegistry(snap.registry);
+        setAgentRegistryHealthStub(snap.stub);
+        setFleetAgentIdentities(snap.identities ?? []);
+      } catch {
+        setExecutionAgentRegistry([]);
+        setAgentRegistryHealthStub(false);
+        setFleetAgentIdentities([]);
+      }
     } catch {
       setIsOnline(false);
       setWorkspaces([]);
@@ -231,15 +259,21 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
         setBoardLoadFailed(false);
       }
       try {
-        const [apiTasks, stalledRaw, detail, health] = await Promise.all([
+        const [apiTasks, stalledRaw, detail, health, agentsSnap] = await Promise.all([
           client.listProductTasks(wid),
           client.listStalledTasks(wid),
           client.getProduct(wid).catch(() => null),
           client.listProductAgentHealth(wid).catch(() => []),
+          client.listAgents().catch(() => null),
         ]);
         setTasks(apiTasks.map(apiTaskToTask));
         setStalledTasks(stalledApiToRows(stalledRaw));
         setAgents(health.map(agentHealthToAgent));
+        if (agentsSnap) {
+          setExecutionAgentRegistry(agentsSnap.registry);
+          setAgentRegistryHealthStub(agentsSnap.stub);
+          setFleetAgentIdentities(agentsSnap.identities ?? []);
+        }
         if (detail) setProductDetail(detail);
         const counts = summarizeTaskCounts(apiTasks);
         const agentCounts = summarizeAgentCounts(health);
@@ -276,6 +310,24 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
           void refreshActiveBoardRef.current({ silent: true });
         }, 400);
       }
+      if (t === 'agent_identity_updated') {
+        if (fleetIdentitiesDebounceRef.current !== null) {
+          window.clearTimeout(fleetIdentitiesDebounceRef.current);
+        }
+        fleetIdentitiesDebounceRef.current = window.setTimeout(() => {
+          fleetIdentitiesDebounceRef.current = null;
+          void (async () => {
+            try {
+              const snap = await clientRef.current.listAgents();
+              setFleetAgentIdentities(snap.identities ?? []);
+              setExecutionAgentRegistry(snap.registry ?? []);
+              setAgentRegistryHealthStub(snap.stub === true);
+            } catch {
+              /* ignore */
+            }
+          })();
+        }, 400);
+      }
     },
     [],
   );
@@ -293,11 +345,12 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
       setApiError(null);
       setProductDetail(null);
       try {
-        const [detail, apiTasks, health, stalledRaw] = await Promise.all([
+        const [detail, apiTasks, health, stalledRaw, agentsSnap] = await Promise.all([
           client.getProduct(workspace.id).catch(() => null),
           client.listProductTasks(workspace.id),
           client.listProductAgentHealth(workspace.id).catch(() => []),
           client.listStalledTasks(workspace.id),
+          client.listAgents().catch(() => null),
         ]);
         const tc = summarizeTaskCounts(apiTasks);
         const ac = summarizeAgentCounts(health);
@@ -312,6 +365,11 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
         setTasks(apiTasks.map(apiTaskToTask));
         setAgents(health.map(agentHealthToAgent));
         setStalledTasks(stalledApiToRows(stalledRaw));
+        if (agentsSnap) {
+          setExecutionAgentRegistry(agentsSnap.registry ?? []);
+          setAgentRegistryHealthStub(agentsSnap.stub === true);
+          setFleetAgentIdentities(agentsSnap.identities ?? []);
+        }
       } catch {
         setTasks([]);
         setAgents([]);
@@ -336,6 +394,19 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
   );
 
   const dismissError = useCallback(() => setApiError(null), []);
+
+  const refreshFleetIdentities = useCallback(async () => {
+    setApiError(null);
+    try {
+      await client.postFleetRefresh();
+      const snap = await client.listAgents();
+      setFleetAgentIdentities(snap.identities ?? []);
+      setExecutionAgentRegistry(snap.registry ?? []);
+      setAgentRegistryHealthStub(snap.stub === true);
+    } catch {
+      setApiError('Failed to refresh fleet identities.');
+    }
+  }, [client]);
 
   const fetchVersion = useCallback(() => client.version(), [client]);
 
@@ -446,6 +517,10 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
       stalledTasks,
       tasks,
       agents,
+      executionAgentRegistry,
+      agentRegistryHealthStub,
+      fleetAgentIdentities,
+      refreshFleetIdentities,
       events: liveEvents,
       isOnline,
       feedLive,
@@ -481,6 +556,10 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
       stalledTasks,
       tasks,
       agents,
+      executionAgentRegistry,
+      agentRegistryHealthStub,
+      fleetAgentIdentities,
+      refreshFleetIdentities,
       liveEvents,
       isOnline,
       feedLive,

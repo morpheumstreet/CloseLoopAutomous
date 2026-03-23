@@ -3,12 +3,15 @@ package platform
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/closeloopautomous/arms/internal/adapters/sqlite"
+	"github.com/closeloopautomous/arms/internal/application/agentidentity"
 	"github.com/closeloopautomous/arms/internal/application/livefeed"
 	"github.com/closeloopautomous/arms/internal/config"
+	"github.com/closeloopautomous/arms/internal/platform/geoip"
 )
 
 // OpenApp returns an in-memory app when cfg.DatabasePath is empty; otherwise opens SQLite, migrates, and wires sqlite repositories.
@@ -63,10 +66,22 @@ func OpenApp(ctx context.Context, cfg config.Config, b Build) (*App, error) {
 	go livefeed.RunOutboxRelay(relayCtx, outbox, hub, 200*time.Millisecond)
 	taskPub := &livefeed.OutboxPublisher{Outbox: outbox}
 	liveTX := sqlite.NewLiveActivityTX(db)
-	h, gwCleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, gatewayEndpoints, agentMail, agentHealth, pref, ops, sched, cmail, productFb, taskChat, knowledge, knowUseFTS, hub, taskPub, liveTX, sqlite.ExpectedSchemaVersion, b)
+	geoR, geoCleanup := geoip.NewResolver(cfg.GeoIP2CityPath)
+	agentProfiles := sqlite.NewAgentProfileStore(db)
+	idSvc := &agentidentity.Service{
+		Endpoints: gatewayEndpoints,
+		Profiles:  agentProfiles,
+		Geo:       geoR,
+		Events:    taskPub,
+	}
+	h, gwCleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, gatewayEndpoints, agentMail, agentHealth, pref, ops, sched, cmail, productFb, taskChat, knowledge, knowUseFTS, hub, taskPub, liveTX, idSvc, sqlite.ExpectedSchemaVersion, b)
+	if err := idSvc.RefreshAll(ctx); err != nil {
+		slog.Default().Warn("arms agent identity bootstrap refresh", "err", err)
+	}
 	cleanup := func() {
 		relayCancel()
 		gwCleanup()
+		geoCleanup()
 	}
 	return &App{
 		Handlers:         h,

@@ -19,6 +19,7 @@ import (
 	"github.com/closeloopautomous/arms/internal/adapters/shipping"
 	timeadapter "github.com/closeloopautomous/arms/internal/adapters/time"
 	"github.com/closeloopautomous/arms/internal/application/agent"
+	"github.com/closeloopautomous/arms/internal/application/agentidentity"
 	"github.com/closeloopautomous/arms/internal/application/autopilot"
 	"github.com/closeloopautomous/arms/internal/application/convoy"
 	"github.com/closeloopautomous/arms/internal/application/cost"
@@ -30,6 +31,7 @@ import (
 	"github.com/closeloopautomous/arms/internal/application/task"
 	"github.com/closeloopautomous/arms/internal/application/taskchat"
 	"github.com/closeloopautomous/arms/internal/config"
+	"github.com/closeloopautomous/arms/internal/platform/geoip"
 	"github.com/closeloopautomous/arms/internal/ports"
 )
 
@@ -90,7 +92,22 @@ func NewInMemoryApp(cfg config.Config, b Build) *App {
 	if strings.EqualFold(strings.TrimSpace(cfg.KnowledgeBackend), "chromem") {
 		slog.Default().Warn("ARMS_KNOWLEDGE_BACKEND=chromem is ignored when DATABASE_PATH is empty (in-memory mode); using in-memory knowledge store")
 	}
-	h, cleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, gatewayEndpoints, agentMail, agentHealth, pref, ops, sched, cmail, productFb, taskChat, knowledge, false, hub, hub, nil, sqlite.ExpectedSchemaVersion, b)
+	geoR, geoCleanup := geoip.NewResolver(cfg.GeoIP2CityPath)
+	agentProfiles := memory.NewAgentProfileStore()
+	idSvc := &agentidentity.Service{
+		Endpoints: gatewayEndpoints,
+		Profiles:  agentProfiles,
+		Geo:       geoR,
+		Events:    hub,
+	}
+	h, gwCleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, gatewayEndpoints, agentMail, agentHealth, pref, ops, sched, cmail, productFb, taskChat, knowledge, false, hub, hub, nil, idSvc, sqlite.ExpectedSchemaVersion, b)
+	if err := idSvc.RefreshAll(context.Background()); err != nil {
+		slog.Default().Warn("arms agent identity bootstrap refresh", "err", err)
+	}
+	cleanup := func() {
+		gwCleanup()
+		geoCleanup()
+	}
 	return &App{Handlers: h, Products: products, Ideas: ideas, Tasks: tasks, ProductSchedules: sched, db: nil, cleanup: cleanup}
 }
 
@@ -123,6 +140,7 @@ func buildHandlers(
 	hub *livefeed.Hub,
 	taskEvents ports.LiveActivityPublisher,
 	liveTX ports.LiveActivityTX,
+	agentIdentity *agentidentity.Service,
 	expectedSchemaVersion int,
 	b Build,
 ) (*httpapi.Handlers, func()) {
@@ -330,5 +348,6 @@ func buildHandlers(
 		BuildVersion:          buildVer,
 		BuildCommit:           strings.TrimSpace(b.Commit),
 		ExpectedSchemaVersion: expectedSchemaVersion,
+		AgentIdentity:         agentIdentity,
 	}, gwCleanup
 }

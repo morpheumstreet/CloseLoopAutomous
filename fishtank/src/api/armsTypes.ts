@@ -148,6 +148,63 @@ export type ApiAgentHealthItem = {
   detail: Record<string, unknown>;
 };
 
+/** Row from `GET /api/agents` `registry[]` — registered execution agents (fleet-wide). */
+export type ApiAgentRegistryRow = {
+  id: string;
+  display_name: string;
+  source: string;
+  external_ref: string;
+  created_at: string;
+  product_id?: string;
+};
+
+/** Synthesized gateway agent profile (`GET /api/agents` `identities[]`, `GET /api/fleet/identities`). */
+export type ApiAgentIdentity = {
+  id: string;
+  gateway_url: string;
+  name: string;
+  driver: string;
+  version?: string;
+  status: string;
+  last_seen: string;
+  capabilities?: string[];
+  platform?: {
+    os?: string;
+    arch?: string;
+    hostname?: string;
+    gpu?: string;
+  };
+  metrics?: {
+    cpu_percent?: number;
+    mem_used_mb?: number;
+    mem_total_mb?: number;
+    disk_used_gb?: number;
+    disk_total_gb?: number;
+    gpu_mem_mb?: number;
+  };
+  sub_agents?: { id: string; name: string; role?: string }[];
+  geo?: {
+    latitude?: number;
+    longitude?: number;
+    city?: string;
+    region?: string;
+    country?: string;
+    country_iso?: string;
+    accuracy_km?: number;
+    source: string;
+    last_updated: string;
+  };
+  custom?: Record<string, unknown>;
+};
+
+/** `GET /api/agents` — registry plus recent task heartbeats; `stub` when agent health store is disabled. */
+export type ApiAgentsListResponse = {
+  registry?: ApiAgentRegistryRow[];
+  items?: ApiAgentHealthItem[];
+  identities?: ApiAgentIdentity[];
+  stub?: boolean;
+};
+
 export type ArmsSsePayload = {
   event?: string;
   type?: string;

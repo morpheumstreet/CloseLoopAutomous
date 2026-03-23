@@ -58,6 +58,7 @@ import (
 //   - ARMS_IDEATION_LLM_MODEL — when non-empty, Run ideation uses this chat model instead of the stub.
 //   - ARMS_RESEARCH_LLM_TIMEOUT_SEC — HTTP-bound timeout for one research call (default 120).
 //   - ARMS_IDEATION_LLM_TIMEOUT_SEC — HTTP-bound timeout for one ideation call (default 180).
+//   - ARMS_GEOIP2_CITY — optional path to MaxMind GeoLite2-City.mmdb (offline); enriches synthesized agent identities with city-level geo from gateway URL host.
 //   - ARMS_CORS_ALLOW_ORIGIN — optional; when non-empty, enables CORS for browser UIs on another origin (e.g. http://localhost:3000 for Fishtank). Use * only for quick local experiments.
 //   - ARMS_ACL — optional HTTP Basic ACL: semicolon-separated entries "user|password|role". Role is admin (default) or read (GET/HEAD only). Non-empty enables auth when MC_API_TOKEN is empty, or adds Basic as an alternative when both are set. User/password must not contain '|' or ';'.
 //   - ARMS_MERGE_BACKEND — merge queue completion: noop (default), github (REST merge PR), local (git merge in repo_clone_path)
@@ -127,6 +128,8 @@ type Config struct {
 	ResearchLLMTimeout                time.Duration
 	IdeationLLMModel                  string
 	IdeationLLMTimeout                time.Duration
+	// GeoIP2CityPath is optional MaxMind GeoLite2-City MMDB path (ARMS_GEOIP2_CITY).
+	GeoIP2CityPath string
 }
 
 // ACLUser is one Basic-auth principal for coarse HTTP ACL (admin vs read-only).

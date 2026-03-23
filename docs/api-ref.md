@@ -258,7 +258,7 @@ Store **`WEBHOOK_SECRET`** and **`ARMS_TASK_ID`** in repo **secrets**; map workf
 |--------|------|--------|
 | GET | `/api/live/events` | `text/event-stream`. When **`MC_API_TOKEN`** is set: **`Authorization: Bearer <token>`** or **`?token=<same value>`** (native **`EventSource`** only supports the query form). When only **`ARMS_ACL`** is configured: **`?basic=<base64(user:password)>`**. Optional **`product_id=`** — only forward `data:` lines whose JSON `product_id` matches (or lacks `product_id`). |
 
-After the initial `hello` object, each **`data:`** line is JSON with at least `type`, `ts` (RFC3339 nano), and optional `product_id`, `task_id`, `data` (object). Types include **`task_dispatched`**, **`cost_recorded`**, **`checkpoint_saved`**, **`task_completed`** (`data.source` e.g. `api_task_complete` / `agent_completion_webhook` / `ci_completion_webhook`), **`task_stall_nudged`**, **`pull_request_opened`** (includes `data.html_url`, optional `data.number`), **`merge_ship_completed`** (`data.state`, `data.merged_sha`, `data.error`, `data.conflict_files`, `data.merge_queue_row_id`), **`convoy_subtask_dispatched`** (`data.convoy_id`, `data.subtask_id`, `data.agent_role`, `data.external_ref`), **`convoy_subtask_completed`**. With **`DATABASE_PATH`** set, events are persisted in **`event_outbox`** and relayed to subscribers (restart-safe delivery of pending rows). In-memory mode broadcasts directly from the hub.
+After the initial `hello` object, each **`data:`** line is JSON with at least `type`, `ts` (RFC3339 nano), and optional `product_id`, `task_id`, `data` (object). Types include **`task_dispatched`**, **`cost_recorded`**, **`checkpoint_saved`**, **`task_completed`** (`data.source` e.g. `api_task_complete` / `agent_completion_webhook` / `ci_completion_webhook`), **`task_stall_nudged`**, **`pull_request_opened`** (includes `data.html_url`, optional `data.number`), **`merge_ship_completed`** (`data.state`, `data.merged_sha`, `data.error`, `data.conflict_files`, `data.merge_queue_row_id`), **`convoy_subtask_dispatched`** (`data.convoy_id`, `data.subtask_id`, `data.agent_role`, `data.external_ref`), **`convoy_subtask_completed`**, **`agent_identity_updated`** (`data.identity_id`, `data.gateway_id`, `data.driver`) after fleet identity refresh. With **`DATABASE_PATH`** set, events are persisted in **`event_outbox`** and relayed to subscribers (restart-safe delivery of pending rows). In-memory mode broadcasts directly from the hub.
 
 ---
 
@@ -266,10 +266,19 @@ After the initial `hello` object, each **`data:`** line is JSON with at least `t
 
 | Method | Path | Body | Notes |
 |--------|------|------|--------|
-| GET | `/api/agents` | — | **`registry`**: registered execution agents (`id`, `display_name`, optional `product_id`, `source`, `external_ref`, `created_at`). **`items`**: recent **task agent health** rows (same shape as before). **`stub: true`** on **`items`** only when agent health is not wired. |
+| GET | `/api/agents` | — | **`registry`**: registered execution agents (`id`, `display_name`, optional `product_id`, `source`, `external_ref`, `created_at`). **`items`**: recent **task agent health** rows (same shape as before). **`identities`**: synthesized **`AgentIdentity`** rows from **`gateway_endpoints`** (see [scan-agents.md](scan-agents.md)). **`stub: true`** on **`items`** only when agent health is not wired. |
 | POST | `/api/agents` | `display_name`; optional `product_id`, `source`, `external_ref` | Creates a logical agent slot (**201**). |
 | GET | `/api/agents/{id}/mailbox` | — | Query: optional `limit`. **`{ "messages": [ { id, agent_id, body, optional task_id, created_at } ] }`**. |
 | POST | `/api/agents/{id}/mailbox` | `body`; optional `task_id` | Append-only mailbox message (**201**). |
+
+## Fleet (unified agent identities)
+
+| Method | Path | Body | Notes |
+|--------|------|------|--------|
+| GET | `/api/fleet/identities` | — | Query: optional **`limit`** (default 200, max 500). **`{ "identities": [ AgentIdentity, … ] }`**. |
+| GET | `/api/fleet/identities/{id}` | — | One **`AgentIdentity`** by profile id (see **`domain.StableAgentProfileID`**). |
+| POST | `/api/fleet/refresh` | `{}` | Re-synthesize all identities from **`gateway_endpoints`**; upserts **`agent_profiles`**; emits SSE **`agent_identity_updated`** per gateway. |
+| GET | `/api/fleet/geo-summary` | — | **`countries`**: `{ country_iso, count }[]`, **`total_identities`**, **`with_geo`**. |
 
 ## Stubs / placeholders
 
@@ -291,6 +300,7 @@ Loaded via `internal/config` (`LoadFromEnv`). Commonly:
 | `WEBHOOK_SECRET` | Webhook HMAC key. |
 | `DATABASE_PATH` | SQLite file; empty = in-memory only. |
 | `ARMS_DB_BACKUP` | `1` / `true` → backup DB before migrate. |
+| `ARMS_GEOIP2_CITY` | Optional path to MaxMind GeoLite2-City **`.mmdb`** for offline geo on synthesized **`AgentIdentity`**. |
 | `OPENCLAW_GATEWAY_URL`, `OPENCLAW_GATEWAY_TOKEN`, `ARMS_OPENCLAW_SESSION_KEY`, `OPENCLAW_DISPATCH_TIMEOUT_SEC`, `ARMS_DEVICE_ID` | OpenClaw WebSocket dispatch. |
 | `ARMS_LOG_JSON` | `1` / `true` → JSON logs to stdout. |
 | `ARMS_ACCESS_LOG` | `0` / `false` / `off` / `no` → disable per-request access log lines. |

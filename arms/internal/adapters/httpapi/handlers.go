@@ -20,6 +20,7 @@ import (
 
 	workgit "github.com/closeloopautomous/arms/internal/adapters/workspace"
 	agentapp "github.com/closeloopautomous/arms/internal/application/agent"
+	agentidentityapp "github.com/closeloopautomous/arms/internal/application/agentidentity"
 	"github.com/closeloopautomous/arms/internal/application/autopilot"
 	"github.com/closeloopautomous/arms/internal/application/convoy"
 	"github.com/closeloopautomous/arms/internal/application/cost"
@@ -67,6 +68,8 @@ type Handlers struct {
 	ExpectedSchemaVersion int
 	GatewayEndpoints      ports.GatewayEndpointRegistry
 	IDs                   ports.IdentityGenerator
+	// AgentIdentity synthesizes and stores unified agent profiles (docs/scan-agents.md); optional.
+	AgentIdentity *agentidentityapp.Service
 }
 
 func (h *Handlers) maybeReconcileAutopilotSchedule(ctx context.Context) {
@@ -1151,6 +1154,19 @@ func (h *Handlers) listAgents(w http.ResponseWriter, r *http.Request) {
 			regJSON = append(regJSON, row)
 		}
 		out["registry"] = regJSON
+	}
+	out["identities"] = []any{}
+	if h.AgentIdentity != nil && h.AgentIdentity.Profiles != nil {
+		idents, err := h.AgentIdentity.Profiles.List(r.Context(), 200)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		idJSON := make([]any, 0, len(idents))
+		for i := range idents {
+			idJSON = append(idJSON, idents[i])
+		}
+		out["identities"] = idJSON
 	}
 	if h.AgentHealth == nil {
 		out["items"] = []any{}
