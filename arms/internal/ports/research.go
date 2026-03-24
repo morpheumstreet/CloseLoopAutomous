@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // ResearchPort and IdeationPort model external AI calls kept behind adapters

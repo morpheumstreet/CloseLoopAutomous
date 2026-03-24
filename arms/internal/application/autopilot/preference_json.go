@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func appendSwipePreferenceJSON(raw string, ideaID domain.IdeaID, dec domain.SwipeDecision, at time.Time) (string, error) {

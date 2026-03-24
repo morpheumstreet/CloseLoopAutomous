@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 const maxAutoIngestRunes = 8000

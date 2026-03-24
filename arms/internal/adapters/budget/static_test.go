@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/closeloopautomous/arms/internal/adapters/memory"
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/memory"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func TestStaticBudget(t *testing.T) {

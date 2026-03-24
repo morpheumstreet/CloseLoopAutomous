@@ -12,9 +12,9 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"github.com/closeloopautomous/arms/internal/config"
-	"github.com/closeloopautomous/arms/internal/jobs"
-	"github.com/closeloopautomous/arms/internal/platform"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/config"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/jobs"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/platform"
 )
 
 func main() {

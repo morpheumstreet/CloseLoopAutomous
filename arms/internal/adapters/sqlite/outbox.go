@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 type OutboxStore struct{ db *sql.DB }

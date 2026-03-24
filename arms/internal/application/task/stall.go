@@ -3,7 +3,7 @@ package task
 import (
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // StalledTaskState reports whether a task is stalled relative to agent health and a heartbeat staleness threshold.

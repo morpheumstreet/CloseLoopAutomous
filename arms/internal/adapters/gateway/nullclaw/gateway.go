@@ -6,7 +6,7 @@
 package nullclaw
 
 import (
-	"github.com/closeloopautomous/arms/internal/adapters/gateway/openclaw"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway/openclaw"
 )
 
 // NewOpenClawCompatible returns the WebSocket client for OpenClaw-class gateways (including nullclaw_ws).

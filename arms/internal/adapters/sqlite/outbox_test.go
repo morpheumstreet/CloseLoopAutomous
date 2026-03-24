@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/application/livefeed"
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/application/livefeed"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 func TestOutboxRelayToHub(t *testing.T) {

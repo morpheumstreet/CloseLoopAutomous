@@ -1,5 +1,6 @@
 # CloseLoopAutomous — arms server build & release
-# Module lives in ./arms (git tags are at repo root).
+# Go module lives in ./arms; import path is github.com/morpheumstreet/CloseLoopAutomous/arms (monorepo root + /arms).
+# Git tags are at repo root.
 # Use GOWORK=off if this repo is outside your go.work.
 # Version and commit are injected at build time from git.
 
@@ -8,7 +9,7 @@ BINARY   := $(ARMS_DIR)/bin/arms
 MAIN     := ./cmd/arms
 # Default config for `make run` (override: make run CONFIG=config/arms.local.toml)
 CONFIG   ?= config/arms.toml
-PKG      := github.com/closeloopautomous/arms/cmd/arms
+PKG      := github.com/morpheumstreet/CloseLoopAutomous/arms/cmd/arms
 VERSION  := $(shell git -C $(ARMS_DIR)/.. describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT   := $(shell git -C $(ARMS_DIR)/.. rev-parse --short HEAD 2>/dev/null || echo "")
 LDFLAGS  := -ldflags "-X $(PKG).Version=$(VERSION) -X $(PKG).Commit=$(COMMIT)"

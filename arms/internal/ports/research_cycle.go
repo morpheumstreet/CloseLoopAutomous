@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // ResearchCycleRepository stores append-only research run history per product.

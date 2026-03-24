@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // ExecutionAgentRegistry persists registered agent slots (GET /api/agents registry).

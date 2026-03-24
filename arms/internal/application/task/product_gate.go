@@ -3,7 +3,7 @@ package task
 import (
 	"sync"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // ProductGate serializes completion (and similar) work per product on this process.

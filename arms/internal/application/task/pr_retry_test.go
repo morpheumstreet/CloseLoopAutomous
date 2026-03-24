@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func TestShouldRetryPullRequestCreate(t *testing.T) {

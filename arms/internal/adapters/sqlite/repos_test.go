@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func TestProductIdeaTaskRoundTrip(t *testing.T) {

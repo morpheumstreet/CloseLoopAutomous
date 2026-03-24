@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func TestEnrichReachability_HTTP401(t *testing.T) {

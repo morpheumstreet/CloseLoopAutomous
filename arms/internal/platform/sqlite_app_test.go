@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/adapters/httpapi"
-	"github.com/closeloopautomous/arms/internal/domain"
-	"github.com/closeloopautomous/arms/internal/platform"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/httpapi"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/platform"
 )
 
 func TestOpenAppSQLiteFileRoundTrip(t *testing.T) {

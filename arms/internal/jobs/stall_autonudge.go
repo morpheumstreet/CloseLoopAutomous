@@ -7,8 +7,8 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"github.com/closeloopautomous/arms/internal/application/task"
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/application/task"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 // StallAutoNudgeHandler runs [task.Service.RunAutoStallNudgeSweep] from Asynq.

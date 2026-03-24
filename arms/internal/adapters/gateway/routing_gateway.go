@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/adapters/gateway/nemoclaw"
-	"github.com/closeloopautomous/arms/internal/domain"
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway/nemoclaw"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 // RoutingGateway implements [ports.AgentGateway] by resolving execution agent → gateway endpoint → transport.

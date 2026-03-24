@@ -1,4 +1,4 @@
-module github.com/closeloopautomous/arms
+module github.com/morpheumstreet/CloseLoopAutomous/arms
 
 go 1.26.1
 

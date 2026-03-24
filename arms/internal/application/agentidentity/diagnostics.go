@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // ConnectionTestStep is one row in the Mission Control gateway connection checklist.

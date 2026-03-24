@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 type errorBody struct {

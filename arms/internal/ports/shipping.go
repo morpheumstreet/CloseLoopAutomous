@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // CreatePullRequestInput is the contract for opening a PR on GitHub (or compatible API).

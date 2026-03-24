@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/domain"
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 type AgentProfileStore struct{ db *sql.DB }

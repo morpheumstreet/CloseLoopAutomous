@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	convoyapp "github.com/closeloopautomous/arms/internal/application/convoy"
-	"github.com/closeloopautomous/arms/internal/domain"
+	convoyapp "github.com/morpheumstreet/CloseLoopAutomous/arms/internal/application/convoy"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func subtaskDescriptionFromMeta(metadataJSON string) string {

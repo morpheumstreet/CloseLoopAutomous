@@ -3,7 +3,7 @@ package timeadapter
 import (
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 type System struct{}

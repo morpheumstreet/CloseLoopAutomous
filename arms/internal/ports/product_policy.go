@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // RequireActiveProduct returns nil when the product exists and is not soft-deleted.

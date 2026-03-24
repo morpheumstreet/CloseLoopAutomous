@@ -3,7 +3,7 @@ package convoy
 import (
 	"testing"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func TestStableTopologicalSubtaskOrder_chain(t *testing.T) {

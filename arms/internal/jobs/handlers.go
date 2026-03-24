@@ -7,8 +7,8 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"github.com/closeloopautomous/arms/internal/application/autopilot"
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/application/autopilot"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 // HandlerRegistry wires Asynq task types to autopilot execution and product schedule chaining.

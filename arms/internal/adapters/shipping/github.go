@@ -10,8 +10,8 @@ import (
 
 	"github.com/google/go-github/v66/github"
 
-	"github.com/closeloopautomous/arms/internal/domain"
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 // GitHubPublisher creates pull requests via the GitHub REST API (github.com or GHES).

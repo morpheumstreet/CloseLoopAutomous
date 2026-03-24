@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // reviewColumnAutoPRTiers: auto-open PR when landing in review from execution columns (full_auto only).

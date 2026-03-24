@@ -16,8 +16,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/closeloopautomous/arms/internal/adapters/gateway/openclaw"
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway/openclaw"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // maxMessageRunes matches scripts/web_relay.py MAX_CHAT_MESSAGE_LEN (4096).

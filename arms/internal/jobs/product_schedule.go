@@ -11,9 +11,9 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/robfig/cron/v3"
 
-	"github.com/closeloopautomous/arms/internal/application/autopilot"
-	"github.com/closeloopautomous/arms/internal/domain"
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/application/autopilot"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 // ProductSchedulePayload is the Asynq payload for TaskProductScheduleTick.

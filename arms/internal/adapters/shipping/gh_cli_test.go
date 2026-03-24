@@ -12,7 +12,7 @@ func TestGhStderrLooksLikeDuplicatePR(t *testing.T) {
 	}{
 		{"", false},
 		{"random failure", false},
-		{"GraphQL: A pull request already exists for closeloopautomous:arms:feature-x", true},
+		{"GraphQL: A pull request already exists for morpheumstreet:CloseLoopAutomous:feature-x", true},
 		{"HTTP 422: already exists", true},
 		{"Pull Request already open for this branch", true},
 	}

@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/closeloopautomous/arms/internal/domain"
-	"github.com/closeloopautomous/arms/internal/nlp/tfidftags"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/nlp/tfidftags"
 )
 
 type postTfidfSuggestTagsReq struct {

@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/adapters/budget"
-	gw "github.com/closeloopautomous/arms/internal/adapters/gateway"
-	"github.com/closeloopautomous/arms/internal/adapters/identity"
-	"github.com/closeloopautomous/arms/internal/adapters/memory"
-	timeadapter "github.com/closeloopautomous/arms/internal/adapters/time"
-	"github.com/closeloopautomous/arms/internal/application/product"
-	"github.com/closeloopautomous/arms/internal/domain"
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/budget"
+	gw "github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/identity"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/memory"
+	timeadapter "github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/time"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/application/product"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 func TestGetAndListByProduct(t *testing.T) {

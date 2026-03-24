@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/adapters/memory"
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/memory"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func TestTargetResolver_ResolveStub(t *testing.T) {

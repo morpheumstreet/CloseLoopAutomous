@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/closeloopautomous/arms/internal/domain"
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 // SimulationMockClaw simulates gateway dispatch without a real WebSocket connection

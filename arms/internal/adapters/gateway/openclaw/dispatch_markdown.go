@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // TaskDispatchMarkdown builds the chat.send body for a task; knowledgeBlock is appended when non-empty.

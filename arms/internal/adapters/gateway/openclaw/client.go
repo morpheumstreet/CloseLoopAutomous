@@ -14,8 +14,8 @@ import (
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 
-	"github.com/closeloopautomous/arms/internal/domain"
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 // Options configure the WebSocket gateway client for OpenClaw-class protocols

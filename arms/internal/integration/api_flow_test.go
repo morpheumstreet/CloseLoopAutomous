@@ -18,10 +18,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/adapters/httpapi"
-	"github.com/closeloopautomous/arms/internal/config"
-	"github.com/closeloopautomous/arms/internal/platform"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/httpapi"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/config"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/platform"
 )
+
+// registerStubExecutionAgent binds the default in-memory stub gateway (gw-stub) so
+// Dispatch can resolve a target via the execution-agent registry (#107 routing).
+func registerStubExecutionAgent(t *testing.T, cli *http.Client, base, productID string) {
+	t.Helper()
+	body := fmt.Sprintf(
+		`{"display_name":"integration-stub","product_id":%q,"gateway_endpoint_id":"gw-stub"}`,
+		productID,
+	)
+	mustJSON(t, cli, http.MethodPost, base+"/api/agents", []byte(body), http.StatusCreated, nil)
+}
 
 func TestHTTP_ProductToTaskDispatch(t *testing.T) {
 	cfg := config.Config{
@@ -45,6 +56,7 @@ func TestHTTP_ProductToTaskDispatch(t *testing.T) {
 	if pid == "" {
 		t.Fatalf("product id missing: %#v", prod)
 	}
+	registerStubExecutionAgent(t, cli, base, pid)
 
 	var productsList struct {
 		Products []map[string]any `json:"products"`
@@ -161,6 +173,7 @@ func TestHTTP_LiveSSEOnDispatch(t *testing.T) {
 	var created map[string]any
 	mustJSON(t, cli, http.MethodPost, base+"/api/products", []byte(`{"name":"sse-p","workspace_id":"ws-sse"}`), http.StatusCreated, &created)
 	pid, _ := created["id"].(string)
+	registerStubExecutionAgent(t, cli, base, pid)
 	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/research", nil, http.StatusOK, &prod)
 	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/ideation", nil, http.StatusOK, &prod)
 	var ideasWrap struct {
@@ -396,6 +409,7 @@ func TestHTTP_ConvoySubtaskWebhookAndSecondDispatch(t *testing.T) {
 	var prod map[string]any
 	mustJSON(t, cli, http.MethodPost, base+"/api/products", []byte(`{"name":"cv-p","workspace_id":"ws-cv"}`), http.StatusCreated, &prod)
 	pid, _ := prod["id"].(string)
+	registerStubExecutionAgent(t, cli, base, pid)
 	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/research", nil, http.StatusOK, &prod)
 	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/ideation", nil, http.StatusOK, &prod)
 
@@ -475,6 +489,7 @@ func TestHTTP_TaskConvoyMCShape(t *testing.T) {
 	var prod map[string]any
 	mustJSON(t, cli, http.MethodPost, base+"/api/products", []byte(`{"name":"mc-shape","workspace_id":"ws-mc"}`), http.StatusCreated, &prod)
 	pid, _ := prod["id"].(string)
+	registerStubExecutionAgent(t, cli, base, pid)
 	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/research", nil, http.StatusOK, &prod)
 	mustJSON(t, cli, http.MethodPost, base+"/api/products/"+pid+"/ideation", nil, http.StatusOK, &prod)
 	var ideasWrap struct {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // Drivers where we send Authorization: Bearer gateway_token on HTTP reachability probe.

@@ -8,8 +8,8 @@ import (
 
 	cronlib "github.com/robfig/cron/v3"
 
-	"github.com/closeloopautomous/arms/internal/domain"
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 // Service runs research → ideation → swipe stages for a product.

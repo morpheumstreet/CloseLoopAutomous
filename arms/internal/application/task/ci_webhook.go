@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // ApplyCIWebhookOutcome applies a signed CI callback: move the board or mark done / failed.

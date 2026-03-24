@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // GatewayEndpointRegistry persists OpenClaw-class gateway connection profiles (multi-endpoint dispatch).

@@ -1,6 +1,6 @@
 package ports
 
-import "github.com/closeloopautomous/arms/internal/domain"
+import "github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 
 // IdentityGenerator issues opaque IDs for aggregates (DB or UUID adapter).
 type IdentityGenerator interface {

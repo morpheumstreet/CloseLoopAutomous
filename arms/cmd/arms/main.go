@@ -12,11 +12,11 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"github.com/closeloopautomous/arms/internal/adapters/httpapi"
-	"github.com/closeloopautomous/arms/internal/config"
-	"github.com/closeloopautomous/arms/internal/domain"
-	"github.com/closeloopautomous/arms/internal/jobs"
-	"github.com/closeloopautomous/arms/internal/platform"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/httpapi"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/config"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/jobs"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/platform"
 )
 
 // Version and Commit are set at link time via -ldflags (see repo Makefile).

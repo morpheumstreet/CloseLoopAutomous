@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/adapters/memory"
-	timeadapter "github.com/closeloopautomous/arms/internal/adapters/time"
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/memory"
+	timeadapter "github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/time"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func TestCompositeDefaultCumulative(t *testing.T) {

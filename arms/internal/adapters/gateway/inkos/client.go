@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/adapters/gateway/openclaw"
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway/openclaw"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // Client runs InkOS for each dispatch.

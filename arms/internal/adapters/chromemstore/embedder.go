@@ -7,7 +7,7 @@ import (
 
 	"github.com/philippgille/chromem-go"
 
-	"github.com/closeloopautomous/arms/internal/config"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/config"
 )
 
 // NewEmbeddingFunc returns a chromem EmbeddingFunc from config (Ollama or OpenAI-compatible).

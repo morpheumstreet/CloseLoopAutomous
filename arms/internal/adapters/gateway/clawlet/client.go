@@ -13,8 +13,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/adapters/gateway/openclaw"
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway/openclaw"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // Options configure the Clawlet gateway WebSocket client.

@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/adapters/budget"
-	gw "github.com/closeloopautomous/arms/internal/adapters/gateway"
-	"github.com/closeloopautomous/arms/internal/adapters/memory"
-	timeadapter "github.com/closeloopautomous/arms/internal/adapters/time"
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/budget"
+	gw "github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/memory"
+	timeadapter "github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/time"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func TestAutoStallReassignPicksAlternateAgent(t *testing.T) {

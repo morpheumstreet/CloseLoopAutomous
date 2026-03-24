@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"strings"
 
-	"github.com/closeloopautomous/arms/internal/adapters/chromemstore"
-	"github.com/closeloopautomous/arms/internal/adapters/sqlite"
-	"github.com/closeloopautomous/arms/internal/config"
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/chromemstore"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/sqlite"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/config"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 // newKnowledgeRepository selects the knowledge backend and whether Search should use FTS5 query sanitization (SQLite FTS only).

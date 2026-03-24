@@ -3,7 +3,7 @@ package zeroclaw
 import (
 	"testing"
 
-	"github.com/closeloopautomous/arms/internal/adapters/gateway/openclaw"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway/openclaw"
 )
 
 func TestNewNonNil(t *testing.T) {

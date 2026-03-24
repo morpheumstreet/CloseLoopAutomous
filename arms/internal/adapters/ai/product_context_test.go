@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func TestProductContextSnippet(t *testing.T) {

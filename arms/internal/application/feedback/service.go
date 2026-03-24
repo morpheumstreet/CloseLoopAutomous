@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/closeloopautomous/arms/internal/domain"
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 // Service stores product-scoped external feedback (Mission Control product_feedback).

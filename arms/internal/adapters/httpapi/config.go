@@ -1,6 +1,6 @@
 package httpapi
 
-import "github.com/closeloopautomous/arms/internal/config"
+import "github.com/morpheumstreet/CloseLoopAutomous/arms/internal/config"
 
 // Config is the shared arms configuration (loaded via [config.LoadFromEnv] or [config.Load] with -c).
 type Config = config.Config

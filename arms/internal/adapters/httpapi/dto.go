@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 type createProductReq struct {

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/application/convoy"
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/application/convoy"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func decodeJSONLoose(r *http.Request, dst any) error {

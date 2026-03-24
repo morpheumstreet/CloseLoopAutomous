@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func knowledgeToJSON(e *domain.KnowledgeEntry) map[string]any {

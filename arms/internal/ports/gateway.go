@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // AgentGateway is the execution plane: arms pushes work to an external agent runtime and receives

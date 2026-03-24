@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/adapters/httpapi"
-	"github.com/closeloopautomous/arms/internal/config"
-	"github.com/closeloopautomous/arms/internal/domain"
-	"github.com/closeloopautomous/arms/internal/platform"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/httpapi"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/config"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/platform"
 )
 
 func TestWebhookAgentCompletion(t *testing.T) {

@@ -15,8 +15,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/closeloopautomous/arms/internal/adapters/gateway/openclaw"
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway/openclaw"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // Options configure the NullClaw HTTP JSON-RPC client.

@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/adapters/budget"
-	gw "github.com/closeloopautomous/arms/internal/adapters/gateway"
-	"github.com/closeloopautomous/arms/internal/adapters/identity"
-	"github.com/closeloopautomous/arms/internal/adapters/memory"
-	timeadapter "github.com/closeloopautomous/arms/internal/adapters/time"
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/budget"
+	gw "github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/identity"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/memory"
+	timeadapter "github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/time"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 func testTaskService(t *testing.T, clock timeadapter.Fixed) (*Service, *memory.TaskStore, *memory.ProductStore) {

@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/closeloopautomous/arms/internal/ports"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
 
 // NewResolver returns a GeoIP resolver from optional MMDB path (ARMS_GEOIP2_CITY). On open failure, logs and returns NoopResolver.

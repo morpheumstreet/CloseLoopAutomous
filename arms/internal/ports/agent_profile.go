@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // AgentProfileRepository persists unified [domain.AgentIdentity] rows keyed by profile id (see [domain.StableAgentProfileID]).

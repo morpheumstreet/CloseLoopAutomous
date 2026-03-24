@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // LiveActivityEvent is the JSON shape for SSE / future WebSocket activity feeds.

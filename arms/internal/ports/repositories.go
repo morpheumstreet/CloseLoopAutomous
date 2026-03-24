@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 // ProductRepository persists products. Active vs soft-deleted is defined in domain: (*Product).IsDeleted().

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/domain"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 )
 
 type SwipeHistoryStore struct {

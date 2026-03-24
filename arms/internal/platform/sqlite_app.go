@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/closeloopautomous/arms/internal/adapters/sqlite"
-	"github.com/closeloopautomous/arms/internal/application/agentidentity"
-	"github.com/closeloopautomous/arms/internal/application/livefeed"
-	"github.com/closeloopautomous/arms/internal/config"
-	"github.com/closeloopautomous/arms/internal/platform/geoip"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/sqlite"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/application/agentidentity"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/application/livefeed"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/config"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/platform/geoip"
 )
 
 // OpenApp returns an in-memory app when cfg.DatabasePath is empty; otherwise opens SQLite, migrates, and wires sqlite repositories.
