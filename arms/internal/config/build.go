@@ -31,6 +31,12 @@ func buildConfig(file map[string]string) Config {
 	nemoAutoStart := strings.EqualFold(s.getenv("ARMS_NEMOCLAW_AUTO_START"), "1") ||
 		strings.EqualFold(s.getenv("ARMS_NEMOCLAW_AUTO_START"), "true")
 	nemoBlueprint := strings.TrimSpace(s.getenv("ARMS_NEMOCLAW_DEFAULT_BLUEPRINT"))
+	openClawDeviceSigning := strings.EqualFold(strings.TrimSpace(s.getenv("ARMS_DEVICE_SIGNING")), "1") ||
+		strings.EqualFold(strings.TrimSpace(s.getenv("ARMS_DEVICE_SIGNING")), "true") ||
+		strings.EqualFold(strings.TrimSpace(s.getenv("ARMS_DEVICE_SIGNING")), "yes") ||
+		strings.EqualFold(strings.TrimSpace(s.getenv("ARMS_DEVICE_SIGNING")), "enabled") ||
+		strings.EqualFold(strings.TrimSpace(s.getenv("ARMS_DEVICE_SIGNING")), "on")
+	openClawDeviceIdentityFile := strings.TrimSpace(s.getenv("ARMS_DEVICE_IDENTITY_FILE"))
 	logJSON := strings.EqualFold(s.getenv("ARMS_LOG_JSON"), "1") ||
 		strings.EqualFold(s.getenv("ARMS_LOG_JSON"), "true")
 	accessLog := true
@@ -183,6 +189,8 @@ func buildConfig(file map[string]string) Config {
 		NemoClawBin:                       nemoBin,
 		NemoClawAutoStart:                 nemoAutoStart,
 		NemoClawDefaultBlueprint:          nemoBlueprint,
+		OpenClawDeviceSigning:             openClawDeviceSigning,
+		OpenClawDeviceIdentityFile:        openClawDeviceIdentityFile,
 		LogJSON:                           logJSON,
 		AccessLog:                         accessLog,
 		AutopilotTickSec:                  autopilotTick,

@@ -20,6 +20,8 @@ type Options struct {
 	NemoClawBin          string
 	AutoStart            bool
 	KnowledgeForDispatch func(ctx context.Context, productID domain.ProductID, query string) (string, error)
+	DeviceSigning        bool
+	DeviceIdentityFile   string
 }
 
 // Client dispatches via OpenClaw WebSocket JSON-RPC after optional NemoClaw sandbox lifecycle.
@@ -43,6 +45,8 @@ func New(opts Options) *Client {
 		SessionKey:           "",
 		Timeout:              to,
 		KnowledgeForDispatch: opts.KnowledgeForDispatch,
+		DeviceSigning:        opts.DeviceSigning,
+		DeviceIdentityFile:   opts.DeviceIdentityFile,
 	})
 	return &Client{
 		oc:          oc,

@@ -305,7 +305,8 @@ export function EditGatewayEndpointModal({ open, endpoint, onClose, client, onSa
               </div>
               <h3 style={{ margin: '0 0 0.35rem', fontSize: '1rem', fontWeight: 600 }}>Connection test</h3>
               <p className="ft-muted" style={{ margin: '0 0 1rem', fontSize: '0.8rem', lineHeight: 1.45 }}>
-                Checks configuration, URL, transport (HTTP, HTTPS, or WebSocket), and bearer auth where supported — using the values in the form (including unsaved token changes).
+                Checks configuration, URL, transport (HTTP, HTTPS, or WebSocket), and bearer auth where supported — using the values in the form (including unsaved token changes). For OpenClaw-class WebSocket drivers, after a successful handshake the server runs{' '}
+                <code className="ft-mono">agents.list</code> next (before the &quot;Dispatch path&quot; row) to confirm operator scopes (e.g. <code className="ft-mono">operator.read</code>) and pairing — the same RPC as fleet discovery.
               </p>
               {testErr ? (
                 <p className="ft-banner ft-banner--error" role="alert" style={{ marginBottom: '0.75rem' }}>

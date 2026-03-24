@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway/nemoclaw"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway/openclaw"
 	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/domain"
 	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/ports"
 )
@@ -53,9 +54,10 @@ func NewRoutingGateway(
 	knowledge func(context.Context, domain.ProductID, string) (string, error),
 	defaultTimeout time.Duration,
 	nemo nemoclaw.PoolSettings,
+	openclawConnect openclaw.ConnectEnv,
 ) (*RoutingGateway, func()) {
 	stub := &SimulationMockClaw{}
-	pool := newClientPool(knowledge, defaultTimeout, nemo)
+	pool := newClientPool(knowledge, defaultTimeout, nemo, openclawConnect)
 	resolver := &TargetResolver{Agents: agents, Endpoints: endpoints, DefaultTimeout: defaultTimeout}
 	rg := &RoutingGateway{stub: stub, pool: pool, resolver: resolver}
 	return rg, func() { pool.close() }

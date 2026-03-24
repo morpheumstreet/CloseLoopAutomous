@@ -43,9 +43,10 @@ type clientPool struct {
 	nemo           nemoclaw.PoolSettings
 	knowledge      func(context.Context, domain.ProductID, string) (string, error)
 	defaultTimeout time.Duration
+	openclawEnv    openclaw.ConnectEnv
 }
 
-func newClientPool(knowledge func(context.Context, domain.ProductID, string) (string, error), defaultTimeout time.Duration, nemo nemoclaw.PoolSettings) *clientPool {
+func newClientPool(knowledge func(context.Context, domain.ProductID, string) (string, error), defaultTimeout time.Duration, nemo nemoclaw.PoolSettings, oc openclaw.ConnectEnv) *clientPool {
 	return &clientPool{
 		openclaw:       make(map[string]*openclaw.Client),
 		zeroclaw:       make(map[string]*zeroclaw.Client),
@@ -64,6 +65,7 @@ func newClientPool(knowledge func(context.Context, domain.ProductID, string) (st
 		nemo:           nemo,
 		knowledge:      knowledge,
 		defaultTimeout: defaultTimeout,
+		openclawEnv:    oc,
 	}
 }
 
@@ -100,10 +102,11 @@ func (p *clientPool) key(target domain.DispatchTarget) string {
 	}
 	// NemoClaw pool key must include process-wide CLI settings so toggling ARMS_NEMOCLAW_* does not reuse stale clients.
 	if target.Driver == domain.GatewayDriverNemoClawWS {
-		return fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s\n%v\n%s", target.Driver, target.GatewayURL, target.GatewayToken, target.DeviceID, to.String(),
-			p.nemo.BinaryPath, p.nemo.AutoStart, p.nemo.DefaultBlueprint)
+		return fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s\n%v\n%s\n%v\n%s", target.Driver, target.GatewayURL, target.GatewayToken, target.DeviceID, to.String(),
+			p.nemo.BinaryPath, p.nemo.AutoStart, p.nemo.DefaultBlueprint, p.openclawEnv.DeviceSigning, p.openclawEnv.DeviceIdentityFile)
 	}
-	return fmt.Sprintf("%s\n%s\n%s\n%s\n%s", target.Driver, target.GatewayURL, target.GatewayToken, target.DeviceID, to.String())
+	return fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%v\n%s", target.Driver, target.GatewayURL, target.GatewayToken, target.DeviceID, to.String(),
+		p.openclawEnv.DeviceSigning, p.openclawEnv.DeviceIdentityFile)
 }
 
 func (p *clientPool) openclawClientFor(target domain.DispatchTarget) *openclaw.Client {
@@ -120,14 +123,14 @@ func (p *clientPool) openclawClientFor(target domain.DispatchTarget) *openclaw.C
 	if c, ok := p.openclaw[k]; ok {
 		return c
 	}
-	opts := openclaw.Options{
+	opts := p.openclawEnv.MergeInto(openclaw.Options{
 		URL:                  target.GatewayURL,
 		Token:                target.GatewayToken,
 		DeviceID:             target.DeviceID,
 		SessionKey:           "",
 		Timeout:              to,
 		KnowledgeForDispatch: p.knowledge,
-	}
+	})
 	c := openclaw.New(opts)
 	p.openclaw[k] = c
 	return c
@@ -156,6 +159,8 @@ func (p *clientPool) nemoclawClientFor(target domain.DispatchTarget) *nemoclaw.C
 		NemoClawBin:          p.nemo.BinaryPath,
 		AutoStart:            p.nemo.AutoStart,
 		KnowledgeForDispatch: p.knowledge,
+		DeviceSigning:        p.openclawEnv.DeviceSigning,
+		DeviceIdentityFile:   p.openclawEnv.DeviceIdentityFile,
 	})
 	p.nemoclawWS[k] = c
 	return c
@@ -181,6 +186,8 @@ func (p *clientPool) zeroclawClientFor(target domain.DispatchTarget) *zeroclaw.C
 		DeviceID:             target.DeviceID,
 		Timeout:              to,
 		KnowledgeForDispatch: p.knowledge,
+		DeviceSigning:        p.openclawEnv.DeviceSigning,
+		DeviceIdentityFile:   p.openclawEnv.DeviceIdentityFile,
 	})
 	p.zeroclaw[k] = c
 	return c
@@ -206,6 +213,8 @@ func (p *clientPool) clawletClientFor(target domain.DispatchTarget) *clawlet.Cli
 		DeviceID:             target.DeviceID,
 		Timeout:              to,
 		KnowledgeForDispatch: p.knowledge,
+		DeviceSigning:        p.openclawEnv.DeviceSigning,
+		DeviceIdentityFile:   p.openclawEnv.DeviceIdentityFile,
 	})
 	p.clawlet[k] = c
 	return c
@@ -231,6 +240,8 @@ func (p *clientPool) ironclawClientFor(target domain.DispatchTarget) *ironclaw.C
 		DeviceID:             target.DeviceID,
 		Timeout:              to,
 		KnowledgeForDispatch: p.knowledge,
+		DeviceSigning:        p.openclawEnv.DeviceSigning,
+		DeviceIdentityFile:   p.openclawEnv.DeviceIdentityFile,
 	})
 	p.ironclaw[k] = c
 	return c

@@ -13,6 +13,7 @@ import (
 	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/budget"
 	gw "github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway"
 	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway/nemoclaw"
+	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/gateway/openclaw"
 	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/httpapi"
 	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/identity"
 	"github.com/morpheumstreet/CloseLoopAutomous/arms/internal/adapters/memory"
@@ -160,6 +161,9 @@ func buildHandlers(
 		BinaryPath:       cfg.NemoClawBin,
 		AutoStart:        cfg.NemoClawAutoStart,
 		DefaultBlueprint: cfg.NemoClawDefaultBlueprint,
+	}, openclaw.ConnectEnv{
+		DeviceSigning:      cfg.OpenClawDeviceSigning,
+		DeviceIdentityFile: cfg.OpenClawDeviceIdentityFile,
 	})
 	idSvc := &agentidentity.Service{
 		Endpoints: gatewayEndpoints,

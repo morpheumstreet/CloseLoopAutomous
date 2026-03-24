@@ -129,9 +129,11 @@ export function AgentsPanel({ embedded = false }: AgentsPanelProps) {
         </div>
         <p className="ft-muted" style={{ fontSize: '0.65rem', padding: '0 0.5rem 0.5rem', lineHeight: 1.45, margin: 0 }}>
           Unified <code className="ft-mono">AgentIdentity</code> from <code className="ft-mono">agent_profiles</code> (Geo via optional{' '}
-          <code className="ft-mono">ARMS_GEOIP2_CITY</code>). This page reloads <code className="ft-mono">GET /api/fleet/identities</code> on open.{' '}
-          <strong>AUTH</strong> means HTTP 401/403 or missing token (selected drivers); <strong>OFFLINE</strong> is unreachable host or WebSocket drivers
-          (no WS probe on refresh). SSE <code className="ft-mono">agent_identity_updated</code> updates via <code className="ft-mono">GET /api/agents</code>.
+          <code className="ft-mono">ARMS_GEOIP2_CITY</code>). On open we only <code className="ft-mono">GET /api/fleet/identities</code> (cached rows).{' '}
+          Red discovery text is the last scan error stored in ARMS until you use <strong>Refresh</strong> (<code className="ft-mono">POST /api/fleet/refresh</code>
+          , which re-runs OpenClaw <code className="ft-mono">agents.list</code>). <strong>AUTH</strong> means HTTP 401/403 or missing token (selected drivers);{' '}
+          <strong>OFFLINE</strong> is unreachable host or WebSocket drivers (no WS probe on refresh). SSE{' '}
+          <code className="ft-mono">agent_identity_updated</code> updates via <code className="ft-mono">GET /api/agents</code>.
         </p>
         {fleetList.length === 0 ? (
           <p className="ft-muted" style={{ fontSize: '0.75rem', padding: '0.5rem', lineHeight: 1.5 }}>

@@ -87,11 +87,13 @@ func RunConnectionTests(ctx context.Context, ep *domain.GatewayEndpoint) ([]Conn
 	lowSc := strings.ToLower(u.Scheme)
 
 	// 3–4) Transport + auth
+	var runOpenClawAgentsList bool
 	if strings.HasPrefix(lowSc, "ws") {
 		if openClawHandshakeProbeDriver(drv) {
 			step, snap := openClawHandshakeStep(ctx, ep)
 			steps = append(steps, step)
 			connectivity = snap
+			runOpenClawAgentsList = step.Status == "pass"
 		} else {
 			steps = append(steps, wsHandshakeStep(ctx, raw, ep)...)
 		}
@@ -104,6 +106,10 @@ func RunConnectionTests(ctx context.Context, ep *domain.GatewayEndpoint) ([]Conn
 		})
 	}
 
+	// agents.list verifies operator scopes for fleet discovery; keep it immediately before the MC dispatch checklist row.
+	if runOpenClawAgentsList {
+		steps = append(steps, openClawAgentsListStep(ctx, ep))
+	}
 	steps = append(steps, ConnectionTestStep{
 		ID:     "mc_dispatch",
 		Title:  "Dispatch path (Mission Control)",
@@ -123,11 +129,7 @@ func openClawHandshakeProbeDriver(drv string) bool {
 	}
 }
 
-func openClawHandshakeStep(ctx context.Context, ep *domain.GatewayEndpoint) (ConnectionTestStep, *domain.GatewayConnectivitySnapshot) {
-	t0 := time.Now()
-	s := ConnectionTestStep{
-		ID: "ws_openclaw_handshake", Title: "OpenClaw WebSocket (handshake + pairing check)",
-	}
+func openClawProbeTimeout(ep *domain.GatewayEndpoint) time.Duration {
 	to := time.Duration(ep.TimeoutSec) * time.Second
 	if to < 12*time.Second {
 		to = 12 * time.Second
@@ -135,15 +137,26 @@ func openClawHandshakeStep(ctx context.Context, ep *domain.GatewayEndpoint) (Con
 	if to > 90*time.Second {
 		to = 90 * time.Second
 	}
+	return to
+}
+
+func openClawHandshakeStep(ctx context.Context, ep *domain.GatewayEndpoint) (ConnectionTestStep, *domain.GatewayConnectivitySnapshot) {
+	t0 := time.Now()
+	s := ConnectionTestStep{
+		ID: "ws_openclaw_handshake", Title: "OpenClaw WebSocket (handshake + pairing check)",
+	}
+	to := openClawProbeTimeout(ep)
 	subCtx, cancel := context.WithTimeout(ctx, to+3*time.Second)
 	defer cancel()
 
-	cl := openclaw.New(openclaw.Options{
+	ocOpts := openclaw.Options{
 		URL:      ep.GatewayURL,
 		Token:    ep.GatewayToken,
 		DeviceID: ep.DeviceID,
 		Timeout:  to,
-	})
+	}
+	openclaw.ApplyArmsDeviceEnv(&ocOpts)
+	cl := openclaw.New(ocOpts)
 	defer func() { _ = cl.Close() }()
 
 	_, detail, err := cl.TestConnectionAndDetectPairing(subCtx)
@@ -173,6 +186,40 @@ func openClawHandshakeStep(ctx context.Context, ep *domain.GatewayEndpoint) (Con
 	s.Status = "fail"
 	s.Detail = err.Error()
 	return s, nil
+}
+
+// openClawAgentsListStep runs agents.list after a successful handshake (separate dial) to verify
+// operator scopes (e.g. operator.read) and device approval for fleet discovery.
+func openClawAgentsListStep(ctx context.Context, ep *domain.GatewayEndpoint) ConnectionTestStep {
+	t0 := time.Now()
+	s := ConnectionTestStep{
+		ID:    "ws_openclaw_agents_list",
+		Title: "OpenClaw agents.list (scopes / fleet discovery)",
+	}
+	to := openClawProbeTimeout(ep)
+	subCtx, cancel := context.WithTimeout(ctx, to+3*time.Second)
+	defer cancel()
+
+	ocOpts := openclaw.Options{
+		URL:      ep.GatewayURL,
+		Token:    ep.GatewayToken,
+		DeviceID: ep.DeviceID,
+		Timeout:  to,
+	}
+	openclaw.ApplyArmsDeviceEnv(&ocOpts)
+	cl := openclaw.New(ocOpts)
+	defer func() { _ = cl.Close() }()
+
+	idents, err := cl.ListAgentIdentities(subCtx)
+	s.ElapsedMs = time.Since(t0).Milliseconds()
+	if err != nil {
+		s.Status = "fail"
+		s.Detail = err.Error()
+		return s
+	}
+	s.Status = "pass"
+	s.Detail = fmt.Sprintf("agents.list OK — %d remote profile(s) (operator connect / pairing sufficient for discovery)", len(idents))
+	return s
 }
 
 func cliOrStubTail(drv string) []ConnectionTestStep {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -19,28 +20,37 @@ import (
 )
 
 // Options configure the WebSocket gateway client for OpenClaw-class protocols
-// (connect.challenge / connect, chat.send). Drivers zeroclaw_ws, clawlet_ws, and ironclaw_ws use thin wrappers around this type.
+// (connect.challenge / connect as operator, chat.send). Drivers zeroclaw_ws, clawlet_ws, and ironclaw_ws use thin wrappers around this type.
 // Stock NullClaw uses HTTP /a2a instead; see package nullclaw (Client) and driver nullclaw_a2a.
 type Options struct {
 	URL      string
 	Token    string
-	DeviceID string // optional extra header (not the Ed25519 device block MC uses)
+	DeviceID string // optional extra header X-Arms-Device-Id (separate from Ed25519 connect.device)
 	// SessionKey is passed to chat.send as sessionKey (e.g. agent:main:mission-control-builder).
 	// Set ARMS_OPENCLAW_SESSION_KEY to match your gateway agent session.
 	SessionKey string
 	Timeout    time.Duration // per Dispatch* (handshake + RPC)
 	MinProto   int           // default 3
 	MaxProto   int           // default 3
+	// DeviceSigning enables the Mission Control–style Ed25519 device block on connect (see device_identity.go).
+	// When true, identity is loaded from DeviceIdentityFile or ~/.mission-control/identity/device.json.
+	DeviceSigning      bool
+	DeviceIdentityFile string
 	// KnowledgeForDispatch appends ranked snippets to dispatch markdown when non-nil (#90).
 	KnowledgeForDispatch func(ctx context.Context, productID domain.ProductID, query string) (string, error)
 }
 
 // Client speaks native OpenClaw gateway JSON over WebSocket.
 type Client struct {
-	opts          Options
-	mu            sync.Mutex
-	conn          *websocket.Conn
-	authenticated bool
+	opts           Options
+	mu             sync.Mutex
+	conn           *websocket.Conn
+	authenticated  bool
+	deviceLoadOnce sync.Once
+	device         *deviceIdentity
+	deviceLoadErr  error
+	// lastConnectDeviceToken is set from a successful connect res payload when the gateway returns deviceToken.
+	lastConnectDeviceToken string
 }
 
 // New constructs a Client. Empty SessionKey yields a clear error on Dispatch when URL is set.
@@ -68,6 +78,7 @@ func (c *Client) Close() error {
 
 func (c *Client) dropConnLocked() error {
 	c.authenticated = false
+	c.lastConnectDeviceToken = ""
 	if c.conn == nil {
 		return nil
 	}
@@ -156,6 +167,30 @@ func (c *Client) handshakeAfterDialLocked(ctx context.Context) error {
 	}
 }
 
+func operatorConnectScopes() []string {
+	// Match Mission Control client.ts: role operator with operator.admin (superset for gateway RPCs).
+	return []string{"operator.admin"}
+}
+
+func (c *Client) ensureDeviceIdentity() (*deviceIdentity, error) {
+	if c == nil || !c.opts.DeviceSigning {
+		return nil, nil
+	}
+	c.deviceLoadOnce.Do(func() {
+		path := strings.TrimSpace(c.opts.DeviceIdentityFile)
+		if path == "" {
+			p, err := defaultMissionControlDevicePath()
+			if err != nil {
+				c.deviceLoadErr = fmt.Errorf("openclaw device identity path: %w", err)
+				return
+			}
+			path = p
+		}
+		c.device, c.deviceLoadErr = loadMissionControlDeviceJSON(path)
+	})
+	return c.device, c.deviceLoadErr
+}
+
 // ensureAuthedLocked performs connect.challenge → connect RPC (Mission Control flow).
 func (c *Client) ensureAuthedLocked(ctx context.Context) error {
 	if c.authenticated && c.conn != nil {
@@ -178,25 +213,48 @@ func (c *Client) answerChallengeLocked(ctx context.Context, challengeRaw []byte)
 		} `json:"payload"`
 	}
 	_ = json.Unmarshal(challengeRaw, &wrap)
-	_ = wrap.Payload.Nonce
+	nonce := strings.TrimSpace(wrap.Payload.Nonce)
 
 	// client.id / client.mode must match the gateway JSON Schema (same constants as
 	// https://github.com/crshdn/mission-control/blob/main/src/lib/openclaw/client.ts — id "cli", mode "ui").
 	reqID := uuid.NewString()
+	role := "operator"
+	scopes := operatorConnectScopes()
+	clientID := "arms-cli"
+	clientMode := "ui"
+	signedAtMs := time.Now().UnixMilli()
+
 	params := map[string]any{
 		"minProtocol": c.opts.MinProto,
 		"maxProtocol": c.opts.MaxProto,
 		"client": map[string]any{
-			"id":       "cli",
+			"id":       clientID,
 			"version":  "1.0.1",
-			"platform": "go",
-			"mode":     "ui",
+			"platform": runtime.GOOS,
+			"mode":     clientMode,
 		},
 		"auth":   map[string]any{"token": c.opts.Token},
-		"role":   "operator",
-		// agents.list / fleet discovery checks operator.read on some gateways; keep admin for dispatch/control.
-		"scopes": []string{"operator.read", "operator.admin"},
+		"role":   role,
+		"scopes": scopes,
 	}
+
+	dev, err := c.ensureDeviceIdentity()
+	if err != nil {
+		return err
+	}
+	if dev != nil {
+		tok := strings.TrimSpace(c.opts.Token)
+		payload := buildDeviceAuthPayload(dev.DeviceID, clientID, clientMode, role, scopes, signedAtMs, tok, nonce)
+		sig := signDevicePayloadBase64URL(dev.privateKey, payload)
+		params["device"] = map[string]any{
+			"id":        dev.DeviceID,
+			"publicKey": dev.publicKeyB64,
+			"signature": sig,
+			"signedAt":  signedAtMs,
+			"nonce":     nonce,
+		}
+	}
+
 	msg := map[string]any{
 		"type":   "req",
 		"id":     reqID,
@@ -210,7 +268,29 @@ func (c *Client) answerChallengeLocked(ctx context.Context, challengeRaw []byte)
 	if err := c.conn.Write(ctx, websocket.MessageText, b); err != nil {
 		return fmt.Errorf("openclaw connect write: %w", err)
 	}
-	return c.waitResLocked(ctx, reqID)
+	body, err := c.waitResBodyLocked(ctx, reqID)
+	if err != nil {
+		return err
+	}
+	c.recordConnectOKBody(body)
+	return nil
+}
+
+func (c *Client) recordConnectOKBody(raw json.RawMessage) {
+	if c == nil {
+		return
+	}
+	raw = bytesTrimSpaceJSON(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return
+	}
+	var m struct {
+		DeviceToken string `json:"deviceToken"`
+	}
+	if json.Unmarshal(raw, &m) != nil || strings.TrimSpace(m.DeviceToken) == "" {
+		return
+	}
+	c.lastConnectDeviceToken = strings.TrimSpace(m.DeviceToken)
 }
 
 // readJSONFrame skips non-JSON frames until a valid object is received or ctx expires.
@@ -284,11 +364,11 @@ func rpcFrameBody(fr frame) json.RawMessage {
 	return nil
 }
 
-func (c *Client) waitResLocked(ctx context.Context, wantID string) error {
+func (c *Client) waitResBodyLocked(ctx context.Context, wantID string) (json.RawMessage, error) {
 	for {
 		fr, _, err := readJSONFrame(ctx, c.conn)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if fr.Type != "res" {
 			continue
@@ -297,17 +377,22 @@ func (c *Client) waitResLocked(ctx context.Context, wantID string) error {
 			continue
 		}
 		if msg := rpcErrMessage(fr); msg != "" {
-			return errors.New(msg)
+			return nil, errors.New(msg)
 		}
 		if fr.OK != nil && !*fr.OK {
 			msg := "connect failed"
 			if m := rpcErrMessage(fr); m != "" {
 				msg = m
 			}
-			return errors.New(msg)
+			return nil, errors.New(msg)
 		}
-		return nil
+		return rpcFrameBody(fr), nil
 	}
+}
+
+func (c *Client) waitResLocked(ctx context.Context, wantID string) error {
+	_, err := c.waitResBodyLocked(ctx, wantID)
+	return err
 }
 
 // ListAgentIdentities calls agents.list on an authenticated OpenClaw session and maps rows to

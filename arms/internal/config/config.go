@@ -19,6 +19,8 @@ import (
 //   - ARMS_NEMOCLAW_BIN — optional path to nemoclaw executable for driver nemoclaw_ws when ARMS_NEMOCLAW_AUTO_START is enabled
 //   - ARMS_NEMOCLAW_AUTO_START — "1" or "true" to run `nemoclaw <device_id> start` before each dispatch (sandbox name = gateway endpoint device_id)
 //   - ARMS_NEMOCLAW_DEFAULT_BLUEPRINT — reserved for future policy/blueprint hooks (parsed, not yet used by the adapter)
+//   - ARMS_DEVICE_SIGNING — "1"/"true"/"yes"/"enabled"/"on" to send Mission Control–format Ed25519 device proof on OpenClaw connect
+//   - ARMS_DEVICE_IDENTITY_FILE — path to device.json (version 1 PEM keys); empty defaults to ~/.mission-control/identity/device.json when signing is on
 //   - ARMS_OPENCLAW_LIVE_CONTRACT — "1"/"true"/"yes" with gateway URL + session in env runs integration live gateway tests (#105); see internal/integration/openclaw_live_contract_test.go
 //   - ARMS_LOG_JSON — "1" or "true" for JSON logs to stdout (default text)
 //   - ARMS_ACCESS_LOG — "0", "false", "off", "no" disables per-request access logging (default on)
@@ -83,6 +85,9 @@ type Config struct {
 	NemoClawBin                       string
 	NemoClawAutoStart                 bool
 	NemoClawDefaultBlueprint          string
+	// OpenClawDeviceSigning enables Ed25519 device block on OpenClaw-class connect (ARMS_DEVICE_SIGNING).
+	OpenClawDeviceSigning      bool
+	OpenClawDeviceIdentityFile string // ARMS_DEVICE_IDENTITY_FILE; empty with signing uses ~/.mission-control/identity/device.json
 	LogJSON                           bool
 	AccessLog                         bool
 	AutopilotTickSec                  int

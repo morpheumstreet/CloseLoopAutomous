@@ -24,6 +24,8 @@ type Options struct {
 	MaxProto int
 	// KnowledgeForDispatch appends ranked snippets to dispatch bodies when non-nil (same hook as OpenClaw).
 	KnowledgeForDispatch func(ctx context.Context, productID domain.ProductID, query string) (string, error)
+	DeviceSigning        bool
+	DeviceIdentityFile   string
 }
 
 func (o Options) toOpenClaw() openclaw.Options {
@@ -36,6 +38,8 @@ func (o Options) toOpenClaw() openclaw.Options {
 		MinProto:             o.MinProto,
 		MaxProto:             o.MaxProto,
 		KnowledgeForDispatch: o.KnowledgeForDispatch,
+		DeviceSigning:        o.DeviceSigning,
+		DeviceIdentityFile:   o.DeviceIdentityFile,
 	}
 }
 
