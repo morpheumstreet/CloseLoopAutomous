@@ -13,7 +13,9 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/arms ./cmd/arms
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/arms /usr/local/bin/arms
-USER nobody
+# Match typical host dev UID/GID so named volumes under /data are writable.
+RUN mkdir -p /data && chown 1000:1000 /data
+USER 1000:1000
 EXPOSE 8080
 ENV ARMS_LISTEN=:8080
 ENTRYPOINT ["/usr/local/bin/arms"]
