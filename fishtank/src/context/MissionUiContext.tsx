@@ -12,7 +12,8 @@ import {
 import { ArmsClient, type OperationsLogQuery } from '../api/armsClient';
 import type { ApiAgentIdentity, ApiAgentRegistryRow, ApiProductDetail, ApiTask, ApiVersion } from '../api/armsTypes';
 import type { ArmsEnv } from '../config/armsEnv';
-import { readArmsEnv } from '../config/armsEnv';
+import { resolveArmsEnv } from '../config/armsEnv';
+import { hasArmsEndpointConfigured } from '../config/armsLocalStorage';
 import type { StalledTaskRow, Task, TaskStatus } from '../domain/types';
 import { useArmsLiveFeed } from '../hooks/useArmsLiveFeed';
 import type { Agent, FeedEvent, WorkspaceStats } from '../domain/types';
@@ -53,6 +54,10 @@ function mergeTaskIntoList(list: Task[], updated: ApiTask): Task[] {
 
 export interface MissionUiValue {
   armsEnv: ArmsEnv;
+  /** True when `localStorage` has a saved arms base URL (see `resolveArmsEnv`). */
+  armsConnectionConfigured: boolean;
+  /** Call after updating arms connection in `localStorage` so env + client refresh. */
+  bumpArmsEnv: () => void;
   client: ArmsClient;
   workspaces: WorkspaceStats[];
   activeWorkspace: WorkspaceStats | null;
@@ -121,8 +126,14 @@ async function loadWorkspaceSummaries(client: ArmsClient): Promise<WorkspaceStat
 }
 
 export function MissionUiProvider({ children }: { children: ReactNode }) {
-  const env = useMemo(() => readArmsEnv(), []);
+  const [envEpoch, setEnvEpoch] = useState(0);
+  const env = useMemo(() => resolveArmsEnv(), [envEpoch]);
+  const armsConnectionConfigured = useMemo(() => hasArmsEndpointConfigured(), [envEpoch]);
   const client = useMemo(() => new ArmsClient(env), [env]);
+
+  const bumpArmsEnv = useCallback(() => {
+    setEnvEpoch((n) => n + 1);
+  }, []);
 
   const [workspaces, setWorkspaces] = useState<WorkspaceStats[]>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceStats | null>(null);
@@ -230,7 +241,7 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void refreshWorkspaces();
-  }, [refreshWorkspaces]);
+  }, [refreshWorkspaces, envEpoch]);
 
   useEffect(() => {
     const ms = isOnline ? 30_000 : 8_000;
@@ -523,6 +534,8 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
   const value = useMemo<MissionUiValue>(
     () => ({
       armsEnv: env,
+      armsConnectionConfigured,
+      bumpArmsEnv,
       client,
       workspaces,
       activeWorkspace,
@@ -563,6 +576,8 @@ export function MissionUiProvider({ children }: { children: ReactNode }) {
     }),
     [
       env,
+      armsConnectionConfigured,
+      bumpArmsEnv,
       client,
       workspaces,
       activeWorkspace,

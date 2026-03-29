@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { ArmsEnv } from '../config/armsEnv';
+import { isDevBuild, type ArmsEnv } from '../config/armsEnv';
 import { buildLiveEventsUrl } from '../api/armsClient';
 import type { FeedEvent } from '../domain/types';
 import { ssePayloadToFeedEvent } from '../mappers/missionMappers';
@@ -28,7 +28,7 @@ export function useArmsLiveFeed(
   onLiveRef.current = options?.onConnectionLive;
 
   const epoch = options?.reconnectEpoch ?? 0;
-  const includeRaw = import.meta.env.DEV;
+  const includeRaw = isDevBuild();
 
   useEffect(() => {
     if (!productId) {

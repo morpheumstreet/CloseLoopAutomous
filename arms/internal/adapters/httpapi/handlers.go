@@ -67,6 +67,8 @@ type Handlers struct {
 	// ExpectedSchemaVersion is the embedded SQLite migration ceiling (see sqlite.ExpectedSchemaVersion).
 	ExpectedSchemaVersion int
 	GatewayEndpoints      ports.GatewayEndpointRegistry
+	ResearchHubs          ports.ResearchHubRegistry
+	ResearchSettings      ports.ResearchSystemSettingsRepository
 	IDs                   ports.IdentityGenerator
 	// AgentIdentity synthesizes and stores unified agent profiles (docs/scan-agents.md); optional.
 	AgentIdentity *agentidentityapp.Service

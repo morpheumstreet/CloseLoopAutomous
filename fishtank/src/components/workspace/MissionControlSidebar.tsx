@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -8,6 +9,7 @@ import {
   ClipboardCheck,
   Factory,
   FileText,
+  FlaskConical,
   LayoutGrid,
   Lightbulb,
   MessageSquare,
@@ -25,7 +27,7 @@ type NavEntry =
   | { id: string; label: string; icon: LucideIcon; kind: 'global'; to: string }
   | { id: string; label: string; icon: LucideIcon; kind: 'about' };
 
-const NAV_ENTRIES: NavEntry[] = [
+const CORE_NAV_ENTRIES: NavEntry[] = [
   { id: 'tasks', label: 'Tasks', icon: CheckSquare, kind: 'workspace', segment: 'tasks' },
   { id: 'agents', label: 'Agents', icon: Bot, kind: 'workspace', segment: 'agents' },
   { id: 'activity_log', label: 'Activity log', icon: Activity, kind: 'global', to: '/activity' },
@@ -60,6 +62,8 @@ type Props = {
   stats: Stats;
   productId: string;
   onOpenAbout: () => void;
+  /** When arms has at least one research hub (or default hub) configured — shows Research hub in the nav. */
+  showResearchHubNav?: boolean;
 };
 
 function workspacePath(productId: string, segment: string): string {
@@ -70,10 +74,24 @@ function isWorkspaceNavActive(pathname: string, segment: string): boolean {
   return !!matchPath({ path: `/p/:productId/${segment}`, end: true }, pathname);
 }
 
-export function MissionControlSidebar({ stats, productId, onOpenAbout }: Props) {
+export function MissionControlSidebar({ stats, productId, onOpenAbout, showResearchHubNav = false }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
+
+  const navEntries = useMemo(() => {
+    if (!showResearchHubNav) return CORE_NAV_ENTRIES;
+    const idx = CORE_NAV_ENTRIES.findIndex((e) => e.id === 'system');
+    const row: NavEntry = {
+      id: 'research_hub',
+      label: 'Research hub',
+      icon: FlaskConical,
+      kind: 'workspace',
+      segment: 'research-hub',
+    };
+    if (idx < 0) return [...CORE_NAV_ENTRIES, row];
+    return [...CORE_NAV_ENTRIES.slice(0, idx + 1), row, ...CORE_NAV_ENTRIES.slice(idx + 1)];
+  }, [showResearchHubNav]);
 
   return (
     <aside className="ft-mc-sidebar" aria-label="Mission navigation">
@@ -86,10 +104,6 @@ export function MissionControlSidebar({ stats, productId, onOpenAbout }: Props) 
           <span className="ft-mc-stat-pill-value">{stats.inProgress}</span>
           <span className="ft-mc-stat-pill-label">In progress</span>
         </div>
-        <div className="ft-mc-stat-pill">
-          <span className="ft-mc-stat-pill-value">{stats.total}</span>
-          <span className="ft-mc-stat-pill-label">Total</span>
-        </div>
         <div className="ft-mc-stat-pill ft-mc-stat-pill--progress" title="Share of tasks in Done">
           <span className="ft-mc-stat-pill-value">{stats.completionPct}%</span>
           <span className="ft-mc-stat-pill-label">Done</span>
@@ -101,7 +115,7 @@ export function MissionControlSidebar({ stats, productId, onOpenAbout }: Props) 
 
       <nav className="ft-mc-nav" aria-label="Primary">
         <ul className="ft-mc-nav-list">
-          {NAV_ENTRIES.map((entry) => {
+          {navEntries.map((entry) => {
             const Icon = entry.icon;
             const isActive =
               entry.kind === 'about'

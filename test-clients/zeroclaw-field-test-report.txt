@@ -1,0 +1,26 @@
+Zeroclaw field test report
+generated: 2026-03-25T10:11:46Z
+host: 51fbec927350dce6c86d5bd30e40e76a.ns.mormscan.io tls=true
+--- transcript ---
+[2026-03-25T10:11:46.775819Z] meta meta outbound chat frames use JSON {"type":"message","content":...} (ZeroClaw UI wire format)
+[2026-03-25T10:11:46.77582Z] meta meta dial wss://51fbec927350dce6c86d5bd30e40e76a.ns.mormscan.io/ws/chat
+[2026-03-25T10:11:46.922234Z] meta meta connected subprotocol="zeroclaw.v1"
+[2026-03-25T10:11:46.923373Z] IN text {"message_count":0,"resumed":false,"session_id":"00d3fd7e-f779-4425-a047-57c05cdef4c3","type":"session_start"}
+[2026-03-25T10:11:46.923377Z] OUT ws-ping fieldtest
+[2026-03-25T10:11:46.940633Z] IN ws-pong fieldtest
+[2026-03-25T10:11:48.924567Z] OUT json {"type":"message","content":"ping"}
+[2026-03-25T10:11:48.954317Z] IN text {"content":"unknown does not support streaming","type":"chunk"}
+[2026-03-25T10:11:48.954737Z] IN text {"type":"chunk_reset"}
+[2026-03-25T10:11:48.954779Z] IN text {"full_response":"unknown does not support streaming","type":"done"}
+[2026-03-25T10:12:33.927157Z] OUT json {"type":"message","content":"pong"}
+[2026-03-25T10:12:33.96313Z] IN text {"content":"unknown does not support streaming","type":"chunk"}
+[2026-03-25T10:12:33.963135Z] IN text {"type":"chunk_reset"}
+[2026-03-25T10:12:33.963137Z] IN text {"full_response":"unknown does not support streaming","type":"done"}
+[2026-03-25T10:13:18.928908Z] OUT json {"type":"message","content":"Field test (CloseLoopAutomous test-clients): reply with one short plain-text sentence so we can record it in a field-test report."}
+[2026-03-25T10:13:18.955567Z] IN text {"content":"unknown does not support streaming","type":"chunk"}
+[2026-03-25T10:13:18.955583Z] IN text {"type":"chunk_reset"}
+[2026-03-25T10:13:18.955594Z] IN text {"full_response":"unknown does not support streaming","type":"done"}
+[2026-03-25T10:14:03.931557Z] meta meta script complete; collecting late frames 3s
+[2026-03-25T10:14:06.933029Z] meta meta report file: zeroclaw-field-test-report.txt
+[2026-03-25T10:14:06.933387Z] meta error read closed: read tcp 192.168.3.193:54889->47.243.161.202:443: use of closed network connection
+--- end ---

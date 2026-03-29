@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Activity, LayoutGrid, Radar, Radio, Users } from 'lucide-react';
+import { isDevBuild } from '../config/armsEnv';
 import { useMissionUi } from '../context/MissionUiContext';
 import type { FeedFilterTab } from '../components/workspace/feedDisplay';
 import { FeedEventRow, matchesFeedFilter } from '../components/workspace/feedDisplay';
@@ -48,7 +49,7 @@ export function MissionRadarPage() {
 
   const filtered = useMemo(() => events.filter((e) => matchesFeedFilter(e, filter)), [events, filter]);
 
-  const showDevTools = import.meta.env.DEV;
+  const showDevTools = isDevBuild();
   const stalledCount = stalledTasks.length;
 
   return (

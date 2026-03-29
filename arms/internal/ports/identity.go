@@ -16,4 +16,5 @@ type IdentityGenerator interface {
 	NewProductFeedbackID() string
 	NewTaskChatMessageID() string
 	NewGatewayEndpointID() string
+	NewResearchHubID() string
 }

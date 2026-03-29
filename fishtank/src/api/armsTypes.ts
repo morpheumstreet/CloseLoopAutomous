@@ -400,3 +400,53 @@ export type ApiGatewayConnectionTestStep = {
   detail?: string;
   elapsed_ms?: number;
 };
+
+/** `GET /api/research-hubs` — ResearchClaw HTTP roots (`api_key` always empty; use `has_api_key`). */
+export type ApiResearchHub = {
+  id: string;
+  display_name: string;
+  base_url: string;
+  api_key: string;
+  has_api_key?: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApiResearchSystemSettings = {
+  auto_research_claw_enabled: boolean;
+  default_research_hub_id: string;
+};
+
+export type CreateResearchHubBody = {
+  display_name?: string;
+  base_url: string;
+  api_key?: string;
+};
+
+export type PatchResearchHubBody = {
+  display_name?: string;
+  base_url?: string;
+  api_key?: string;
+};
+
+export type ResearchHubTestBody = {
+  draft?: { base_url?: string; api_key?: string };
+};
+
+export type PatchResearchSystemSettingsBody = {
+  auto_research_claw_enabled?: boolean;
+  default_research_hub_id?: string;
+};
+
+/** `POST /api/research-hubs/{id}/invoke` — allowlisted ResearchClaw paths only. */
+export type ApiResearchHubInvokeResult = {
+  status: number;
+  body: string;
+  json?: unknown;
+};
+
+export type ResearchHubInvokeBody = {
+  method: string;
+  path: string;
+  json_body?: unknown;
+};

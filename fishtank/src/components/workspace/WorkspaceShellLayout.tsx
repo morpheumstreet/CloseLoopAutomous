@@ -31,13 +31,34 @@ function readLiveActivityPanelOpen(): boolean {
 export function WorkspaceShellLayout() {
   const { productId } = useParams<{ productId: string }>();
   const location = useLocation();
-  const { apiError, dismissError, activeWorkspace, tasks, fetchVersion, armsEnv } = useMissionUi();
+  const { apiError, dismissError, activeWorkspace, tasks, fetchVersion, armsEnv, client } = useMissionUi();
   const [boardSearch, setBoardSearch] = useState('');
   const [assigneeAgentId, setAssigneeAgentId] = useState<string | null>(null);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [agentsPaused, setAgentsPaused] = useState(false);
   const [liveActivityPanelOpen, setLiveActivityPanelOpen] = useState(readLiveActivityPanelOpen);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [showResearchHubNav, setShowResearchHubNav] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [hubs, settings] = await Promise.all([
+          client.listResearchHubs(),
+          client.getResearchSystemSettings().catch(() => null),
+        ]);
+        const hasHubUrl = hubs.some((h) => (h.base_url ?? '').trim().length > 0);
+        const hasDefault = Boolean(settings?.default_research_hub_id?.trim());
+        if (!cancelled) setShowResearchHubNav(hasHubUrl || hasDefault);
+      } catch {
+        if (!cancelled) setShowResearchHubNav(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, location.pathname]);
 
   useEffect(() => {
     try {
@@ -109,7 +130,12 @@ export function WorkspaceShellLayout() {
 
       <div className="ft-mc-workspace-body">
         <div className="ft-desktop-only ft-mc-sidebar-slot">
-          <MissionControlSidebar stats={stats} productId={pid} onOpenAbout={() => setAboutOpen(true)} />
+          <MissionControlSidebar
+            stats={stats}
+            productId={pid}
+            onOpenAbout={() => setAboutOpen(true)}
+            showResearchHubNav={showResearchHubNav}
+          />
         </div>
 
         <div className="ft-mc-workspace-main">

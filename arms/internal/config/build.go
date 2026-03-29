@@ -170,6 +170,18 @@ func buildConfig(file map[string]string) Config {
 			researchLLMTimeout = time.Duration(n) * time.Second
 		}
 	}
+	researchClawPollInterval := 3 * time.Second
+	if v := strings.TrimSpace(s.getenv("ARMS_RESEARCH_CLAW_POLL_INTERVAL_SEC")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			researchClawPollInterval = time.Duration(n) * time.Second
+		}
+	}
+	researchClawPollTimeout := 900 * time.Second
+	if v := strings.TrimSpace(s.getenv("ARMS_RESEARCH_CLAW_POLL_TIMEOUT_SEC")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			researchClawPollTimeout = time.Duration(n) * time.Second
+		}
+	}
 	ideationLLMTimeout := 180 * time.Second
 	if v := strings.TrimSpace(s.getenv("ARMS_IDEATION_LLM_TIMEOUT_SEC")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -234,6 +246,8 @@ func buildConfig(file map[string]string) Config {
 		LLMAPIKey:                         llmKey,
 		ResearchLLMModel:                  researchLLMModel,
 		ResearchLLMTimeout:                researchLLMTimeout,
+		ResearchClawPollInterval:          researchClawPollInterval,
+		ResearchClawPollTimeout:           researchClawPollTimeout,
 		IdeationLLMModel:                  ideationLLMModel,
 		IdeationLLMTimeout:                ideationLLMTimeout,
 		GeoIP2CityPath:                    geoIP2City,

@@ -1,5 +1,6 @@
 import { ChevronRight, Radio } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { isDevBuild } from '../../config/armsEnv';
 import { useMissionUi } from '../../context/MissionUiContext';
 import type { FeedFilterTab } from './feedDisplay';
 import { FeedEventRow, matchesFeedFilter } from './feedDisplay';
@@ -15,7 +16,7 @@ export function LiveFeedPanel({ variant = 'default' }: LiveFeedPanelProps) {
 
   const filtered = useMemo(() => events.filter((e) => matchesFeedFilter(e, filter)), [events, filter]);
 
-  const showDevTools = import.meta.env.DEV;
+  const showDevTools = isDevBuild();
 
   const title = variant === 'activity' ? 'Live Activity' : 'Live Feed';
   const asideClass = variant === 'activity' ? 'ft-feed ft-feed--mc' : 'ft-feed';

@@ -95,7 +95,9 @@ func NewInMemoryApp(cfg config.Config, b Build) *App {
 	}
 	geoR, geoCleanup := geoip.NewResolver(cfg.GeoIP2CityPath)
 	agentProfiles := memory.NewAgentProfileStore()
-	h, idSvc, gwCleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, gatewayEndpoints, agentMail, agentHealth, pref, ops, sched, cmail, productFb, taskChat, knowledge, false, hub, hub, nil, agentProfiles, geoR, sqlite.ExpectedSchemaVersion, b)
+	researchHubs := memory.NewResearchHubStore()
+	researchSettings := memory.NewResearchSystemSettingsStore()
+	h, idSvc, gwCleanup := buildHandlers(cfg, products, ideas, tasks, convoys, costs, costCaps, checkpoints, ws, ws, maybePool, swipes, researchCycles, execAgents, gatewayEndpoints, researchHubs, researchSettings, agentMail, agentHealth, pref, ops, sched, cmail, productFb, taskChat, knowledge, false, hub, hub, nil, agentProfiles, geoR, sqlite.ExpectedSchemaVersion, b)
 	if err := idSvc.RefreshAll(context.Background()); err != nil {
 		slog.Default().Warn("arms agent identity bootstrap refresh", "err", err)
 	}
@@ -122,6 +124,8 @@ func buildHandlers(
 	researchCycles ports.ResearchCycleRepository,
 	execAgents ports.ExecutionAgentRegistry,
 	gatewayEndpoints ports.GatewayEndpointRegistry,
+	researchHubs ports.ResearchHubRegistry,
+	researchSettings ports.ResearchSystemSettingsRepository,
 	agentMail ports.AgentMailboxRepository,
 	agentHealth ports.AgentHealthRepository,
 	preferenceModels ports.PreferenceModelRepository,
@@ -188,14 +192,25 @@ func buildHandlers(
 		APIKey:  cfg.LLMAPIKey,
 		HTTP:    ai.DefaultHTTPClient(),
 	}
-	researchPort := ports.ResearchPort(ai.ResearchStub{})
+	fallbackResearch := ports.ResearchPort(ai.ResearchStub{})
 	if strings.TrimSpace(cfg.ResearchLLMModel) != "" {
-		researchPort = &ai.ResearchLLM{
+		fallbackResearch = &ai.ResearchLLM{
 			Client:  llmChat,
 			Model:   strings.TrimSpace(cfg.ResearchLLMModel),
 			Timeout: cfg.ResearchLLMTimeout,
 		}
 		slog.Info("arms autopilot", "research_llm", cfg.ResearchLLMModel, "base", cfg.LLMBaseURL)
+	}
+	researchPort := fallbackResearch
+	if researchHubs != nil && researchSettings != nil {
+		researchPort = &ai.ResearchRouter{
+			Settings:     researchSettings,
+			Hubs:         researchHubs,
+			Fallback:     fallbackResearch,
+			HTTP:         ai.DefaultHTTPClient(),
+			PollInterval: cfg.ResearchClawPollInterval,
+			PollTimeout:  cfg.ResearchClawPollTimeout,
+		}
 	}
 	ideationPort := ports.IdeationPort(ai.IdeationStub{})
 	if strings.TrimSpace(cfg.IdeationLLMModel) != "" {
@@ -340,6 +355,8 @@ func buildHandlers(
 		Convoy:                convoySvc,
 		Agent:                 agentSvc,
 		GatewayEndpoints:      gatewayEndpoints,
+		ResearchHubs:          researchHubs,
+		ResearchSettings:      researchSettings,
 		IDs:                   ids,
 		Cost:                  costSvc,
 		Feedback:              feedbackSvc,

@@ -43,4 +43,6 @@ func (s *Sequential) NewTaskChatMessageID() string { return s.next("tchat") }
 
 func (s *Sequential) NewGatewayEndpointID() string { return s.next("gw") }
 
+func (s *Sequential) NewResearchHubID() string { return s.next("rh") }
+
 var _ ports.IdentityGenerator = (*Sequential)(nil)

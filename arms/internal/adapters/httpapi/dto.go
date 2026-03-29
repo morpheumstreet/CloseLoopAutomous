@@ -675,3 +675,82 @@ func (r *patchProductFeedbackReq) validate() error { return nil }
 type mergeQueueResolveReq struct {
 	Action string `json:"action"`
 }
+
+type createResearchHubReq struct {
+	DisplayName string `json:"display_name"`
+	BaseURL     string `json:"base_url"`
+	APIKey      string `json:"api_key,omitempty"`
+}
+
+func (r *createResearchHubReq) validate() error {
+	return validateResearchHubBaseURL(r.BaseURL)
+}
+
+type patchResearchHubReq struct {
+	DisplayName *string `json:"display_name,omitempty"`
+	BaseURL     *string `json:"base_url,omitempty"`
+	APIKey      *string `json:"api_key,omitempty"`
+}
+
+func (r *patchResearchHubReq) empty() bool {
+	if r == nil {
+		return true
+	}
+	return r.DisplayName == nil && r.BaseURL == nil && r.APIKey == nil
+}
+
+type patchResearchSystemSettingsReq struct {
+	AutoResearchClawEnabled *bool   `json:"auto_research_claw_enabled,omitempty"`
+	DefaultResearchHubID    *string `json:"default_research_hub_id,omitempty"`
+}
+
+func (r *patchResearchSystemSettingsReq) empty() bool {
+	if r == nil {
+		return true
+	}
+	return r.AutoResearchClawEnabled == nil && r.DefaultResearchHubID == nil
+}
+
+type testResearchHubDraft struct {
+	BaseURL *string `json:"base_url,omitempty"`
+	APIKey  *string `json:"api_key,omitempty"`
+}
+
+type testResearchHubReq struct {
+	Draft *testResearchHubDraft `json:"draft,omitempty"`
+}
+
+// invokeResearchHubReq forwards a single allowlisted GET/POST to the hub (ResearchClaw OpenAPI paths only).
+type invokeResearchHubReq struct {
+	Method   string          `json:"method"`
+	Path     string          `json:"path"`
+	JSONBody json.RawMessage `json:"json_body,omitempty"`
+}
+
+func (r *invokeResearchHubReq) validate() error {
+	if r == nil {
+		return fmt.Errorf("body is required")
+	}
+	m := strings.ToUpper(strings.TrimSpace(r.Method))
+	if m != "GET" && m != "POST" {
+		return fmt.Errorf("method must be GET or POST")
+	}
+	if strings.TrimSpace(r.Path) == "" {
+		return fmt.Errorf("path is required")
+	}
+	if len(r.JSONBody) > 1<<20 {
+		return fmt.Errorf("json_body too large")
+	}
+	return nil
+}
+
+func validateResearchHubBaseURL(raw string) error {
+	u := strings.TrimSpace(raw)
+	if u == "" {
+		return fmt.Errorf("base_url is required")
+	}
+	if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+		return fmt.Errorf("base_url must start with http:// or https://")
+	}
+	return nil
+}

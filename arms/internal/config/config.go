@@ -59,6 +59,8 @@ import (
 //   - ARMS_RESEARCH_LLM_MODEL — when non-empty, Run research uses this chat model instead of the in-process stub.
 //   - ARMS_IDEATION_LLM_MODEL — when non-empty, Run ideation uses this chat model instead of the stub.
 //   - ARMS_RESEARCH_LLM_TIMEOUT_SEC — HTTP-bound timeout for one research call (default 120).
+//   - ARMS_RESEARCH_CLAW_POLL_INTERVAL_SEC — interval between ResearchClaw /api/pipeline/status polls after start (default 3).
+//   - ARMS_RESEARCH_CLAW_POLL_TIMEOUT_SEC — max wait for a ResearchClaw pipeline run (default 900).
 //   - ARMS_IDEATION_LLM_TIMEOUT_SEC — HTTP-bound timeout for one ideation call (default 180).
 //   - ARMS_GEOIP2_CITY — optional path to MaxMind GeoLite2-City.mmdb (offline); enriches synthesized agent identities with city-level geo from gateway URL host.
 //   - ARMS_CORS_ALLOW_ORIGIN — optional; when non-empty, enables CORS for browser UIs on another origin (e.g. http://localhost:3000 for Fishtank). Use * only for quick local experiments.
@@ -131,6 +133,8 @@ type Config struct {
 	LLMAPIKey                         string
 	ResearchLLMModel                  string
 	ResearchLLMTimeout                time.Duration
+	ResearchClawPollInterval          time.Duration
+	ResearchClawPollTimeout           time.Duration
 	IdeationLLMModel                  string
 	IdeationLLMTimeout                time.Duration
 	// GeoIP2CityPath is optional MaxMind GeoLite2-City MMDB path (ARMS_GEOIP2_CITY).

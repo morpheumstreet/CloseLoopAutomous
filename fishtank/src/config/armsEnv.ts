@@ -1,3 +1,5 @@
+import { ARMS_LS_API_KEY, ARMS_LS_BASE_URL } from './armsLocalStorage';
+
 /** Browser env for the arms HTTP + SSE surface (Bun/Vite-style `import.meta.env`). */
 export type ArmsEnv = {
   readonly baseUrl: string;
@@ -8,7 +10,7 @@ export type ArmsEnv = {
   readonly basicPassword: string;
 };
 
-function trimBase(url: string): string {
+export function trimBase(url: string): string {
   return url.replace(/\/+$/, '');
 }
 
@@ -25,4 +27,28 @@ export function readArmsEnv(): ArmsEnv {
   const basicUser = e.VITE_ARMS_BASIC_USER?.trim() || '';
   const basicPassword = e.VITE_ARMS_BASIC_PASSWORD?.trim() || '';
   return { baseUrl, token, basicUser, basicPassword };
+}
+
+/**
+ * Vite env merged with optional `localStorage` overrides (see `armsLocalStorage`).
+ * When `ft_arms_base_url` is set, base URL and bearer token come from storage; Basic fields stay from Vite.
+ */
+export function resolveArmsEnv(): ArmsEnv {
+  const base = readArmsEnv();
+  if (typeof localStorage === 'undefined') return base;
+  const lsUrl = localStorage.getItem(ARMS_LS_BASE_URL)?.trim();
+  if (!lsUrl) return base;
+  const lsKey = localStorage.getItem(ARMS_LS_API_KEY);
+  const token = lsKey !== null ? lsKey.trim() : base.token;
+  return {
+    baseUrl: trimBase(lsUrl),
+    token,
+    basicUser: base.basicUser,
+    basicPassword: base.basicPassword,
+  };
+}
+
+/** True only in dev / HMR; safe when `import.meta.env` is missing (Bun `bun build` in the browser). */
+export function isDevBuild(): boolean {
+  return viteEnv().DEV === true;
 }

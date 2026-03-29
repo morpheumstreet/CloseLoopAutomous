@@ -15,6 +15,7 @@ import { MissionCalendarPage } from './routes/MissionCalendarPage';
 import { MissionCouncilPage } from './routes/MissionCouncilPage';
 import { MissionMemoryPage } from './routes/MissionMemoryPage';
 import { MissionRadarPage } from './routes/MissionRadarPage';
+import { MissionResearchHubPage } from './routes/MissionResearchHubPage';
 import { MissionProjectsPage } from './routes/MissionProjectsPage';
 import { MissionSystemPage } from './routes/MissionSystemPage';
 import { MissionTeamPage } from './routes/MissionTeamPage';
@@ -47,6 +48,7 @@ export default function App() {
               <Route path="office" element={<WorkspaceModulePlaceholder segment="office" />} />
               <Route path="team" element={<MissionTeamPage />} />
               <Route path="system" element={<MissionSystemPage />} />
+              <Route path="research-hub" element={<MissionResearchHubPage />} />
               <Route path="radar" element={<MissionRadarPage />} />
               <Route path="factory" element={<MissionFactoryPage />} />
               <Route path="pipeline" element={<WorkspaceModulePlaceholder segment="pipeline" />} />

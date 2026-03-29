@@ -6,6 +6,7 @@ import { BackendConnectionPill } from '../shell/BackendConnectionPill';
 import { ThemeCycleButton } from '../shell/ThemeCycleButton';
 import { AboutModal } from '../shell/AboutModal';
 import type { WorkspaceStats } from '../../domain/types';
+import { ConnectionSetupModal } from './ConnectionSetupModal';
 import { CreateProductModal } from './CreateProductModal';
 
 export function WorkspaceDashboardView() {
@@ -21,6 +22,8 @@ export function WorkspaceDashboardView() {
     fetchVersion,
     goHome,
     armsEnv,
+    armsConnectionConfigured,
+    bumpArmsEnv,
   } = useMissionUi();
   const [modalOpen, setModalOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -28,6 +31,24 @@ export function WorkspaceDashboardView() {
   useEffect(() => {
     goHome();
   }, [goHome]);
+
+  if (!armsConnectionConfigured) {
+    return (
+      <div
+        className="ft-screen"
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+          background: 'var(--mc-bg-secondary)',
+        }}
+      >
+        <ConnectionSetupModal onSaved={bumpArmsEnv} />
+      </div>
+    );
+  }
 
   return (
     <div className="ft-screen">

@@ -4,6 +4,7 @@ import { GitBranch, RefreshCw, Users } from 'lucide-react';
 import { ArmsHttpError } from '../api/armsClient';
 import type { ApiConvoy, ApiConvoySubtask } from '../api/armsTypes';
 import { FeedEventRow, matchesFeedFilter } from '../components/workspace/feedDisplay';
+import { isDevBuild } from '../config/armsEnv';
 import { useMissionUi } from '../context/MissionUiContext';
 import type { Task } from '../domain/types';
 
@@ -77,7 +78,7 @@ export function MissionCouncilPage() {
   const { productId } = useParams<{ productId: string }>();
   const pid = productId ?? '';
   const { client, tasks, stalledTasks, events, refreshActiveBoard, boardLoading } = useMissionUi();
-  const showDevTools = import.meta.env.DEV;
+  const showDevTools = isDevBuild();
   const [feedExpanded, setFeedExpanded] = useState<Record<string, boolean>>({});
 
   const [convoys, setConvoys] = useState<ApiConvoy[]>([]);

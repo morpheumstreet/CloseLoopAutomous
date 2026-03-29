@@ -25,6 +25,14 @@ import type {
   PatchGatewayEndpointBody,
   ApiGatewayConnectionTestStep,
   TestGatewayConnectionBody,
+  ApiResearchHub,
+  ApiResearchSystemSettings,
+  CreateResearchHubBody,
+  PatchResearchHubBody,
+  ResearchHubTestBody,
+  PatchResearchSystemSettingsBody,
+  ApiResearchHubInvokeResult,
+  ResearchHubInvokeBody,
   PatchProductBody,
   PatchProductScheduleBody,
 } from './armsTypes';
@@ -117,6 +125,47 @@ export class ArmsClient {
       `/api/gateway-endpoints/${encodeURIComponent(id)}/test-connection`,
       body ?? {},
     );
+  }
+
+  async listResearchHubs(): Promise<ApiResearchHub[]> {
+    const body = await this.getJson<{ research_hubs?: ApiResearchHub[] }>('/api/research-hubs');
+    return body.research_hubs ?? [];
+  }
+
+  async createResearchHub(body: CreateResearchHubBody): Promise<ApiResearchHub> {
+    return this.postJson<ApiResearchHub>('/api/research-hubs', body);
+  }
+
+  async patchResearchHub(id: string, body: PatchResearchHubBody): Promise<ApiResearchHub> {
+    return this.patchJson<ApiResearchHub>(`/api/research-hubs/${encodeURIComponent(id)}`, body);
+  }
+
+  async deleteResearchHub(id: string): Promise<void> {
+    const res = await this.raw('DELETE', `/api/research-hubs/${encodeURIComponent(id)}`);
+    if (res.status === 204) return;
+    const err = await readErrorBody(res);
+    throw new ArmsHttpError(err.message, res.status, err.code);
+  }
+
+  /** `GET /api/health` (+ optional `/api/version`) on the hub; optional draft tests unsaved URL/key. */
+  async postResearchHubTest(
+    id: string,
+    body?: ResearchHubTestBody,
+  ): Promise<{ ok: boolean; health?: Record<string, unknown>; version?: Record<string, unknown>; error?: string }> {
+    return this.postJson(`/api/research-hubs/${encodeURIComponent(id)}/test`, body ?? {});
+  }
+
+  /** Allowlisted GET/POST to the hub (ResearchClaw OpenAPI paths); uses server-stored API key. */
+  async postResearchHubInvoke(id: string, body: ResearchHubInvokeBody): Promise<ApiResearchHubInvokeResult> {
+    return this.postJson<ApiResearchHubInvokeResult>(`/api/research-hubs/${encodeURIComponent(id)}/invoke`, body);
+  }
+
+  async getResearchSystemSettings(): Promise<ApiResearchSystemSettings> {
+    return this.getJson<ApiResearchSystemSettings>('/api/research-system-settings');
+  }
+
+  async patchResearchSystemSettings(body: PatchResearchSystemSettingsBody): Promise<ApiResearchSystemSettings> {
+    return this.patchJson<ApiResearchSystemSettings>('/api/research-system-settings', body);
   }
 
   async listProducts(): Promise<ApiProduct[]> {
