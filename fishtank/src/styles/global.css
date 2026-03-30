@@ -1035,6 +1035,10 @@ button:disabled {
   padding: 1rem;
 }
 
+.ft-modal-root.ft-mc-command-palette-root {
+  z-index: 90;
+}
+
 .ft-modal-backdrop {
   position: absolute;
   inset: 0;
@@ -1542,6 +1546,71 @@ button.ft-mc-brand:hover {
   font-size: 0.75rem;
 }
 
+/* Workspace name + module trail — resolved from URL + full catalog (not sidebar prefs). */
+.ft-mc-context-crumb {
+  display: none;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 0;
+  max-width: min(38vw, 20rem);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--mc-text-secondary);
+  flex-wrap: nowrap;
+}
+
+@media (min-width: 1024px) {
+  .ft-mc-context-crumb.ft-hide-below-lg {
+    display: inline-flex !important;
+  }
+}
+
+.ft-mc-context-crumb__ws {
+  flex-shrink: 1;
+  min-width: 0;
+  color: var(--mc-text-secondary);
+}
+
+.ft-mc-context-crumb__sep {
+  flex-shrink: 0;
+  opacity: 0.55;
+  font-weight: 400;
+}
+
+.ft-mc-context-crumb__tail {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 0;
+  flex-shrink: 1;
+  color: var(--mc-text-primary);
+}
+
+.ft-mc-context-crumb__tail .ft-truncate {
+  min-width: 0;
+}
+
+/* Desktop sidebar: context trail at top of Mission nav (replaces header row on ≥1024px). */
+.ft-mc-context-crumb.ft-mc-context-crumb--sidebar {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--mc-border);
+  flex-shrink: 0;
+}
+
+/* Mobile MC header: same trail when sidebar is hidden. */
+.ft-mc-context-crumb.ft-mc-context-crumb--mobile-header {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .ft-mc-context-crumb.ft-mc-context-crumb--mobile-header {
+    display: inline-flex;
+    max-width: min(65vw, 18rem);
+  }
+}
+
 .ft-mc-overview-modal {
   width: min(100%, 520px);
   max-height: min(92vh, 720px);
@@ -1799,6 +1868,151 @@ button.ft-mc-brand:hover {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--mc-accent) 22%, transparent);
 }
 
+.ft-mc-global-search-trigger {
+  position: relative;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.45rem 4.25rem 0.45rem 2.5rem;
+  border: 1px solid var(--mc-border);
+  border-radius: var(--ft-radius-sm);
+  background: var(--mc-bg);
+  color: var(--mc-text);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.ft-mc-global-search-trigger-label {
+  display: block;
+  text-align: left;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mc-text-secondary);
+}
+
+.ft-mc-global-search-trigger-label--value {
+  color: var(--mc-text);
+}
+
+.ft-mc-global-search-kbd {
+  position: absolute;
+  right: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--ft-radius-sm);
+  border: 1px solid var(--mc-border);
+  background: var(--mc-bg-tertiary);
+  color: var(--mc-text-secondary);
+}
+
+.ft-mc-global-search-trigger:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--mc-accent-purple) 55%, var(--mc-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--mc-accent) 22%, transparent);
+}
+
+.ft-mc-command-palette-panel {
+  width: min(100%, 520px);
+  max-height: min(88vh, 640px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ft-mc-command-palette-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.ft-mc-command-palette-search {
+  position: relative;
+  padding: 0 1rem 0.65rem;
+  flex-shrink: 0;
+}
+
+.ft-mc-command-palette-search-icon {
+  position: absolute;
+  left: 1.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--mc-text-secondary);
+  pointer-events: none;
+}
+
+.ft-mc-command-palette-input {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.85rem 0.45rem 2.5rem;
+  border: 1px solid var(--mc-border);
+  border-radius: var(--ft-radius-sm);
+  background: var(--mc-bg);
+  color: var(--mc-text);
+  font-size: 0.875rem;
+}
+
+.ft-mc-command-palette-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--mc-accent-purple) 55%, var(--mc-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--mc-accent) 22%, transparent);
+}
+
+.ft-mc-command-palette-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0 1rem 1rem;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.ft-mc-command-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: var(--ft-radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ft-mc-command-palette-item:hover:not(:disabled) {
+  background: var(--mc-bg-tertiary);
+  border-color: var(--mc-border);
+}
+
+.ft-mc-command-palette-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ft-mc-command-palette-item-icon {
+  flex-shrink: 0;
+  color: var(--mc-accent-purple);
+}
+
+.ft-mc-command-palette-item-label {
+  font-size: 0.875rem;
+}
+
+.ft-mc-command-palette-empty {
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.82rem;
+  color: var(--mc-text-secondary);
+}
+
 .ft-mc-ping-btn {
   font-size: 0.75rem;
   padding: 0.35rem 0.65rem;
@@ -1919,11 +2133,93 @@ button.ft-mc-brand:hover {
   background: linear-gradient(90deg, var(--mc-accent-blue), var(--mc-accent-purple));
 }
 
-.ft-mc-nav {
+/* One menu visible: main and System sub swap via horizontal slide (1s). */
+.ft-mc-nav-viewport {
   flex: 1;
   min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.ft-mc-nav-track {
+  display: flex;
+  flex-direction: row;
+  width: 200%;
+  height: 100%;
+  min-height: 0;
+  transform: translateX(0);
+  transition: transform 1s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+
+.ft-mc-nav-track--system {
+  transform: translateX(-50%);
+}
+
+.ft-mc-nav-track > .ft-mc-nav {
+  flex: 0 0 50%;
+  width: 50%;
+  max-width: 50%;
+  box-sizing: border-box;
+  min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 0.35rem 0 0.5rem;
+}
+
+.ft-mc-system-sub-head {
+  padding: 0 0.5rem 0.35rem;
+  border-bottom: 1px solid var(--mc-border);
+  margin-bottom: 0.35rem;
+}
+
+.ft-mc-system-sub-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.4rem 0.35rem;
+  margin: 0;
+  width: 100%;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: left;
+  color: var(--mc-accent);
+  background: transparent;
+  border: none;
+  border-radius: var(--ft-radius-sm);
+  cursor: pointer;
+}
+
+.ft-mc-system-sub-back:hover {
+  background: color-mix(in srgb, black 14%, var(--mc-bg-secondary));
+  color: var(--mc-text);
+}
+
+.ft-mc-nav-list--system-sub {
+  padding-right: 0.15rem;
+}
+
+.ft-mc-nav-item--system-sub {
+  padding: 0.38rem 0.45rem 0.38rem 0.55rem;
+  font-size: 0.72rem;
+  gap: 0.4rem;
+}
+
+.ft-mc-nav-item__system-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ft-mc-nav[aria-hidden='true'] {
+  pointer-events: none;
+}
+
+/* Sliding track sets padding on each panel; base nav list chrome only. */
+.ft-mc-nav {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
 }
 
 .ft-mc-nav-list {

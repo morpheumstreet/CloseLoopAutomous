@@ -77,11 +77,13 @@ export function EditGatewayEndpointModal({ open, endpoint, onClose, client, onSa
 
   if (!open || !endpoint) return null;
 
+  const ep = endpoint;
+
   const pairingApprovalStep = testLoading ? undefined : findOpenClawPairingApprovalStep(testSteps);
 
   function buildTestDraft(): GatewayTestConnectionDraft {
     const ts = parseInt(timeoutField.trim(), 10);
-    const timeoutSec = Number.isFinite(ts) ? ts : endpoint.timeout_sec;
+    const timeoutSec = Number.isFinite(ts) ? ts : ep.timeout_sec;
     const draft: GatewayTestConnectionDraft = {
       gateway_url: url.trim(),
       driver,
@@ -100,7 +102,7 @@ export function EditGatewayEndpointModal({ open, endpoint, onClose, client, onSa
     setTestLoading(true);
     setTestSteps(null);
     try {
-      const res = await client.postGatewayTestConnection(endpoint.id, { draft: buildTestDraft() });
+      const res = await client.postGatewayTestConnection(ep.id, { draft: buildTestDraft() });
       setTestSteps(res.steps ?? []);
     } catch (err) {
       setTestErr(err instanceof ArmsHttpError ? err.message : 'Connection test failed.');
@@ -115,14 +117,14 @@ export function EditGatewayEndpointModal({ open, endpoint, onClose, client, onSa
     setFormError(null);
     setFormInfo(null);
     const ts = parseInt(timeoutField.trim(), 10);
-    const timeoutSec = Number.isFinite(ts) ? ts : endpoint.timeout_sec;
+    const timeoutSec = Number.isFinite(ts) ? ts : ep.timeout_sec;
     const body: PatchGatewayEndpointBody = {};
-    if (name.trim() !== endpoint.display_name) body.display_name = name.trim();
-    if (driver !== endpoint.driver) body.driver = driver;
-    if (url.trim() !== endpoint.gateway_url) body.gateway_url = url.trim();
-    if (device.trim() !== endpoint.device_id) body.device_id = device.trim();
-    if (timeoutSec !== endpoint.timeout_sec) body.timeout_sec = timeoutSec;
-    const prevPid = endpoint.product_id ?? '';
+    if (name.trim() !== ep.display_name) body.display_name = name.trim();
+    if (driver !== ep.driver) body.driver = driver;
+    if (url.trim() !== ep.gateway_url) body.gateway_url = url.trim();
+    if (device.trim() !== ep.device_id) body.device_id = device.trim();
+    if (timeoutSec !== ep.timeout_sec) body.timeout_sec = timeoutSec;
+    const prevPid = ep.product_id ?? '';
     if (product.trim() !== prevPid) body.product_id = product.trim();
     if (clearToken) body.gateway_token = '';
     else if (newToken.trim() !== '') body.gateway_token = newToken.trim();
@@ -132,7 +134,7 @@ export function EditGatewayEndpointModal({ open, endpoint, onClose, client, onSa
     }
     setSubmitting(true);
     try {
-      await client.patchGatewayEndpoint(endpoint.id, body);
+      await client.patchGatewayEndpoint(ep.id, body);
       await onSaved();
       onClose();
     } catch (err) {
@@ -162,7 +164,7 @@ export function EditGatewayEndpointModal({ open, endpoint, onClose, client, onSa
             <div className="ft-gateway-modal-slide-pane">
               <form onSubmit={(e) => void handleSubmit(e)} className="ft-modal-body">
                 <p className="ft-muted" style={{ margin: '0 0 0.25rem', fontSize: '0.8rem' }}>
-                  Id <span className="ft-mono">{endpoint.id}</span>
+                  Id <span className="ft-mono">{ep.id}</span>
                 </p>
                 {formError ? (
                   <p className="ft-banner ft-banner--error" role="alert">

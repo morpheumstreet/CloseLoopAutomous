@@ -5,7 +5,10 @@ import { useMissionUi } from '../../context/MissionUiContext';
 import type { WorkspaceMainOutletContext } from '../../routes/workspaceMainOutletContext';
 import { AboutModal } from '../shell/AboutModal';
 import { WorkspaceHeaderBar } from '../shell/WorkspaceHeaderBar';
+import { buildMissionNavEntries } from '../../lib/missionNavCatalog';
+import { missionHeaderCrumbParts } from '../../lib/missionNavLocation';
 import { LiveFeedPanel } from './LiveFeedPanel';
+import { MissionCommandPalette } from './MissionCommandPalette';
 import { MissionControlSidebar } from './MissionControlSidebar';
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -38,6 +41,7 @@ export function WorkspaceShellLayout() {
   const [agentsPaused, setAgentsPaused] = useState(false);
   const [liveActivityPanelOpen, setLiveActivityPanelOpen] = useState(readLiveActivityPanelOpen);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [showResearchHubNav, setShowResearchHubNav] = useState(false);
 
   useEffect(() => {
@@ -67,6 +71,17 @@ export function WorkspaceShellLayout() {
       /* ignore */
     }
   }, [liveActivityPanelOpen]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'k') return;
+      if (!window.matchMedia('(min-width: 1024px)').matches) return;
+      e.preventDefault();
+      setCommandPaletteOpen((o) => !o);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const stats = useMemo(() => {
     if (!activeWorkspace) {
@@ -99,10 +114,20 @@ export function WorkspaceShellLayout() {
   const hideDesktopFeedColumn = location.pathname.endsWith('/feed');
   const pid = productId ?? '';
 
+  const missionCrumbParts = useMemo(() => {
+    if (!pid) return [];
+    const catalog = buildMissionNavEntries(showResearchHubNav);
+    return missionHeaderCrumbParts(location.pathname, pid, catalog);
+  }, [location.pathname, pid, showResearchHubNav]);
+
   return (
     <div className="ft-screen-fixed">
       <WorkspaceHeaderBar
         onOpenAbout={() => setAboutOpen(true)}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        commandPaletteOpen={commandPaletteOpen}
+        missionCrumbParts={missionCrumbParts}
+        workspaceName={activeWorkspace?.name ?? null}
         missionControl={{
           boardSearch,
           onBoardSearchChange: setBoardSearch,
@@ -135,6 +160,8 @@ export function WorkspaceShellLayout() {
             productId={pid}
             onOpenAbout={() => setAboutOpen(true)}
             showResearchHubNav={showResearchHubNav}
+            missionCrumbParts={missionCrumbParts}
+            workspaceName={activeWorkspace?.name ?? null}
           />
         </div>
 
@@ -205,6 +232,19 @@ export function WorkspaceShellLayout() {
         fetchVersion={fetchVersion}
         armsEnv={armsEnv}
         productIdForSse={activeWorkspace?.id ?? null}
+      />
+
+      <MissionCommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        productId={pid}
+        showResearchHubNav={showResearchHubNav}
+        onOpenAbout={() => {
+          setAboutOpen(true);
+          setCommandPaletteOpen(false);
+        }}
+        boardSearch={boardSearch}
+        onBoardSearchChange={setBoardSearch}
       />
     </div>
   );

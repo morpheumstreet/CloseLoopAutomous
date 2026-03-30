@@ -17,6 +17,7 @@ import { BackendConnectionPill } from './BackendConnectionPill';
 import { ThemeCycleButton } from './ThemeCycleButton';
 import { MissionControlOverviewModal, type MissionControlWorkspaceStats } from './MissionControlOverviewModal';
 import { formatClock } from '../../lib/time';
+import { MissionContextCrumb } from './MissionContextCrumb';
 
 export type { MissionControlWorkspaceStats };
 
@@ -33,9 +34,22 @@ export type MissionControlHeaderExtras = {
 type Props = {
   missionControl?: MissionControlHeaderExtras | null;
   onOpenAbout: () => void;
+  /** Desktop Mission Control: opens centered command palette (also ⌘K / Ctrl+K). */
+  onOpenCommandPalette?: () => void;
+  commandPaletteOpen?: boolean;
+  /** From URL + catalog; mobile MC header shows crumbs below the desktop breakpoint. */
+  missionCrumbParts?: string[];
+  workspaceName?: string | null;
 };
 
-export function WorkspaceHeaderBar({ missionControl = null, onOpenAbout }: Props) {
+export function WorkspaceHeaderBar({
+  missionControl = null,
+  onOpenAbout,
+  onOpenCommandPalette,
+  commandPaletteOpen = false,
+  missionCrumbParts = [],
+  workspaceName = null,
+}: Props) {
   const navigate = useNavigate();
   const {
     activeWorkspace,
@@ -100,10 +114,45 @@ export function WorkspaceHeaderBar({ missionControl = null, onOpenAbout }: Props
             </span>
             <span className="ft-mc-brand-text ft-hide-below-lg">Mission Control</span>
           </button>
+          {missionCrumbParts.length > 0 && workspaceName ? (
+            <MissionContextCrumb
+              workspaceName={workspaceName}
+              parts={missionCrumbParts}
+              className="ft-mc-context-crumb ft-mc-context-crumb--mobile-header"
+            />
+          ) : null}
         </div>
 
         <div className="ft-header-mc-center">
-          <div className="ft-mc-global-search">
+          <div className="ft-mc-global-search ft-desktop-only">
+            <button
+              type="button"
+              className="ft-mc-global-search-trigger"
+              onClick={() => onOpenCommandPalette?.()}
+              aria-haspopup="dialog"
+              aria-expanded={commandPaletteOpen}
+              aria-label="Open command palette"
+            >
+              <Search size={16} className="ft-mc-global-search-icon" aria-hidden />
+              <span
+                className={
+                  missionControl.boardSearch.trim()
+                    ? 'ft-mc-global-search-trigger-label ft-mc-global-search-trigger-label--value'
+                    : 'ft-mc-global-search-trigger-label'
+                }
+              >
+                {missionControl.boardSearch.trim()
+                  ? missionControl.boardSearch
+                  : 'Search tasks, ideas, specs…'}
+              </span>
+              <span className="ft-mc-global-search-kbd" aria-hidden>
+                {typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform ?? '')
+                  ? '⌘K'
+                  : 'Ctrl+K'}
+              </span>
+            </button>
+          </div>
+          <div className="ft-mc-global-search ft-mobile-only">
             <Search size={16} className="ft-mc-global-search-icon" aria-hidden />
             <input
               type="search"

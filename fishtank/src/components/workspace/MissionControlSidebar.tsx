@@ -1,55 +1,21 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import { matchPath, useLocation, useNavigate } from 'react-router-dom';
-import {
-  Activity,
-  Bot,
-  BookOpen,
-  Calendar,
-  CheckSquare,
-  ClipboardCheck,
-  Factory,
-  FileText,
-  FlaskConical,
-  LayoutGrid,
-  Lightbulb,
-  MessageSquare,
-  Network,
-  Radar,
-  Info,
-  Rocket,
-  Settings,
-  Users,
-  type LucideIcon,
-} from 'lucide-react';
+import { useMissionNavPreferences } from '../../hooks/useMissionNavPreferences';
+import { ensureSidebarIncludesCurrent, findNavEntryForWorkspacePath } from '../../lib/missionNavLocation';
+import { missionNavCatalog } from '../../lib/missionNavPreferences';
+import { MISSION_SYSTEM_SUB_NAV, missionSystemPath } from '../../lib/missionSystemNav';
+import { workspacePath } from '../../lib/missionNavCatalog';
+import { MissionContextCrumb } from '../shell/MissionContextCrumb';
 
-type NavEntry =
-  | { id: string; label: string; icon: LucideIcon; kind: 'workspace'; segment: string }
-  | { id: string; label: string; icon: LucideIcon; kind: 'global'; to: string }
-  | { id: string; label: string; icon: LucideIcon; kind: 'about' };
-
-const CORE_NAV_ENTRIES: NavEntry[] = [
-  { id: 'tasks', label: 'Tasks', icon: CheckSquare, kind: 'workspace', segment: 'tasks' },
-  { id: 'agents', label: 'Agents', icon: Bot, kind: 'workspace', segment: 'agents' },
-  { id: 'activity_log', label: 'Activity log', icon: Activity, kind: 'global', to: '/activity' },
-  { id: 'autopilot', label: 'Autopilot hub', icon: Rocket, kind: 'global', to: '/autopilot' },
-  { id: 'content', label: 'Content', icon: FileText, kind: 'workspace', segment: 'content' },
-  { id: 'ideation', label: 'Ideation', icon: Lightbulb, kind: 'workspace', segment: 'ideation' },
-  { id: 'approvals', label: 'Approvals', icon: ClipboardCheck, kind: 'workspace', segment: 'approvals' },
-  { id: 'council', label: 'Council', icon: Users, kind: 'workspace', segment: 'council' },
-  { id: 'calendar', label: 'Calendar', icon: Calendar, kind: 'workspace', segment: 'calendar' },
-  { id: 'projects', label: 'Projects', icon: LayoutGrid, kind: 'workspace', segment: 'projects' },
-  { id: 'memory', label: 'Memory', icon: Network, kind: 'workspace', segment: 'memory' },
-  { id: 'docs', label: 'Docs', icon: BookOpen, kind: 'workspace', segment: 'docs' },
-  { id: 'people', label: 'People', icon: Users, kind: 'workspace', segment: 'people' },
-  { id: 'office', label: 'Office', icon: LayoutGrid, kind: 'workspace', segment: 'office' },
-  { id: 'team', label: 'Team', icon: Users, kind: 'workspace', segment: 'team' },
-  { id: 'system', label: 'System', icon: Settings, kind: 'workspace', segment: 'system' },
-  { id: 'radar', label: 'Radar', icon: Radar, kind: 'workspace', segment: 'radar' },
-  { id: 'factory', label: 'Factory', icon: Factory, kind: 'workspace', segment: 'factory' },
-  { id: 'pipeline', label: 'Pipeline', icon: Network, kind: 'workspace', segment: 'pipeline' },
-  { id: 'feedback', label: 'Feedback', icon: MessageSquare, kind: 'workspace', segment: 'feedback' },
-  { id: 'about', label: 'About', icon: Info, kind: 'about' },
-];
+export type { NavEntry } from '../../lib/missionNavCatalog';
+export {
+  CORE_NAV_ENTRIES,
+  buildMissionNavEntries,
+  orderPaletteEntries,
+  PALETTE_PRIORITY,
+  workspacePath,
+} from '../../lib/missionNavCatalog';
 
 type Stats = {
   thisWeek: number;
@@ -64,37 +30,82 @@ type Props = {
   onOpenAbout: () => void;
   /** When arms has at least one research hub (or default hub) configured — shows Research hub in the nav. */
   showResearchHubNav?: boolean;
+  missionCrumbParts: string[];
+  workspaceName: string | null;
 };
 
-function workspacePath(productId: string, segment: string): string {
-  return `/p/${encodeURIComponent(productId)}/${segment}`;
-}
-
 function isWorkspaceNavActive(pathname: string, segment: string): boolean {
-  return !!matchPath({ path: `/p/:productId/${segment}`, end: true }, pathname);
+  const exact = matchPath({ path: `/p/:productId/${segment}`, end: true }, pathname);
+  if (exact) return true;
+  if (segment === 'system') {
+    return (
+      !!matchPath({ path: '/p/:productId/system', end: true }, pathname) ||
+      !!matchPath({ path: '/p/:productId/system/:section', end: true }, pathname)
+    );
+  }
+  return false;
 }
 
-export function MissionControlSidebar({ stats, productId, onOpenAbout, showResearchHubNav = false }: Props) {
+export function MissionControlSidebar({
+  stats,
+  productId,
+  onOpenAbout,
+  showResearchHubNav = false,
+  missionCrumbParts,
+  workspaceName,
+}: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
+  const prevNonSystemPathRef = useRef<string | null>(null);
 
-  const navEntries = useMemo(() => {
-    if (!showResearchHubNav) return CORE_NAV_ENTRIES;
-    const idx = CORE_NAV_ENTRIES.findIndex((e) => e.id === 'system');
-    const row: NavEntry = {
-      id: 'research_hub',
-      label: 'Research hub',
-      icon: FlaskConical,
-      kind: 'workspace',
-      segment: 'research-hub',
-    };
-    if (idx < 0) return [...CORE_NAV_ENTRIES, row];
-    return [...CORE_NAV_ENTRIES.slice(0, idx + 1), row, ...CORE_NAV_ENTRIES.slice(idx + 1)];
-  }, [showResearchHubNav]);
+  const { sidebarEntries: prefsSidebarEntries } = useMissionNavPreferences(showResearchHubNav);
+  const catalog = useMemo(() => missionNavCatalog(showResearchHubNav), [showResearchHubNav]);
+  const currentNavEntry = useMemo(
+    () => (productId ? findNavEntryForWorkspacePath(pathname, productId, catalog) : null),
+    [pathname, productId, catalog],
+  );
+  const navEntries = useMemo(
+    () => ensureSidebarIncludesCurrent(prefsSidebarEntries, catalog, currentNavEntry),
+    [prefsSidebarEntries, catalog, currentNavEntry],
+  );
+
+  useEffect(() => {
+    if (!pathname.includes('/system')) {
+      prevNonSystemPathRef.current = pathname;
+    }
+  }, [pathname]);
+
+  const systemSubNavOpen =
+    !!productId &&
+    (!!matchPath({ path: '/p/:productId/system', end: true }, pathname) ||
+      !!matchPath({ path: '/p/:productId/system/:section', end: true }, pathname));
+
+  const systemSectionMatch = matchPath({ path: '/p/:productId/system/:section', end: true }, pathname);
+  const activeSystemSection =
+    systemSectionMatch?.params.section ??
+    (matchPath({ path: '/p/:productId/system', end: true }, pathname) ? 'status' : null);
+
+  function exitSystemNav() {
+    if (!productId) return;
+    const fallback = workspacePath(productId, 'tasks');
+    const prev = prevNonSystemPathRef.current;
+    if (prev && !prev.includes('/system')) {
+      navigate(prev);
+    } else {
+      navigate(fallback);
+    }
+  }
 
   return (
     <aside className="ft-mc-sidebar" aria-label="Mission navigation">
+      {missionCrumbParts.length > 0 && workspaceName ? (
+        <MissionContextCrumb
+          workspaceName={workspaceName}
+          parts={missionCrumbParts}
+          className="ft-mc-context-crumb ft-mc-context-crumb--sidebar"
+        />
+      ) : null}
       <div className="ft-mc-stats-row" role="group" aria-label="Workspace stats">
         <div className="ft-mc-stat-pill ft-mc-stat-pill--green">
           <span className="ft-mc-stat-pill-value">{stats.thisWeek}</span>
@@ -113,45 +124,90 @@ export function MissionControlSidebar({ stats, productId, onOpenAbout, showResea
         </div>
       </div>
 
-      <nav className="ft-mc-nav" aria-label="Primary">
-        <ul className="ft-mc-nav-list">
-          {navEntries.map((entry) => {
-            const Icon = entry.icon;
-            const isActive =
-              entry.kind === 'about'
-                ? false
-                : entry.kind === 'workspace'
-                  ? isWorkspaceNavActive(pathname, entry.segment)
-                  : pathname === entry.to || pathname.startsWith(`${entry.to}/`);
+      <div className="ft-mc-nav-viewport">
+        <div className={`ft-mc-nav-track ${systemSubNavOpen ? 'ft-mc-nav-track--system' : ''}`}>
+          <nav className="ft-mc-nav ft-mc-nav--primary" aria-label="Primary" aria-hidden={systemSubNavOpen}>
+            <ul className="ft-mc-nav-list">
+            {navEntries.map((entry) => {
+              const Icon = entry.icon;
+              const isActive =
+                entry.kind === 'about'
+                  ? false
+                  : entry.kind === 'workspace'
+                    ? isWorkspaceNavActive(pathname, entry.segment)
+                    : pathname === entry.to || pathname.startsWith(`${entry.to}/`);
 
-            function handleClick() {
-              if (entry.kind === 'about') {
-                onOpenAbout();
-                return;
+              function handleClick() {
+                if (entry.kind === 'about') {
+                  onOpenAbout();
+                  return;
+                }
+                if (!productId) return;
+                if (entry.kind === 'workspace') {
+                  if (entry.segment === 'system') {
+                    navigate(missionSystemPath(productId, 'status'));
+                    return;
+                  }
+                  navigate(workspacePath(productId, entry.segment));
+                } else navigate(entry.to);
               }
-              if (!productId) return;
-              if (entry.kind === 'workspace') navigate(workspacePath(productId, entry.segment));
-              else navigate(entry.to);
-            }
 
-            const disabled = entry.kind === 'workspace' && !productId;
+              const disabled = entry.kind === 'workspace' && !productId;
 
-            return (
-              <li key={entry.id}>
-                <button
-                  type="button"
-                  className={`ft-mc-nav-item ${isActive ? 'ft-mc-nav-item--active' : ''}`}
-                  onClick={handleClick}
-                  disabled={disabled}
-                >
-                  <Icon size={16} aria-hidden className="ft-mc-nav-icon" />
-                  <span>{entry.label}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+              return (
+                <li key={entry.id}>
+                  <button
+                    type="button"
+                    className={`ft-mc-nav-item ${isActive ? 'ft-mc-nav-item--active' : ''}`}
+                    onClick={handleClick}
+                    disabled={disabled}
+                  >
+                    <Icon size={16} aria-hidden className="ft-mc-nav-icon" />
+                    <span>{entry.label}</span>
+                  </button>
+                </li>
+              );
+            })}
+            </ul>
+          </nav>
+
+        <nav
+          className="ft-mc-nav ft-mc-nav--system-sub"
+          aria-label="System sections"
+          aria-hidden={!systemSubNavOpen}
+        >
+          <div className="ft-mc-system-sub-head">
+            <button type="button" className="ft-mc-system-sub-back" onClick={exitSystemNav}>
+              <ChevronLeft size={16} aria-hidden />
+              <span>Main menu</span>
+            </button>
+          </div>
+          <ul className="ft-mc-nav-list ft-mc-nav-list--system-sub">
+            {MISSION_SYSTEM_SUB_NAV.map((item) => {
+              const SubIcon = item.icon;
+              const isSubActive = activeSystemSection === item.segment;
+              return (
+                <li key={item.segment}>
+                  <button
+                    type="button"
+                    className={`ft-mc-nav-item ft-mc-nav-item--system-sub ${isSubActive ? 'ft-mc-nav-item--active' : ''}`}
+                    onClick={() => {
+                      if (!productId) return;
+                      navigate(missionSystemPath(productId, item.segment));
+                    }}
+                    disabled={!productId}
+                    title={item.label}
+                  >
+                    <SubIcon size={14} aria-hidden className="ft-mc-nav-icon" />
+                    <span className="ft-mc-nav-item__system-label">{item.label}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+        </div>
+      </div>
     </aside>
   );
 }

@@ -17,7 +17,19 @@ import { MissionMemoryPage } from './routes/MissionMemoryPage';
 import { MissionRadarPage } from './routes/MissionRadarPage';
 import { MissionResearchHubPage } from './routes/MissionResearchHubPage';
 import { MissionProjectsPage } from './routes/MissionProjectsPage';
-import { MissionSystemPage } from './routes/MissionSystemPage';
+import { MissionSystemLayout } from './routes/system/MissionSystemLayout';
+import {
+  MissionSystemApiRoute,
+  MissionSystemAppearanceRoute,
+  MissionSystemBuildRoute,
+  MissionSystemConnectionRoute,
+  MissionSystemGatewayRoute,
+  MissionSystemHostRoute,
+  MissionSystemIdeationRoute,
+  MissionSystemNavigationRoute,
+  MissionSystemResearchRoute,
+  MissionSystemStatusRoute,
+} from './routes/system/MissionSystemSectionRoutes';
 import { MissionTeamPage } from './routes/MissionTeamPage';
 import { MissionTasksPage } from './routes/MissionTasksPage';
 import { NotFoundPage } from './routes/NotFoundPage';
@@ -47,7 +59,20 @@ export default function App() {
               <Route path="people" element={<WorkspaceModulePlaceholder segment="people" />} />
               <Route path="office" element={<WorkspaceModulePlaceholder segment="office" />} />
               <Route path="team" element={<MissionTeamPage />} />
-              <Route path="system" element={<MissionSystemPage />} />
+              <Route path="system" element={<MissionSystemLayout />}>
+                <Route index element={<Navigate to="status" replace />} />
+                <Route path="status" element={<MissionSystemStatusRoute />} />
+                <Route path="host" element={<MissionSystemHostRoute />} />
+                <Route path="appearance" element={<MissionSystemAppearanceRoute />} />
+                <Route path="ideation" element={<MissionSystemIdeationRoute />} />
+                <Route path="navigation" element={<MissionSystemNavigationRoute />} />
+                <Route path="connection" element={<MissionSystemConnectionRoute />} />
+                <Route path="research" element={<MissionSystemResearchRoute />} />
+                <Route path="gateway" element={<MissionSystemGatewayRoute />} />
+                <Route path="build" element={<MissionSystemBuildRoute />} />
+                <Route path="api" element={<MissionSystemApiRoute />} />
+                <Route path="*" element={<Navigate to="status" replace />} />
+              </Route>
               <Route path="research-hub" element={<MissionResearchHubPage />} />
               <Route path="radar" element={<MissionRadarPage />} />
               <Route path="factory" element={<MissionFactoryPage />} />

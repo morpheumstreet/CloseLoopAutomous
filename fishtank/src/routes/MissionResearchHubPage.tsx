@@ -384,7 +384,7 @@ export function MissionResearchHubPage() {
           <p className="ft-muted" style={{ margin: 0, fontSize: '0.85rem' }}>
             No hub configured.{' '}
             {pid ? (
-              <Link to={`/p/${encodeURIComponent(pid)}/system#ft-research-claw-hubs`}>Add one on System</Link>
+              <Link to={`/p/${encodeURIComponent(pid)}/system/research`}>Add one on System</Link>
             ) : (
               'Add a ResearchClaw hub under System.'
             )}
